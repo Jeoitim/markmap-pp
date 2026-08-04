@@ -30,7 +30,8 @@ function editorTheme(dark: boolean, fontSize: number, scheme: HighlightScheme) {
       },
       '.cm-line': { paddingLeft: '8px' },
       '.cm-gutters': { backgroundColor: 'var(--editor-bg)', color: 'var(--editor-gutter)', border: 'none', paddingLeft: '8px' },
-      '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--editor-active)' },
+      '.cm-activeLine': { backgroundColor: 'transparent' },
+      '.cm-activeLineGutter': { backgroundColor: 'var(--editor-active)' },
       '.cm-selectionLayer .cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground': {
         backgroundColor: dark ? '#9d8cff66 !important' : '#7056e852 !important',
       },
