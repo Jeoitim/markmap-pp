@@ -46,6 +46,7 @@
     "dev:react-example": "pnpm --filter markmap-plus-plus-app dev",
     "dev": "pnpm --filter markmap-plus-plus-app dev",
     "build:app": "pnpm --filter markmap-plus-plus-app build",
+    "build:site": "node scripts/build-site.mjs",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"

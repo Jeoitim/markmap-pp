@@ -42,25 +42,16 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
 
-      - name: Build web application
-        run: pnpm --filter markmap-plus-plus-app build
+      - name: Build application and documentation
+        run: pnpm build:site
         env:
-          VITE_BASE_PATH: "/${{ github.event.repository.name }}/"
-
-      - name: Build documentation
-        run: pnpm docs:build
-        env:
-          VITEPRESS_BASE_PATH: "/${{ github.event.repository.name }}/doc/"
-
-      - name: Add documentation to application artifact
-        run: |
-          mkdir -p examples/react-example/dist/doc
-          cp -R docs/.vitepress/dist/. examples/react-example/dist/doc/
+          VITE_BASE_PATH: '/${{ github.event.repository.name }}/'
+          VITEPRESS_BASE_PATH: '/${{ github.event.repository.name }}/doc/'
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: examples/react-example/dist
+          path: dist
 
   deploy:
     needs: build

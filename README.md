@@ -37,13 +37,13 @@ markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus)
 
 节点快捷操作：
 
-| 操作 | 结果 |
-| --- | --- |
-| 单击节点 | 选中节点 |
-| 双击节点 | 编辑节点文字 |
-| Enter | 选中时新增同级节点；编辑时保存文字 |
-| Tab | 新增子节点 |
-| Delete / Backspace | 删除当前选中的整个节点 |
+| 操作               | 结果                               |
+| ------------------ | ---------------------------------- |
+| 单击节点           | 选中节点                           |
+| 双击节点           | 编辑节点文字                       |
+| Enter              | 选中时新增同级节点；编辑时保存文字 |
+| Tab                | 新增子节点                         |
+| Delete / Backspace | 删除当前选中的整个节点             |
 
 ### 字体与显示
 
@@ -55,13 +55,13 @@ markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus)
 
 ### 多格式导出
 
-| 格式 | 用途 |
-| --- | --- |
-| Markdown | 保存可继续编辑的源文件 |
-| SVG | 矢量导图，适合打印和后期编辑 |
-| PNG | 无损位图，适合文档和演示文稿 |
-| JPEG | 文件体积更小，适合快速分享 |
-| HTML | 可独立打开的网页文件，保留矢量清晰度 |
+| 格式     | 用途                                 |
+| -------- | ------------------------------------ |
+| Markdown | 保存可继续编辑的源文件               |
+| SVG      | 矢量导图，适合打印和后期编辑         |
+| PNG      | 无损位图，适合文档和演示文稿         |
+| JPEG     | 文件体积更小，适合快速分享           |
+| HTML     | 可独立打开的网页文件，保留矢量清晰度 |
 
 PNG、JPEG、SVG 和 HTML 可选择 1–4 倍渲染倍率；位图倍率越高，输出分辨率越高。
 
@@ -87,14 +87,14 @@ markmap++ 不会在每次输入时创建提交。远程 Markdown 文件被下载
 - 刷新只更新远程目录信息，不会覆盖当前本地草稿。
 - “放弃”会丢弃全部本地暂存操作，并恢复到远程最新提交。
 
-| 标记 | 含义 |
-| --- | --- |
+| 标记 | 含义                       |
+| ---- | -------------------------- |
 | 灰点 | 远程文件尚未下载到当前设备 |
-| 绿点 | 本地缓存与远程版本一致 |
-| `A` | 本地新增文件 |
-| `M` | 本地修改文件 |
-| `R` | 本地重命名或移动文件 |
-| `D` | 本地删除文件 |
+| 绿点 | 本地缓存与远程版本一致     |
+| `A`  | 本地新增文件               |
+| `M`  | 本地修改文件               |
+| `R`  | 本地重命名或移动文件       |
+| `D`  | 本地删除文件               |
 
 同步时会根据操作自动生成 `update: add ...`、`update: edit ...`、`update: rename ...`、`update: delete ...` 或批量变更提交信息。推送前如果远程分支已经变化，应用会拒绝覆盖并提示先刷新，从而避免强制推送造成的数据丢失。
 
@@ -128,6 +128,9 @@ pnpm --filter markmap-plus-plus-app lint
 # 构建 Web 应用
 pnpm build:app
 
+# 构建完整站点（应用 + VitePress 文档）
+pnpm build:site
+
 # 运行仓库测试
 pnpm test
 
@@ -135,11 +138,13 @@ pnpm test
 pnpm --filter markmap-plus-plus-app preview
 ```
 
-生产文件输出到 `examples/react-example/dist/`。
+`pnpm build:app` 只把应用输出到 `examples/react-example/dist/`。用于部署的 `pnpm build:site` 会把应用和 VitePress 文档合并到根目录 `dist/`：应用位于 `/`，文档位于 `/doc/`。
+
+本地 `pnpm dev` 只启动应用，因此 `http://localhost:5173/doc/` 不会显示文档。需要使用 `pnpm docs:dev` 单独启动 VitePress；正式部署则由 `pnpm build:site` 将两者合并。
 
 ## 部署到 GitHub Pages
 
-仓库已提供 [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)。推送到 `main` 分支后，GitHub Actions 会自动完成依赖安装、代码检查、Vite 构建、Pages artifact 上传和部署。工作流会根据仓库名设置 Vite `base`，因此部署在 `/markmap-pp/` 子路径时静态资源也能正确加载。
+仓库已提供 [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)。推送到 `main` 分支后，GitHub Actions 会自动完成依赖安装、代码检查、应用与 VitePress 文档构建、Pages artifact 上传和部署。工作流会根据仓库名分别设置应用和文档的 `base`，因此 `/markmap-pp/` 与 `/markmap-pp/doc/` 的静态资源都能正确加载。
 
 首次部署需要在 GitHub 仓库中完成一次设置：
 
@@ -148,7 +153,7 @@ pnpm --filter markmap-plus-plus-app preview
 3. 推送到 `main`，或在 **Actions → Deploy Markmap++ to GitHub Pages** 中手动运行工作流。
 4. 部署完成后访问 `https://<用户名>.github.io/<仓库名>/`。
 
-对于本仓库，默认地址为 [https://jeoitim.github.io/markmap-pp/](https://jeoitim.github.io/markmap-pp/)。部署应用本身不需要配置 GitHub Secret；用户在页面内输入的仓库令牌不会经过 Actions。
+对于本仓库，应用地址为 [https://jeoitim.github.io/markmap-pp/](https://jeoitim.github.io/markmap-pp/)，文档地址为 [https://jeoitim.github.io/markmap-pp/doc/](https://jeoitim.github.io/markmap-pp/doc/)。部署不需要配置 GitHub Secret；用户在页面内输入的仓库令牌不会经过 Actions。
 
 ## 部署到 Cloudflare Pages
 
@@ -159,24 +164,24 @@ Cloudflare Pages 可以直接连接 GitHub 仓库，并在每次推送后自动�
 3. 生产分支选择 `main`。
 4. 使用下面的构建配置：
 
-| 配置项 | 值 |
-| --- | --- |
-| Framework preset | React (Vite)，也可以选择 None |
-| Root directory | `/`，保持仓库根目录 |
-| Build command | `pnpm --filter markmap-plus-plus-app build` |
-| Build output directory | `examples/react-example/dist` |
-| `NODE_VERSION` | `22` |
-| `PNPM_VERSION` | `10` |
+| 配置项                 | 值                            |
+| ---------------------- | ----------------------------- |
+| Framework preset       | React (Vite)，也可以选择 None |
+| Root directory         | `/`，保持仓库根目录           |
+| Build command          | `pnpm build:site`             |
+| Build output directory | `dist`                        |
+| `NODE_VERSION`         | `22`                          |
+| `PNPM_VERSION`         | `10`                          |
 
 5. 点击 **Save and Deploy**。部署完成后会得到一个 `*.pages.dev` 地址，其他分支和 Pull Request 会生成独立的预览部署。
 
-Cloudflare Pages 的站点位于域名根路径，因此不要使用 GitHub Pages 工作流里的 `--base "/markmap-pp/"` 参数。Vite 默认的 `/` 正是这里需要的配置。
+Cloudflare Pages 的站点位于域名根路径。`build:site` 默认将应用 base 设为 `/`，将文档 base 设为 `/doc/`，因此部署后分别访问站点根路径和 `/doc/` 即可。
 
 也可以先在本地构建，再通过 Wrangler 直接上传：
 
 ```bash
-pnpm build:app
-pnpm dlx wrangler pages deploy examples/react-example/dist --project-name markmap-pp
+pnpm build:site
+pnpm dlx wrangler pages deploy dist --project-name markmap-pp
 ```
 
 Git 集成项目与 Direct Upload 项目的管理方式不同；如果希望长期由 Git 自动部署，建议一开始就选择 Git 集成。详细设置可参考 [Cloudflare Pages Git integration](https://developers.cloudflare.com/pages/get-started/git-integration/) 和 [Build configuration](https://developers.cloudflare.com/pages/configuration/build-configuration/)。
@@ -189,15 +194,15 @@ Git 集成项目与 Direct Upload 项目的管理方式不同；如果希望长�
 2. 选择 `main` 作为 Production 环境关联分支。
 3. 在 **Project Settings → Build and Deployment Configuration** 中填写：
 
-| 配置项 | 值 |
-| --- | --- |
-| Framework preset | Vite 或自定义 |
-| Root directory | `./` |
+| 配置项               | 值                               |
+| -------------------- | -------------------------------- |
+| Framework preset     | Vite 或自定义                    |
+| Root directory       | `./`                             |
 | Installation command | `pnpm install --frozen-lockfile` |
-| Build command | `pnpm --filter markmap-plus-plus-app build` |
-| Output directory | `examples/react-example/dist` |
-| Node.js version | 22（例如平台提供的 22.21.1） |
-| pnpm version | 9 |
+| Build command        | `pnpm build:site`                |
+| Output directory     | `dist`                           |
+| Node.js version      | 22（例如平台提供的 22.21.1）     |
+| pnpm version         | 9                                |
 
 4. 保存并开始部署。生产分支更新会发布到正式环境，其他分支进入 Preview 环境。
 
@@ -206,8 +211,8 @@ EdgeOne Pages 当前托管构建支持 pnpm 6–9，而本项目的 lockfile 格
 如果希望通过 GitHub Actions 或其他 CI 主动上传，可以先创建 EdgeOne API Token，然后执行：
 
 ```bash
-pnpm build:app
-npx edgeone pages deploy examples/react-example/dist \
+pnpm build:site
+npx edgeone pages deploy dist \
   -n markmap-pp \
   -t "$EDGEONE_API_TOKEN" \
   -e production
@@ -217,11 +222,11 @@ npx edgeone pages deploy examples/react-example/dist \
 
 ## 部署方式对比
 
-| 平台 | 默认访问路径 | 自动预览 | 项目所需额外凭据 |
-| --- | --- | --- | --- |
-| GitHub Pages | `/<仓库名>/` | 工作流当前仅部署 `main` | 无 |
-| Cloudflare Pages | 域名根路径 `/` | 分支与 Pull Request | Git 集成授权 |
-| EdgeOne Pages | 域名根路径 `/` | Production / Preview 环境 | Git 集成授权；CLI 部署需要 API Token |
+| 平台             | 默认访问路径   | 自动预览                  | 项目所需额外凭据                     |
+| ---------------- | -------------- | ------------------------- | ------------------------------------ |
+| GitHub Pages     | `/<仓库名>/`   | 工作流当前仅部署 `main`   | 无                                   |
+| Cloudflare Pages | 域名根路径 `/` | 分支与 Pull Request       | Git 集成授权                         |
+| EdgeOne Pages    | 域名根路径 `/` | Production / Preview 环境 | Git 集成授权；CLI 部署需要 API Token |
 
 ## 技术组成
 
