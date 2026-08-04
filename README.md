@@ -1,405 +1,259 @@
-## markmap++
+# markmap++
 
-基于 `Tem-man/markmap-plus` 开发的本地 Markdown 思维导图工作台。
+一个以 Markdown 为唯一源文件、支持实时编辑、思维导图交互、高清导出和 GitHub 多端同步的浏览器工作台。
 
-### 第一阶段：本地编辑与实时预览
+[![Deploy to GitHub Pages](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml)
+[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-43853d?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- 左侧 Markdown 编辑、右侧思维导图实时预览
-- 支持导图缩放、拖动、折叠，以及节点新增、修改和删除
-- 导图内的操作会回写 Markdown
-- 每次启动加载不会被修改的操作指南示例，需要保留的内容可导出为 Markdown
-- 支持打开本地 `.md` 文件并下载当前文档
-- 支持浅色/深色界面和手机端编辑/预览切换
-- 桌面端支持拖动调整分栏、单栏收起和浏览器全屏
-- CodeMirror Markdown 高亮、行号、搜索与常见语法问题诊断
-- 编辑器字号及 Violet、GitHub、Solarized 高亮方案
-- 预览字号、可变字重与思源黑体、思源宋体、霞鹜文楷、Inter Variable、JetBrains Mono Variable 内置字体
-- 预览点阵背景可自由开启或关闭
-- 支持 Markdown、SVG、PNG、JPEG、HTML 导出及 1–4 倍位图渲染
+[在线使用](https://jeoitim.github.io/markmap-pp/) · [English](README.en.md) · [上游项目](https://github.com/Tem-man/markmap-plus)
 
-### GitHub 仓库同步
+## 项目简介
 
-- 编辑区可切换为 GitHub 仓库文件树，点击 Markdown 文件后下载并缓存在当前设备
-- 缓存和未推送修改保存在浏览器中，刷新或离开页面不会丢失
-- 文件树支持折叠、拖放和右键文件管理，可新建、重命名、复制、剪切、粘贴及删除文件或文件夹
-- 灰点表示尚未拉取；橙色 `A`、`M`、`R`、`D` 分别表示新增、修改、重命名和删除
-- 标题栏仅用状态点和文字提示：绿色“已同步”、橙色“已暂存但未推送”、黄色“同步中”
-- 修改不会自动提交；点击“同步”后，全部待推送文件会合并为一次自动命名的提交
-- 绑定时需要具有仓库 Contents 读写权限的 GitHub 令牌，令牌只保存在当前浏览器
+markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus) 开发。它保留了“Markdown → 思维导图”的工作方式，并在此基础上加入完整的本地编辑体验、可回写的节点操作、IDE 风格仓库文件树、浏览器持久缓存和手动 GitHub 提交。
+
+应用完全运行在浏览器中，不需要数据库或自建后端。Markdown 是内容的唯一来源，Markmap 负责交互式 SVG 视图，GitHub 仓库可以作为跨设备文件存储和版本历史。
+
+## 主要能力
+
+### Markdown 编辑与实时预览
+
+- CodeMirror 6 编辑器，支持 Markdown 高亮、行号、搜索和撤回。
+- 常见 Markdown 结构检查；编辑器底部显示问题数量和对应行号。
+- 编辑内容时实时更新右侧思维导图，无需手动刷新。
+- 桌面端可拖动分割线调整编辑器宽度，也可收起编辑器专注预览。
+- 移动端在 Markdown 编辑与思维导图预览之间切换。
+- 支持浏览器全屏以及全局浅色、深色主题。
+
+### 思维导图交互
+
+- 拖动画布、滚轮缩放、节点折叠和一键适应画布。
+- 双击节点直接编辑文字，编辑结果自动回写 Markdown。
+- 选中节点后可新增同级节点、子节点或删除节点。
+- 节点误操作后可通过顶部“撤回”恢复最近一次修改。
+- 预览字号、字体和可变字重均可调整。
+- 可关闭点阵背景，获得更简洁的导图画布。
+
+节点快捷操作：
+
+| 操作 | 结果 |
+| --- | --- |
+| 单击节点 | 选中节点 |
+| 双击节点 | 编辑节点文字 |
+| Enter | 选中时新增同级节点；编辑时保存文字 |
+| Tab | 新增子节点 |
+| Delete / Backspace | 删除当前选中的整个节点 |
+
+### 字体与显示
+
+- 编辑器字号可调，仓库文件树的文字和图标会同步变化。
+- 内置 Violet、GitHub、Solarized 三种编辑器高亮方案。
+- 预览内置思源黑体、思源宋体、霞鹜文楷、Inter Variable 和 JetBrains Mono Variable。
+- 思源黑体、思源宋体、Inter 与 JetBrains Mono 支持可变字重。
+- 编辑器、预览和仓库文件树均跟随全局深浅色主题。
+
+### 多格式导出
+
+| 格式 | 用途 |
+| --- | --- |
+| Markdown | 保存可继续编辑的源文件 |
+| SVG | 矢量导图，适合打印和后期编辑 |
+| PNG | 无损位图，适合文档和演示文稿 |
+| JPEG | 文件体积更小，适合快速分享 |
+| HTML | 可独立打开的网页文件，保留矢量清晰度 |
+
+PNG、JPEG、SVG 和 HTML 可选择 1–4 倍渲染倍率；位图倍率越高，输出分辨率越高。
+
+## GitHub 仓库同步
+
+markmap++ 不会在每次输入时创建提交。远程 Markdown 文件被下载到浏览器后，可以离线继续修改；只有用户点击“同步”，待处理操作才会合并成一次 Git 提交并推送到远程分支。
+
+### 绑定仓库
+
+1. 打开左侧编辑区的“仓库”页签。
+2. 填写 `owner/repository`、目标分支和 GitHub fine-grained personal access token。
+3. 令牌只需授权目标仓库，并赋予 **Contents: Read and write** 权限。
+4. 绑定完成后，点击文件树中的 Markdown 文件将其下载到本机缓存。
+
+令牌保存在当前浏览器的 `localStorage`，Markdown 草稿保存在 IndexedDB。应用会直接从浏览器请求 GitHub API，不会把令牌写入项目、构建产物或 GitHub Pages。请勿在公共或不受信任的设备上长期保存令牌。
+
+### 文件树与状态
+
+- 文件夹可折叠，并以灰色缩进线辅助判断层级。
+- 文件和文件夹支持拖动移动。
+- 右键菜单支持新建、重命名、复制、剪切、粘贴和删除。
+- 重命名可在文件树中直接完成，无需弹出输入窗口。
+- 刷新只更新远程目录信息，不会覆盖当前本地草稿。
+- “放弃”会丢弃全部本地暂存操作，并恢复到远程最新提交。
+
+| 标记 | 含义 |
+| --- | --- |
+| 灰点 | 远程文件尚未下载到当前设备 |
+| 绿点 | 本地缓存与远程版本一致 |
+| `A` | 本地新增文件 |
+| `M` | 本地修改文件 |
+| `R` | 本地重命名或移动文件 |
+| `D` | 本地删除文件 |
+
+同步时会根据操作自动生成 `update: add ...`、`update: edit ...`、`update: rename ...`、`update: delete ...` 或批量变更提交信息。推送前如果远程分支已经变化，应用会拒绝覆盖并提示先刷新，从而避免强制推送造成的数据丢失。
+
+> Git 无法保存真正的空文件夹。只在本地创建但未包含文件的文件夹不会同步到 GitHub。
+
+## 本地开发
+
+### 环境要求
+
+- Node.js 22 或更高版本
+- pnpm 10
+
+### 启动开发环境
 
 ```bash
+git clone https://github.com/Jeoitim/markmap-pp.git
+cd markmap-pp
+npm install --global pnpm@10
 pnpm install
 pnpm dev
 ```
 
-默认开发地址为 `http://localhost:5173`。
+打开 `http://localhost:5173`。
 
-### 上游项目说明
-
-markmap-plus is an enhanced version of markmap with node creation, editing, and deletion capabilities.
-
-It keeps the original “Markdown → mind map” workflow, and adds rich editing features on top of the rendered diagram:
-- create new nodes in the mind map
-- edit text of existing nodes
-- delete nodes you no longer need
-- select nodes for keyboard-driven operations
-- export the current mind map back to Markdown
-
-All these operations are applied incrementally without re-rendering the whole SVG tree, which keeps large diagrams responsive.
-
-![markmap-plus](/public/screen_1.png)
-
-### Features
-
-- Markdown-driven mind map rendering
-- Display and editable modes
-- In-place node editing
-- Keyboard shortcuts for adding and removing nodes
-- Incremental updates for better performance
-- Export mind maps back to Markdown
-
-### Installation
-
-Use your preferred package manager to install:
+### 检查与构建
 
 ```bash
-npm install markmap-plus
-# or
-yarn add markmap-plus
-# or
-pnpm add markmap-plus
-```
-### Live Demo 
+# 检查 Web 应用
+pnpm --filter markmap-plus-plus-app lint
 
-Check out the live demo [here](https://tem-man.github.io/markmap-plus-docs/example/).
+# 构建 Web 应用
+pnpm build:app
 
-### Basic Usage (Vanilla JavaScript)
+# 运行仓库测试
+pnpm test
 
-The basic workflow is:
-- transform Markdown into a mind map tree using Transformer
-- render the tree into an SVG using Markmap
-
-```html
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>markmap-plus basic example</title>
-  </head>
-  <body>
-    <button id="export-btn">Export to Markdown</button>
-    <svg id="mindmap" style="width: 100%; height: 800px"></svg>
-    <script type="module">
-      import { Markmap, Transformer, toMarkdown } from 'markmap-plus';
-
-      const initValue = `# Markmap Editor Demo
-
-## How to use
-- Edit node
-    - Double-click any node to edit
-    - Press Enter to save edits
-    - Press Esc to cancel edits
-    - Clicking elsewhere also saves
-- Add node
-    - Press Enter to add sibling node
-    - Press Tab to add child node
-    - Click + button to add arbitrary node
-- Delete node
-    - Press Delete to remove node
-
-## Supported Markdown Syntax
-### Heading Levels
-- Level 1 Heading
-- Level 2 Heading
-- Level 3 Heading
-
-### Text Formatting
-- **Bold text**
-- *Italic text*
-- ~~Strikethrough~~
-- \`Inline code\`
-
-## Interaction
-### Node Operations
-- Click to expand/collapse
-- Double-click to edit content
-- Drag to pan
-- Scroll to zoom
-`;
-
-      const transformer = new Transformer();
-      const { root } = transformer.transform(initValue);
-
-      const svg = document.getElementById('mindmap');
-      const mm = Markmap.create(svg, {
-        mode: 'editable',
-      });
-
-      mm.setData(root).then(() => {
-        mm.fit();
-      });
-
-      document.getElementById('export-btn').addEventListener('click', () => {
-        const pureNode = mm.getData(true);
-        if (pureNode) {
-          const exportedMarkdown = toMarkdown(pureNode);
-          console.log(exportedMarkdown);
-          // Create Blob object
-          const blob = new Blob([exportedMarkdown], { type: 'text/markdown' });
-          // Create download link
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'markmap.md';
-          // Trigger download
-          document.body.appendChild(a);
-          a.click();
-          // Cleanup
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }
-      });
-    </script>
-  </body>
-</html>
+# 预览生产构建
+pnpm --filter markmap-plus-plus-app preview
 ```
 
-### React Example
+生产文件输出到 `examples/react-example/dist/`。
 
-```tsx
-import React, { useEffect, useRef, useState } from 'react';
-import { Markmap, Transformer, toMarkdown } from 'markmap-plus';
+## 部署到 GitHub Pages
 
-const transformer = new Transformer();
+仓库已提供 [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)。推送到 `main` 分支后，GitHub Actions 会自动完成依赖安装、代码检查、Vite 构建、Pages artifact 上传和部署。工作流会根据仓库名设置 Vite `base`，因此部署在 `/markmap-pp/` 子路径时静态资源也能正确加载。
 
-const initialMarkdown = `# markmap-plus in React
+首次部署需要在 GitHub 仓库中完成一次设置：
 
-- Edit the text on the left
-- The mind map updates automatically
-`;
+1. 打开 **Settings → Pages**。
+2. 将 **Build and deployment → Source** 设为 **GitHub Actions**。
+3. 推送到 `main`，或在 **Actions → Deploy Markmap++ to GitHub Pages** 中手动运行工作流。
+4. 部署完成后访问 `https://<用户名>.github.io/<仓库名>/`。
 
-export function MarkmapReactDemo() {
-  const [value, setValue] = useState(initialMarkdown);
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const mmRef = useRef<Markmap | null>(null);
+对于本仓库，默认地址为 [https://jeoitim.github.io/markmap-pp/](https://jeoitim.github.io/markmap-pp/)。部署应用本身不需要配置 GitHub Secret；用户在页面内输入的仓库令牌不会经过 Actions。
 
-  useEffect(() => {
-    if (mmRef.current || !svgRef.current) return;
-    const mm = Markmap.create(svgRef.current, {
-      mode: 'editable',
-    });
-    mmRef.current = mm;
-  }, []);
+## 部署到 Cloudflare Pages
 
-  useEffect(() => {
-    const mm = mmRef.current;
-    if (!mm) return;
-    const { root } = transformer.transform(value);
-    mm.setData(root).then(() => {
-      mm.fit();
-    });
-  }, [value]);
+Cloudflare Pages 可以直接连接 GitHub 仓库，并在每次推送后自动构建。由于本项目使用 pnpm workspace，构建必须从仓库根目录执行。
 
-  const handleExportMarkdown = () => {
-    const mm = mmRef.current;
-    if (!mm) return;
-    const pureNode = mm.getData(true);
-    if (!pureNode) return;
-    const markdown = toMarkdown(pureNode);
-    console.log('[markmap] exported markdown:', markdown);
-  };
+1. 进入 [Cloudflare Dashboard](https://dash.cloudflare.com/) 的 **Workers & Pages**。
+2. 选择 **Create application → Pages → Connect to Git**，授权并选择本仓库。
+3. 生产分支选择 `main`。
+4. 使用下面的构建配置：
 
-  return (
-    <div style={{ display: 'flex', gap: 16 }}>
-      <textarea
-        style={{ width: '40%', height: 500 }}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Type Markdown here..."
-      />
-      <div style={{ flex: 1 }}>
-        <button type="button" onClick={handleExportMarkdown}>
-          Export current mind map as Markdown
-        </button>
-        <svg
-          ref={svgRef}
-          style={{ width: '100%', height: 460, display: 'block', marginTop: 8 }}
-        />
-      </div>
-    </div>
-  );
-}
+| 配置项 | 值 |
+| --- | --- |
+| Framework preset | React (Vite)，也可以选择 None |
+| Root directory | `/`，保持仓库根目录 |
+| Build command | `pnpm --filter markmap-plus-plus-app build` |
+| Build output directory | `examples/react-example/dist` |
+| `NODE_VERSION` | `22` |
+| `PNPM_VERSION` | `10` |
+
+5. 点击 **Save and Deploy**。部署完成后会得到一个 `*.pages.dev` 地址，其他分支和 Pull Request 会生成独立的预览部署。
+
+Cloudflare Pages 的站点位于域名根路径，因此不要使用 GitHub Pages 工作流里的 `--base "/markmap-pp/"` 参数。Vite 默认的 `/` 正是这里需要的配置。
+
+也可以先在本地构建，再通过 Wrangler 直接上传：
+
+```bash
+pnpm build:app
+pnpm dlx wrangler pages deploy examples/react-example/dist --project-name markmap-pp
 ```
 
-### Vue 3 Example
+Git 集成项目与 Direct Upload 项目的管理方式不同；如果希望长期由 Git 自动部署，建议一开始就选择 Git 集成。详细设置可参考 [Cloudflare Pages Git integration](https://developers.cloudflare.com/pages/get-started/git-integration/) 和 [Build configuration](https://developers.cloudflare.com/pages/configuration/build-configuration/)。
 
-```vue
-<script setup lang="ts">
-import { Markmap, Transformer, toMarkdown } from 'markmap-plus';
-import { onMounted, ref, watch } from 'vue';
+## 部署到 EdgeOne Pages
 
-const transformer = new Transformer();
+[腾讯云 EdgeOne Pages](https://pages.edgeone.ai/) 同样支持关联 GitHub 仓库、生产分支自动部署和其他分支预览。项目是 monorepo，仍需从仓库根目录安装依赖和构建。
 
-const initialMarkdown = `# markmap-plus in Vue 3
+1. 登录 EdgeOne Pages，选择导入 GitHub 仓库。
+2. 选择 `main` 作为 Production 环境关联分支。
+3. 在 **Project Settings → Build and Deployment Configuration** 中填写：
 
-- Double-click a node to edit it
-- Use Tab / Enter to add nodes
-`;
+| 配置项 | 值 |
+| --- | --- |
+| Framework preset | Vite 或自定义 |
+| Root directory | `./` |
+| Installation command | `pnpm install --frozen-lockfile` |
+| Build command | `pnpm --filter markmap-plus-plus-app build` |
+| Output directory | `examples/react-example/dist` |
+| Node.js version | 22（例如平台提供的 22.21.1） |
+| pnpm version | 9 |
 
-const value = ref(initialMarkdown);
-const svgRef = ref<SVGSVGElement | null>(null);
-const mmRef = ref<Markmap | null>(null);
+4. 保存并开始部署。生产分支更新会发布到正式环境，其他分支进入 Preview 环境。
 
-onMounted(() => {
-  if (mmRef.value || !svgRef.value) return;
-  const mm = Markmap.create(svgRef.value, {
-    mode: 'editable',
-  });
-  mmRef.value = mm;
+EdgeOne Pages 当前托管构建支持 pnpm 6–9，而本项目的 lockfile 格式可由 pnpm 9 读取，因此这里指定 pnpm 9。不要把 Root directory 改为 `examples/react-example`，该应用依赖仓库内的 `packages/*` workspace 包。
 
-  const { root } = transformer.transform(value.value);
-  mm.setData(root).then(() => {
-    mm.fit();
-  });
-});
+如果希望通过 GitHub Actions 或其他 CI 主动上传，可以先创建 EdgeOne API Token，然后执行：
 
-watch(
-  () => value.value,
-  (newVal) => {
-    const mm = mmRef.value;
-    if (!mm) return;
-    const { root } = transformer.transform(newVal);
-    mm.setData(root).then(() => {
-      mm.fit();
-    });
-  },
-);
-
-function exportMarkdown() {
-  const mm = mmRef.value;
-  if (!mm) return;
-  const pureNode = mm.getData(true);
-  if (!pureNode) return;
-  const markdown = toMarkdown(pureNode);
-  console.log('[markmap] exported markdown:', markdown);
-}
-</script>
-
-<template>
-  <div style="display: flex; gap: 16px">
-    <textarea
-      style="width: 40%; height: 500px"
-      :value="value"
-      @input="(e: Event) => (value = (e.target as HTMLTextAreaElement).value)"
-      placeholder="Type Markdown here..."
-    />
-    <div style="flex: 1">
-      <button type="button" @click="exportMarkdown">
-        Export current mind map as Markdown
-      </button>
-      <svg
-        ref="svgRef"
-        style="width: 100%; height: 460px; display: block; margin-top: 8px"
-      />
-    </div>
-  </div>
-</template>
+```bash
+pnpm build:app
+npx edgeone pages deploy examples/react-example/dist \
+  -n markmap-pp \
+  -t "$EDGEONE_API_TOKEN" \
+  -e production
 ```
 
-### API
+在 GitHub Actions 中应将令牌保存为仓库 Secret `EDGEONE_API_TOKEN`，不要写入工作流或 README。EdgeOne CLI 的参数与最新构建环境说明见 [Using GitHub Actions](https://pages.edgeone.ai/document/use-github-actions) 和 [Build Guide](https://pages.edgeone.ai/document/build-guide)。
 
-#### View Options
+## 部署方式对比
 
-The `Markmap.create` call accepts a set of options that control how users can interact with the mind map:
+| 平台 | 默认访问路径 | 自动预览 | 项目所需额外凭据 |
+| --- | --- | --- | --- |
+| GitHub Pages | `/<仓库名>/` | 工作流当前仅部署 `main` | 无 |
+| Cloudflare Pages | 域名根路径 `/` | 分支与 Pull Request | Git 集成授权 |
+| EdgeOne Pages | 域名根路径 `/` | Production / Preview 环境 | Git 集成授权；CLI 部署需要 API Token |
 
-- `mode`: rendering mode, either `'display'` or `'editable'`.
-- `editable`: whether node text can be edited in-place.
-- `addable`: whether users can create new nodes from the UI.
-- `deletable`: whether nodes can be deleted.
-- `collapseOnHover`: whether child branches auto-collapse when the mouse leaves a node.
-- `hoverBorder`: whether a border is shown when the mouse hovers a node.
-- `clickBorder`: whether a border is shown when a node is selected by click.
-- `inputPlaceholder`: placeholder text shown in the inline input for new nodes.
+## 技术组成
 
-Example:
+- React 19 + TypeScript
+- Vite 8
+- CodeMirror 6
+- `markmap-lib` / `markmap-view-plus` / `markmap-toolbar`
+- GitHub REST Git Data API
+- IndexedDB + localStorage
+- pnpm workspace + Lerna
 
-```ts
-const mm = Markmap.create(svgElement, {
-  mode: 'editable',
-  editable: true,
-  addable: true,
-  deletable: true,
-  collapseOnHover: true,
-  hoverBorder: true,
-  clickBorder: true,
-  inputPlaceholder: 'Enter text',
-});
+## 目录结构
+
+```text
+markmap-pp/
+├─ .github/workflows/         # GitHub Pages 自动部署
+├─ examples/react-example/    # markmap++ Web 应用
+│  ├─ src/components/         # 编辑器、导图和 GitHub 同步
+│  └─ dist/                   # 生产构建输出
+├─ packages/
+│  ├─ markmap-lib/            # Markdown 转换
+│  ├─ markmap-view-plus/      # 可编辑思维导图视图
+│  ├─ markmap-toolbar/        # 导图工具栏
+│  └─ ...                     # 上游 Markmap 相关包
+├─ docs/                      # 上游文档内容
+├─ package.json               # 工作区命令
+└─ pnpm-workspace.yaml        # pnpm workspace 配置
 ```
 
-#### Transformer
+## 与上游项目的关系
 
-`Transformer` is responsible for turning Markdown text into the data structure that Markmap uses to render mind maps.
+本仓库基于 `Tem-man/markmap-plus` 修改，并继续保留其可编辑节点、增删节点、增量更新和 `toMarkdown` 回写能力。markmap++ 主要在 `examples/react-example` 中提供面向最终用户的完整工作台，并扩展本地缓存、GitHub 同步、文件管理、显示设置和多格式导出。
 
-```ts
-import { Transformer } from 'markmap-plus';
+## 许可证与鸣谢
 
-const transformer = new Transformer();
-const { root, features, frontmatter } = transformer.transform(markdown);
-```
-
-- `root` is the mind map tree (an `IPureNode`) that you pass to `mm.setData(root)`.
-- `features` describes which plugins and features are used in the Markdown.
-- `frontmatter` contains parsed front‑matter metadata.
-
-#### setData
-
-`setData` is an instance method on `Markmap`. It applies a new mind map tree to the current instance and triggers a re-render.
-
-```ts
-setData(data?: IPureNode | null, opts?: Partial<IMarkmapOptions>): Promise<void>;
-```
-
-- `data`: the `IPureNode` tree returned from `Transformer.transform`. When omitted, the previous tree is kept.
-- `opts`: optional view options to update together with the data.
-
-#### getData
-
-`getData` is an instance method on `Markmap` used to export data. It returns the current mind map tree data.
-
-```ts
-getData(): INode | undefined;
-getData(pure: true): IPureNode | undefined;
-```
-
-- `mm.getData()` returns the internal runtime tree (`INode`) including layout `state`.
-- `mm.getData(true)` returns a plain data tree (`IPureNode`) without layout `state`, suitable for serialization and storage.
-
-#### toMarkdown
-
-`toMarkdown` converts an `IPureNode` tree back into a Markdown string.
-
-```ts
-function toMarkdown(root: IPureNode): string;
-```
-
-Example:
-// Get the current pure data
-const pureNode = mm.getData(true);
-if (pureNode) {
-  // Convert back to Markdown string
-  const markdown = toMarkdown(pureNode);
-  console.log('Exported Markdown:', markdown);
-}
-```ts
-import { toMarkdown } from 'markmap-plus';
-
-const pureNode = mm.getData(true);
-if (pureNode) {
-  const markdown = toMarkdown(pureNode);
-  console.log(markdown);
-}
-```
-
-### More Documentation
-
-For more details about interaction, keyboard shortcuts, and full API reference, see the [docs](https://tem-man.github.io/markmap-plus-docs) or the published documentation site.
+项目采用 [MIT License](LICENSE)。感谢 [markmap](https://github.com/markmap/markmap) 和 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus) 提供的基础实现。
