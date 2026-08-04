@@ -32,6 +32,11 @@ describe('GitHub 自动提交信息', () => {
     )
   })
 
+  it('区分新增和删除文件', () => {
+    expect(generateCommitMessage([cachedFile('maps/new.md', 'added')])).toBe('update: add maps/new.md')
+    expect(generateCommitMessage([cachedFile('maps/old.md', 'deleted')])).toBe('update: delete maps/old.md')
+  })
+
   it('把多个文件合并到一次 change 提交', () => {
     expect(generateCommitMessage([
       cachedFile('maps/one.md', 'modified'),
@@ -51,10 +56,14 @@ describe('GitHub 手动同步', () => {
       { sha: 'next-commit' },
       { object: { sha: 'next-commit' } },
     ]
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify(replies.shift()), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void input
+      void init
+      return new Response(JSON.stringify(replies.shift()), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
     const config: GitHubConfig = { owner: 'owner', repo: 'repo', branch: 'main', token: 'test-token' }
     const files = [
@@ -76,6 +85,35 @@ describe('GitHub 手动同步', () => {
     const updateBranch = fetchMock.mock.calls[4]
     expect(updateBranch[0]).toContain('/git/refs/heads/main')
     expect(JSON.parse(String(updateBranch[1]?.body))).toEqual({ sha: 'next-commit', force: false })
+  })
+
+  it('在同一棵 Git tree 中新增并删除文件', async () => {
+    const replies = [
+      { object: { sha: 'base-commit' } },
+      { tree: { sha: 'base-tree' } },
+      { sha: 'next-tree' },
+      { sha: 'next-commit' },
+      { object: { sha: 'next-commit' } },
+    ]
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void input
+      void init
+      return new Response(JSON.stringify(replies.shift()), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const config: GitHubConfig = { owner: 'owner', repo: 'repo', branch: 'main', token: 'test-token' }
+
+    await pushCachedChanges(config, [
+      { ...cachedFile('maps/new.md', 'added'), baseCommit: 'base-commit' },
+      { ...cachedFile('maps/old.md', 'deleted'), baseCommit: 'base-commit' },
+    ])
+
+    const createTree = fetchMock.mock.calls[2]
+    const treeBody = JSON.parse(String(createTree[1]?.body)) as { tree: Array<Record<string, unknown>> }
+    expect(treeBody.tree).toEqual([
+      expect.objectContaining({ path: 'maps/new.md', content: '# current' }),
+      expect.objectContaining({ path: 'maps/old.md', sha: null }),
+    ])
   })
 
   it('远程分支变化时拒绝覆盖', async () => {

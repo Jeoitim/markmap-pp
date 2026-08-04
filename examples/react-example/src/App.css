@@ -38,8 +38,6 @@ svg { flex: 0 0 auto; }
 .button.primary { color: white; border-color: var(--accent); background: var(--accent); }
 .button.primary:hover { background: var(--accent-hover); }
 .button:disabled, .icon-button:disabled { opacity: .45; cursor: not-allowed; }
-.github-button { position: relative; }
-.github-button > b { position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; display: grid; place-items: center; padding: 0 4px; border: 2px solid var(--panel); border-radius: 9px; color: #fff; background: #d8872d; font-size: 9px; }
 .icon-button { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
@@ -141,37 +139,63 @@ svg { flex: 0 0 auto; }
 .github-notice svg { width: 16px; }
 .github-unbind { height: 38px; border: 1px solid #d1545440; border-radius: 8px; color: #d15454; background: transparent; cursor: pointer; }
 
-.repository-workspace { min-height: 0; display: grid; grid-template-rows: auto auto minmax(0,1fr) auto; background: var(--editor-bg); }
+.repository-workspace { min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--editor-bg); }
 .repository-toolbar { height: 48px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 13px; border-bottom: 1px solid var(--border); background: var(--panel-soft); }
 .repository-toolbar > div { min-width: 0; display: grid; gap: 1px; margin-right: auto; }
 .repository-toolbar strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; }
 .repository-toolbar small { color: var(--muted); font: 9px "JetBrains Mono Variable",monospace; }
 .repository-toolbar button, .repository-status button { height: 28px; padding: 0 9px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); background: var(--panel); font-size: 10px; cursor: pointer; }
+.repository-toolbar .repository-icon-button { width: 30px; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 0; }
+.repository-icon-button > i { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; margin: 0; font-style: normal; line-height: 0; }
+.repository-icon-button svg { display: block; width: 15px; height: 15px; margin: 0; }
 .repository-toolbar .sync-button { color: #fff; border-color: var(--accent); background: var(--accent); }
+.repository-toolbar .discard-button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 7px; color: #cf4d4d; border-color: #cf4d4d45; background: #cf4d4d0b; }
+.discard-button svg { width: 13px; height: 13px; }
 .repository-toolbar button:disabled { opacity: .45; cursor: not-allowed; }
 .repository-error { display: flex; align-items: center; gap: 6px; padding: 8px 12px; color: #d15454; background: #d1545412; font-size: 10px; }
 .repository-error svg { width: 14px; }
 .repository-notice { display: flex; align-items: center; gap: 6px; padding: 8px 12px; color: #39865c; background: #39865c12; font-size: 10px; }
 .repository-notice svg { width: 14px; }
-.repository-tree { min-height: 0; overflow: auto; padding: 6px 0; }
+.repository-tree { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 6px 0; font-size: inherit; }
 .github-empty { padding: 24px; color: var(--muted); font-size: 11px; text-align: center; }
-.tree-folder, .tree-file { min-height: 30px; padding-right: 7px; }
-.tree-folder { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 600; }
-.tree-folder svg { width: 14px; color: #c69538; }
-.tree-file { display: grid; grid-template-columns: minmax(0,1fr) 20px auto; align-items: center; }
+.tree-folder, .tree-file { position: relative; min-height: 30px; padding-right: 7px; }
+.tree-indent-guides { position: absolute; inset: 0 auto 0 7px; pointer-events: none; background: repeating-linear-gradient(to right,transparent 0 15px,color-mix(in srgb,var(--muted) 22%,transparent) 15px 16px); }
+.tree-folder:hover > .tree-indent-guides, .tree-file:hover > .tree-indent-guides, .tree-file.active > .tree-indent-guides { background: repeating-linear-gradient(to right,transparent 0 15px,color-mix(in srgb,var(--accent) 42%,transparent) 15px 16px); }
+.tree-folder { color: var(--muted); font-size: inherit; font-weight: 600; }
+.tree-folder > button { width: 100%; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0; border: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.tree-folder > button svg:first-child { width: .8em; height: .8em; color: var(--muted); }
+.tree-folder > button svg:nth-child(2) { width: 1em; height: 1em; color: #c69538; }
+.tree-folder:hover { background: color-mix(in srgb,var(--accent) 6%,var(--editor-bg)); }
+.tree-file { display: grid; grid-template-columns: minmax(0,1fr) 20px; align-items: center; }
 .tree-file:hover, .tree-file.active { background: color-mix(in srgb,var(--accent) 8%,var(--editor-bg)); }
-.tree-open { min-width: 0; height: 30px; display: flex; align-items: center; gap: 7px; padding: 0; border: 0; text-align: left; color: var(--text); background: transparent; cursor: pointer; }
-.tree-open svg { width: 14px; color: var(--muted); }
-.tree-open span { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.tree-file > b { color: #d8872d; font: 650 10px "JetBrains Mono Variable",monospace; }
-.tree-file > i { width: 6px; height: 6px; border-radius: 50%; background: #39ad72; }
-.tree-rename { visibility: hidden; height: 24px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); background: var(--panel); font-size: 9px; cursor: pointer; }
-.tree-file:hover .tree-rename, .tree-rename:focus { visibility: visible; }
-.repository-status { min-height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 13px; border-top: 1px solid var(--border); color: var(--muted); background: var(--panel-soft); font-size: 9px; }
+.tree-open { min-width: 0; height: 30px; display: flex; align-items: center; gap: 7px; padding: 0; border: 0; text-align: left; color: var(--text); background: transparent; font: inherit; cursor: pointer; }
+.tree-open svg { width: 1em; height: 1em; color: var(--muted); }
+.tree-open span { overflow: hidden; font-size: inherit; text-overflow: ellipsis; white-space: nowrap; }
+.tree-file > b { color: #d8872d; font: 650 .78em "JetBrains Mono Variable",monospace; }
+.tree-file > i { width: 6px; height: 6px; border-radius: 50%; }
+.tree-file > i.cached { background: #39ad72; }
+.tree-file > i.remote { background: #a5aab3; }
+.tree-file.deleted .tree-open { opacity: .58; text-decoration: line-through; cursor: default; }
+.tree-inline-edit { min-width: 0; height: 30px; display: flex; align-items: center; gap: 7px; padding-right: 5px; }
+.tree-inline-edit > svg { width: 1em; height: 1em; color: var(--muted); }
+.tree-folder .tree-inline-edit > svg { color: #c69538; }
+.tree-inline-edit input { min-width: 0; width: 100%; height: 23px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 4px; outline: none; color: var(--text); background: var(--panel); font-size: inherit; box-shadow: 0 0 0 2px color-mix(in srgb,var(--accent) 12%,transparent); }
+.repository-status { flex: 0 0 34px; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 13px; border-top: 1px solid var(--border); color: var(--muted); background: var(--panel-soft); font-size: max(11px, .82em); white-space: nowrap; }
 .repository-status > span { width: 7px; height: 7px; border-radius: 50%; }
 .repository-status > span.clean { background: #39ad72; }
 .repository-status > span.dirty { background: #d8872d; }
 .repository-status button { margin-left: auto; }
+.repository-status .repository-branch-button { height: 27px; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 0 3px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font-size: inherit; line-height: 1; }
+.repository-branch-button:hover { color: var(--text); background: color-mix(in srgb,var(--accent) 7%,transparent); }
+.repository-branch-button svg { display: block; width: 14px; height: 14px; margin: 0; }
+.repository-branch-button span { max-width: 100px; overflow: hidden; font: inherit; font-family: "JetBrains Mono Variable",monospace; text-overflow: ellipsis; white-space: nowrap; }
+.repository-context-menu { position: fixed; z-index: 160; width: 180px; display: grid; padding: 6px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--panel); box-shadow: 0 14px 40px #090b1235; }
+.repository-context-menu strong { overflow: hidden; padding: 7px 8px 8px; color: var(--muted); font-size: max(12px, .86em); text-overflow: ellipsis; white-space: nowrap; }
+.repository-context-menu button { height: 32px; padding: 0 9px; border: 0; border-radius: 5px; text-align: left; color: var(--text); background: transparent; font-size: max(12px, .86em); cursor: pointer; }
+.repository-context-menu button:hover { background: var(--panel-soft); }
+.repository-context-menu button:disabled { opacity: .4; cursor: default; }
+.repository-context-menu button.danger { color: #d15454; }
+.repository-context-menu hr { width: 100%; margin: 5px 0; border: 0; border-top: 1px solid var(--border); }
 .repository-unbound { display: grid; place-items: center; align-content: center; gap: 9px; padding: 30px; text-align: center; color: var(--muted); }
 .repository-unbound > svg { width: 34px; color: var(--accent); }
 .repository-unbound strong { color: var(--text); font-size: 13px; }

@@ -11,7 +11,7 @@ export interface RemoteMarkdownFile {
   size: number
 }
 
-export type FileStatus = 'clean' | 'modified' | 'renamed'
+export type FileStatus = 'clean' | 'modified' | 'renamed' | 'added' | 'deleted'
 
 export interface CachedMarkdownFile {
   id: string
@@ -183,6 +183,8 @@ export function generateCommitMessage(files: CachedMarkdownFile[]) {
   if (files.length === 1) {
     const file = files[0]
     if (file.status === 'renamed') return `update: rename ${file.originalPath} to ${file.path}`
+    if (file.status === 'added') return `update: add ${file.path}`
+    if (file.status === 'deleted') return `update: delete ${file.path}`
     return `update: edit ${file.path}`
   }
   return `update: change ${files.map((file) => file.path).join(', ')}`
@@ -198,6 +200,10 @@ export async function pushCachedChanges(config: GitHubConfig, files: CachedMarkd
   const baseCommit = await githubRequest<{ tree: { sha: string } }>(config, `${repoPath(config)}/git/commits/${head}`)
   const entries: Array<{ path: string; mode: '100644'; type: 'blob'; content?: string; sha?: null }> = []
   for (const file of changed) {
+    if (file.status === 'deleted') {
+      entries.push({ path: file.originalPath, mode: '100644', type: 'blob', sha: null })
+      continue
+    }
     if (file.status === 'renamed' && file.originalPath !== file.path) entries.push({ path: file.originalPath, mode: '100644', type: 'blob', sha: null })
     entries.push({ path: file.path, mode: '100644', type: 'blob', content: file.content })
   }

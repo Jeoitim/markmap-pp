@@ -25,6 +25,7 @@ import {
 
 const transformer = new Transformer()
 const SETTINGS_KEY = 'markmap-plus-plus:settings'
+const VIRTUAL_FOLDERS_KEY = 'markmap-plus-plus:virtual-folders'
 
 const starterDocument = `# markmap++
 
@@ -55,9 +56,11 @@ const starterDocument = `# markmap++
 - 顶部按钮可以切换全屏和深浅色模式
 
 ## GitHub 多端同步
-- 点击顶部“GitHub”绑定仓库，编辑区可在 Markdown 与仓库文件树之间切换
+- 点击编辑区的“仓库”，填写 owner/repository、分支和具有 Contents 读写权限的 GitHub 令牌
+- 绑定成功后可以在 Markdown 与仓库文件树之间切换，底部 Git 图标和分支名可重新打开仓库设置
 - 点击仓库中的 Markdown 文件后，它会下载到当前设备并长期缓存
-- 编辑和重命名只会保存在本地，文件树使用橙色 M 或 R 标记待推送文件
+- 文件和文件夹支持拖动、折叠及右键菜单，可重命名、复制、剪切、新建和删除
+- 灰点表示尚未拉取；A、M、R、D 分别表示新增、修改、重命名和删除
 - 标题栏绿点表示已同步，橙点表示已暂存但未推送，黄点表示正在同步
 - 确认修改后点击“同步”，markmap++ 才会创建一次提交并推送全部修改
 
@@ -106,7 +109,43 @@ interface RepositoryRow {
   cached?: CachedMarkdownFile
 }
 
-function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: CachedMarkdownFile[]): RepositoryRow[] {
+type RepositoryTarget = Pick<RepositoryRow, 'type' | 'path' | 'name'> | { type: 'root'; path: ''; name: '仓库根目录' }
+type RepositoryClipboard = { mode: 'copy' | 'cut'; target: RepositoryTarget }
+
+function parentPath(path: string) {
+  return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+}
+
+function baseName(path: string) {
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
+function joinPath(folder: string, name: string) {
+  return [folder, name].filter(Boolean).join('/')
+}
+
+function validRepositoryPath(path: string) {
+  return Boolean(path) && !path.startsWith('/') && !path.endsWith('/') && !path.split('/').some((part) => !part || part === '.' || part === '..')
+}
+
+function loadVirtualFolders(repoKey: string) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(VIRTUAL_FOLDERS_KEY) || '{}') as Record<string, string[]>
+    return stored[repoKey] || []
+  } catch {
+    return []
+  }
+}
+
+function saveVirtualFolders(repoKey: string, folders: string[]) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(VIRTUAL_FOLDERS_KEY) || '{}') as Record<string, string[]>
+    stored[repoKey] = folders
+    localStorage.setItem(VIRTUAL_FOLDERS_KEY, JSON.stringify(stored))
+  } catch { /* storage may be disabled */ }
+}
+
+function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: CachedMarkdownFile[], virtualFolders: string[], collapsedFolders: Set<string>): RepositoryRow[] {
   const files = new Map<string, { remote?: RemoteMarkdownFile; cached?: CachedMarkdownFile }>()
   remoteFiles.forEach((remote) => {
     const cached = cachedFiles.find((file) => file.path === remote.path || file.originalPath === remote.path)
@@ -115,26 +154,31 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
   cachedFiles.forEach((cached) => {
     if (!files.has(cached.path)) files.set(cached.path, { cached })
   })
-  const rows: RepositoryRow[] = []
   const folders = new Set<string>()
-  Array.from(files.entries()).sort(([a], [b]) => a.localeCompare(b)).forEach(([path, value]) => {
+  virtualFolders.forEach((path) => {
+    const parts = path.split('/')
+    parts.forEach((_, index) => folders.add(parts.slice(0, index + 1).join('/')))
+  })
+  Array.from(files).forEach(([path]) => {
     const parts = path.split('/')
     for (let index = 0; index < parts.length - 1; index += 1) {
-      const folderPath = parts.slice(0, index + 1).join('/')
-      if (!folders.has(folderPath)) {
-        folders.add(folderPath)
-        rows.push({ type: 'folder', path: folderPath, name: parts[index], depth: index })
-      }
+      folders.add(parts.slice(0, index + 1).join('/'))
     }
-    rows.push({ type: 'file', path, name: parts.at(-1) || path, depth: parts.length - 1, ...value })
   })
+  const rows: RepositoryRow[] = [
+    ...Array.from(folders, (path) => ({ type: 'folder' as const, path, name: baseName(path), depth: path.split('/').length - 1 })),
+    ...Array.from(files, ([path, value]) => ({ type: 'file' as const, path, name: baseName(path), depth: path.split('/').length - 1, ...value })),
+  ]
   return rows
+    .sort((a, b) => a.path.localeCompare(b.path) || (a.type === 'folder' ? -1 : 1))
+    .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'check' | 'chevron-left' | 'chevron-right' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'settings' | 'sun' | 'undo' | 'warning' | 'x'
+type IconName = 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   check: <path d="m5 12 4 4L19 6"/>,
+  'chevron-down': <path d="m6 9 6 6 6-6"/>,
   'chevron-left': <path d="m15 18-6-6 6-6"/>,
   'chevron-right': <path d="m9 18 6-6-6-6"/>,
   download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>,
@@ -145,8 +189,10 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.5-1.2 1-1.2 2"/><path d="M12 17h.01"/></>,
   map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15m6-12v15"/></>,
   moon: <path d="M20 15.2A8 8 0 1 1 8.8 4 6.5 6.5 0 0 0 20 15.2Z"/>,
+  refresh: <><path d="M20 7v5h-5"/><path d="M18.2 16.5A8 8 0 1 1 19.8 9L20 12"/></>,
   settings: <><path d="M4 7h10m4 0h2M4 12h3m4 0h9M4 17h8m4 0h4"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></>,
   sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></>,
+  sync: <><path d="m8 15 4-4 4 4m-4-4v9"/><path d="M7 18H5.8A3.8 3.8 0 0 1 5 10.5 7 7 0 0 1 18.5 9a4.5 4.5 0 0 1 .5 8.9"/></>,
   undo: <><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6v1"/></>,
   warning: <><path d="M10.3 3.7 2.5 17.2A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.8L13.7 3.7a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/></>,
   x: <path d="m6 6 12 12M18 6 6 18"/>,
@@ -211,6 +257,13 @@ export default function MarkmapHooks() {
   const [githubBusy, setGithubBusy] = useState(false)
   const [githubError, setGithubError] = useState('')
   const [githubNotice, setGithubNotice] = useState('')
+  const [virtualFolders, setVirtualFolders] = useState<string[]>([])
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set())
+  const [repositoryClipboard, setRepositoryClipboard] = useState<RepositoryClipboard | null>(null)
+  const [repositoryMenu, setRepositoryMenu] = useState<{ x: number; y: number; target: RepositoryTarget } | null>(null)
+  const [draggedRepositoryTarget, setDraggedRepositoryTarget] = useState<RepositoryTarget | null>(null)
+  const [renamingRepositoryTarget, setRenamingRepositoryTarget] = useState<RepositoryTarget | null>(null)
+  const [repositoryRenameValue, setRepositoryRenameValue] = useState('')
   const initialMarkdownRef = useRef(markdown)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const mmRef = useRef<Markmap | null>(null)
@@ -320,16 +373,158 @@ export default function MarkmapHooks() {
     } finally { setGithubBusy(false) }
   }
 
-  const renameCachedMarkdown = async (file: CachedMarkdownFile) => {
-    const nextPath = window.prompt('输入新的仓库路径（以 .md 结尾）', file.path)?.trim().replace(/^\/+/, '')
-    if (!nextPath || nextPath === file.path) return
-    if (!/\.md$/i.test(nextPath) || nextPath.split('/').includes('..')) { setGithubError('文件路径必须以 .md 结尾，且不能包含 ..'); return }
-    if (cachedFiles.some((item) => item.path === nextPath)) { setGithubError('本地缓存中已存在同名路径'); return }
-    const renamed = { ...file, id: `${file.repoKey}:${nextPath}`, path: nextPath, status: 'renamed' as const, updatedAt: Date.now() }
-    await removeCachedFile(file.id)
-    await putCachedFile(renamed)
-    setCachedFiles((current) => current.map((item) => item.id === file.id ? renamed : item).sort((a, b) => a.path.localeCompare(b.path)))
-    if (activeRepoPath === file.path) { setActiveRepoPath(nextPath); setFileName(nextPath) }
+  const repositoryFilesForTarget = async (target: RepositoryTarget) => {
+    if (!githubConfig || target.type === 'root') return []
+    const rows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, new Set())
+      .filter((row) => row.type === 'file' && (target.type === 'file' ? row.path === target.path : row.path.startsWith(`${target.path}/`)))
+    const downloaded: CachedMarkdownFile[] = []
+    for (const row of rows) {
+      if (row.cached) downloaded.push(row.cached)
+      else if (row.remote) {
+        const file = await downloadMarkdown(githubConfig, row.remote, remoteHead)
+        await putCachedFile(file)
+        downloaded.push(file)
+      }
+    }
+    if (downloaded.length) setCachedFiles((current) => {
+      const merged = new Map(current.map((file) => [file.id, file]))
+      downloaded.forEach((file) => merged.set(file.id, file))
+      return Array.from(merged.values()).sort((a, b) => a.path.localeCompare(b.path))
+    })
+    return rows.map((row) => ({ sourcePath: row.path, file: downloaded.find((file) => file.path === row.path || file.originalPath === row.remote?.path) })).filter((item): item is { sourcePath: string; file: CachedMarkdownFile } => Boolean(item.file))
+  }
+
+  const relocateRepositoryTarget = async (target: RepositoryTarget, nextRoot: string, copy: boolean) => {
+    if (!githubConfig || target.type === 'root' || !validRepositoryPath(nextRoot)) return
+    if (target.type === 'folder' && (nextRoot === target.path || nextRoot.startsWith(`${target.path}/`))) { setGithubError('不能把文件夹移动到自身内部'); return }
+    setGithubBusy(true); setGithubError(''); setGithubNotice('')
+    try {
+      const sources = await repositoryFilesForTarget(target)
+      const sourcePaths = new Set(sources.map((item) => item.sourcePath))
+      const visibleRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, new Set())
+      const occupied = new Set(visibleRows.filter((row) => row.type === 'file' && !sourcePaths.has(row.path)).map((row) => row.path))
+      const changes = sources.map(({ sourcePath, file }) => {
+        const suffix = target.type === 'file' ? '' : sourcePath.slice(target.path.length)
+        const nextPath = `${nextRoot}${suffix}`
+        if (occupied.has(nextPath)) throw new Error(`目标位置已存在 ${nextPath}`)
+        occupied.add(nextPath)
+        if (copy) return { previous: null, next: { ...file, id: `${file.repoKey}:${nextPath}`, path: nextPath, originalPath: nextPath, baseContent: '', baseSha: '', status: 'added' as const, updatedAt: Date.now() } }
+        const added = file.status === 'added'
+        return { previous: file, next: { ...file, id: `${file.repoKey}:${nextPath}`, path: nextPath, originalPath: added ? nextPath : file.originalPath, status: added ? 'added' as const : 'renamed' as const, updatedAt: Date.now() } }
+      })
+      await Promise.all(changes.flatMap(({ previous, next }) => [previous ? removeCachedFile(previous.id) : Promise.resolve(), putCachedFile(next)]))
+      setCachedFiles((current) => {
+        const removed = new Set(changes.flatMap(({ previous }) => previous ? [previous.id] : []))
+        return [...current.filter((file) => !removed.has(file.id) && !changes.some(({ next }) => next.id === file.id)), ...changes.map(({ next }) => next)].sort((a, b) => a.path.localeCompare(b.path))
+      })
+      if (!copy && activeRepoPath && (activeRepoPath === target.path || activeRepoPath.startsWith(`${target.path}/`))) {
+        const nextActivePath = `${nextRoot}${activeRepoPath.slice(target.path.length)}`
+        setActiveRepoPath(nextActivePath); setFileName(nextActivePath)
+      }
+      if (target.type === 'folder') {
+        const folderPaths = new Set([target.path, ...virtualFolders.filter((folder) => folder.startsWith(`${target.path}/`))])
+        visibleRows.filter((row) => row.type === 'folder' && row.path.startsWith(`${target.path}/`)).forEach((row) => folderPaths.add(row.path))
+        const mapped = Array.from(folderPaths, (folder) => `${nextRoot}${folder.slice(target.path.length)}`)
+        const nextFolders = Array.from(new Set([...(copy ? virtualFolders : virtualFolders.filter((folder) => !folderPaths.has(folder))), ...mapped])).sort()
+        setVirtualFolders(nextFolders); saveVirtualFolders(repoKeyOf(githubConfig), nextFolders)
+      }
+      setGithubNotice(copy ? '已复制到本地暂存区' : '已移动到本地暂存区')
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '文件操作失败')
+    } finally { setGithubBusy(false) }
+  }
+
+  const renameRepositoryTarget = async (target: RepositoryTarget, requestedName: string) => {
+    if (target.type === 'root') return
+    const name = requestedName.trim()
+    if (!name || name === target.name) return
+    const nextPath = joinPath(parentPath(target.path), name)
+    if (!validRepositoryPath(nextPath) || (target.type === 'file' && !/\.md$/i.test(nextPath))) { setGithubError('名称无效，Markdown 文件必须以 .md 结尾'); return }
+    await relocateRepositoryTarget(target, nextPath, false)
+  }
+
+  const startRepositoryRename = (target: RepositoryTarget) => {
+    if (target.type === 'root') return
+    setRenamingRepositoryTarget(target)
+    setRepositoryRenameValue(target.name)
+  }
+
+  const finishRepositoryRename = () => {
+    const target = renamingRepositoryTarget
+    if (!target) return
+    const name = repositoryRenameValue
+    setRenamingRepositoryTarget(null)
+    void renameRepositoryTarget(target, name)
+  }
+
+  const createRepositoryFile = async (folder: string) => {
+    if (!githubConfig || !remoteHead) return
+    let name = window.prompt('新建 Markdown 文件', '未命名.md')?.trim()
+    if (!name) return
+    if (!/\.md$/i.test(name)) name += '.md'
+    const path = joinPath(folder, name)
+    const occupied = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, new Set()).some((row) => row.path === path)
+    if (!validRepositoryPath(path) || occupied) { setGithubError(occupied ? '该位置已存在同名文件' : '文件名无效'); return }
+    const content = `# ${name.replace(/\.md$/i, '')}\n`
+    const file: CachedMarkdownFile = { id: `${repoKeyOf(githubConfig)}:${path}`, repoKey: repoKeyOf(githubConfig), path, originalPath: path, content, baseContent: '', baseSha: '', baseCommit: remoteHead, status: 'added', updatedAt: Date.now() }
+    await putCachedFile(file)
+    setCachedFiles((current) => [...current, file].sort((a, b) => a.path.localeCompare(b.path)))
+    activateCachedFile(file)
+  }
+
+  const createRepositoryFolder = (folder: string) => {
+    if (!githubConfig) return
+    const name = window.prompt('新建文件夹', '新建文件夹')?.trim()
+    if (!name) return
+    const path = joinPath(folder, name)
+    if (!validRepositoryPath(path) || virtualFolders.includes(path)) { setGithubError('文件夹名称无效或已存在'); return }
+    const next = [...virtualFolders, path].sort()
+    setVirtualFolders(next); saveVirtualFolders(repoKeyOf(githubConfig), next)
+    setCollapsedFolders((current) => { const value = new Set(current); value.delete(folder); return value })
+  }
+
+  const deleteRepositoryTarget = async (target: RepositoryTarget) => {
+    if (!githubConfig || target.type === 'root' || !window.confirm(`确定删除“${target.name}”吗？修改将在下次同步时推送。`)) return
+    setGithubBusy(true); setGithubError(''); setGithubNotice('')
+    try {
+      const sources = await repositoryFilesForTarget(target)
+      const removedIds: string[] = []
+      const deleted: CachedMarkdownFile[] = []
+      for (const { file } of sources) {
+        if (file.status === 'added') { await removeCachedFile(file.id); removedIds.push(file.id) }
+        else { const next = { ...file, status: 'deleted' as const, updatedAt: Date.now() }; await putCachedFile(next); deleted.push(next) }
+      }
+      setCachedFiles((current) => [...current.filter((file) => !removedIds.includes(file.id) && !deleted.some((item) => item.id === file.id)), ...deleted].sort((a, b) => a.path.localeCompare(b.path)))
+      if (target.type === 'folder') {
+        const next = virtualFolders.filter((folder) => folder !== target.path && !folder.startsWith(`${target.path}/`))
+        setVirtualFolders(next); saveVirtualFolders(repoKeyOf(githubConfig), next)
+      }
+      if (activeRepoPath && (activeRepoPath === target.path || activeRepoPath.startsWith(`${target.path}/`))) { setActiveRepoPath(null); setEditorView('repository') }
+      setGithubNotice('已标记删除，点击同步后写入仓库')
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '删除失败')
+    } finally { setGithubBusy(false) }
+  }
+
+  const pasteRepositoryClipboard = async (folder: string) => {
+    if (!repositoryClipboard) return
+    const nextRoot = joinPath(folder, repositoryClipboard.target.name)
+    await relocateRepositoryTarget(repositoryClipboard.target, nextRoot, repositoryClipboard.mode === 'copy')
+    if (repositoryClipboard.mode === 'cut') setRepositoryClipboard(null)
+  }
+
+  const dropRepositoryTarget = async (folder: string) => {
+    const target = draggedRepositoryTarget
+    setDraggedRepositoryTarget(null)
+    if (!target || target.type === 'root') return
+    const nextRoot = joinPath(folder, target.name)
+    if (nextRoot === target.path) return
+    await relocateRepositoryTarget(target, nextRoot, false)
+  }
+
+  const openRepositoryMenu = (event: React.MouseEvent, target: RepositoryTarget) => {
+    event.preventDefault(); event.stopPropagation()
+    setRepositoryMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 290), target })
   }
 
   const pushRepositoryChanges = async () => {
@@ -339,16 +534,42 @@ export default function MarkmapHooks() {
       const result = await pushCachedChanges(githubConfig, cachedFiles)
       const refreshed = await listRemoteMarkdown(githubConfig)
       setRemoteHead(refreshed.head); setRemoteFiles(refreshed.files)
-      const cleanFiles = cachedFiles.map((file) => {
-        if (file.status === 'clean') return file
+      const deletedFiles = cachedFiles.filter((file) => file.status === 'deleted')
+      await Promise.all(deletedFiles.map((file) => removeCachedFile(file.id)))
+      const cleanFiles = cachedFiles.filter((file) => file.status !== 'deleted').map((file) => {
         const remote = refreshed.files.find((item) => item.path === file.path)
         return { ...file, originalPath: file.path, baseContent: file.content, baseSha: remote?.sha || file.baseSha, baseCommit: result.commitSha, status: 'clean' as const, updatedAt: Date.now() }
       })
       await Promise.all(cleanFiles.map(putCachedFile))
       setCachedFiles(cleanFiles)
+      setVirtualFolders([])
+      saveVirtualFolders(repoKeyOf(githubConfig), [])
       setGithubNotice(`已推送：${result.message}`)
     } catch (error) {
       setGithubError(error instanceof Error ? error.message : '推送失败')
+    } finally { setGithubBusy(false) }
+  }
+
+  const discardRepositoryChanges = async () => {
+    if (!githubConfig || !window.confirm('放弃当前仓库的全部本地修改，并恢复到远程最新 commit？')) return
+    setGithubBusy(true); setGithubError(''); setGithubNotice('')
+    try {
+      const refreshed = await listRemoteMarkdown(githubConfig)
+      const activeFile = activeRepoPath ? cachedFiles.find((file) => file.path === activeRepoPath) : undefined
+      const cachedRemotePaths = new Set(cachedFiles.filter((file) => file.status !== 'added').map((file) => file.originalPath))
+      const filesToRestore = refreshed.files.filter((remote) => cachedRemotePaths.has(remote.path))
+      await Promise.all(cachedFiles.map((file) => removeCachedFile(file.id)))
+      const restored = await Promise.all(filesToRestore.map((remote) => downloadMarkdown(githubConfig, remote, refreshed.head)))
+      await Promise.all(restored.map(putCachedFile))
+      setRemoteHead(refreshed.head); setRemoteFiles(refreshed.files); setCachedFiles(restored.sort((a, b) => a.path.localeCompare(b.path)))
+      setVirtualFolders([]); saveVirtualFolders(repoKeyOf(githubConfig), [])
+      setRepositoryClipboard(null); setCollapsedFolders(new Set())
+      const restoredActive = activeFile ? restored.find((file) => file.path === activeFile.originalPath) : undefined
+      if (restoredActive) activateCachedFile(restoredActive)
+      else if (activeRepoPath) { setActiveRepoPath(null); setEditorView('repository') }
+      setGithubNotice('已放弃本地修改，并恢复到远程最新 commit')
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '放弃修改失败')
     } finally { setGithubBusy(false) }
   }
 
@@ -376,20 +597,6 @@ export default function MarkmapHooks() {
   const openRepositoryRow = (row: RepositoryRow) => {
     if (row.remote) void openRepositoryFile(row.remote)
     else if (row.cached) activateCachedFile(row.cached)
-  }
-
-  const renameRepositoryRow = async (row: RepositoryRow) => {
-    if (row.cached) { await renameCachedMarkdown(row.cached); return }
-    if (!row.remote || !githubConfig) return
-    setGithubBusy(true); setGithubError('')
-    try {
-      const file = await downloadMarkdown(githubConfig, row.remote, remoteHead)
-      await putCachedFile(file)
-      setCachedFiles((current) => [...current, file].sort((a, b) => a.path.localeCompare(b.path)))
-      await renameCachedMarkdown(file)
-    } catch (error) {
-      setGithubError(error instanceof Error ? error.message : '重命名文件失败')
-    } finally { setGithubBusy(false) }
   }
 
   useEffect(() => {
@@ -425,8 +632,22 @@ export default function MarkmapHooks() {
 
   useEffect(() => {
     if (!githubConfig) return
-    void listCachedFiles(repoKeyOf(githubConfig)).then(setCachedFiles).catch(() => setGithubError('无法读取本地仓库缓存'))
+    const key = repoKeyOf(githubConfig)
+    void listCachedFiles(key).then((files) => {
+      setCachedFiles(files)
+      setVirtualFolders(loadVirtualFolders(key))
+      setCollapsedFolders(new Set())
+    }).catch(() => setGithubError('无法读取本地仓库缓存'))
   }, [githubConfig])
+
+  useEffect(() => {
+    if (!repositoryMenu) return
+    const closeMenu = () => setRepositoryMenu(null)
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeMenu() }
+    window.addEventListener('pointerdown', closeMenu)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => { window.removeEventListener('pointerdown', closeMenu); window.removeEventListener('keydown', closeOnEscape) }
+  }, [repositoryMenu])
 
   useEffect(() => {
     if (!activeRepoPath) return
@@ -437,7 +658,7 @@ export default function MarkmapHooks() {
         const next = {
           ...file,
           content: markdown,
-          status: (file.originalPath !== file.path ? 'renamed' : markdown === file.baseContent ? 'clean' : 'modified') as CachedMarkdownFile['status'],
+          status: (file.status === 'added' ? 'added' : file.originalPath !== file.path ? 'renamed' : markdown === file.baseContent ? 'clean' : 'modified') as CachedMarkdownFile['status'],
           updatedAt: Date.now(),
         }
         void putCachedFile(next).catch(() => setGithubError('本地缓存写入失败'))
@@ -603,7 +824,8 @@ export default function MarkmapHooks() {
   const lineCount = markdown.split('\n').length
   const activeCachedFile = activeRepoPath ? cachedFiles.find((file) => file.path === activeRepoPath) : undefined
   const changedFiles = cachedFiles.filter((file) => file.status !== 'clean')
-  const repositoryRows = buildRepositoryRows(remoteFiles, cachedFiles)
+  const hasRepositoryDrafts = changedFiles.length > 0 || virtualFolders.length > 0
+  const repositoryRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, collapsedFolders)
   const titleSyncState = activeCachedFile ? githubBusy ? 'syncing' : activeCachedFile.status === 'clean' ? 'synced' : 'dirty' : saveState
   const titleSyncText = activeCachedFile ? githubBusy ? '同步中' : activeCachedFile.status === 'clean' ? '已同步' : '已暂存但未推送' : saveState === 'saved' ? '当前内容已更新' : '正在更新预览…'
 
@@ -615,7 +837,6 @@ export default function MarkmapHooks() {
         <nav className="actions" aria-label="文档操作">
           <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
           <button type="button" className="button secondary" onClick={() => fileInputRef.current?.click()}><Icon name="folder" /><span>打开</span></button>
-          <button type="button" className="button secondary github-button" onClick={openGitHubPanel}><Icon name="github" /><span>GitHub</span>{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button>
           <button type="button" className="button secondary" onClick={() => setActivePanel('help')}><Icon name="help" /><span>说明</span></button>
           <button type="button" className="button secondary" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" onClick={() => { setExportError(''); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
@@ -634,15 +855,25 @@ export default function MarkmapHooks() {
               <MarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} scheme={settings.highlightScheme} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span><span>Markdown</span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
-            </> : <div className="repository-workspace">
+            </> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {!githubConfig ? <div className="repository-unbound"><Icon name="github" /><strong>尚未绑定 GitHub 仓库</strong><span>绑定后可浏览 Markdown 文件并在本地暂存修改。</span><button onClick={() => setActivePanel('github')}>绑定仓库</button></div> : <>
-                <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{githubConfig.branch}</small></div><button title="刷新仓库" onClick={() => void refreshRepositoryView()} disabled={githubBusy}>刷新</button><button className="sync-button" onClick={() => void pushRepositoryChanges()} disabled={githubBusy || !changedFiles.length}>{githubBusy ? '同步中…' : `同步${changedFiles.length ? ` ${changedFiles.length}` : ''}`}</button></div>
+                <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{githubConfig.branch}</small></div><button className="discard-button" title="放弃所有本地修改" onClick={() => void discardRepositoryChanges()} disabled={githubBusy || !hasRepositoryDrafts}><Icon name="undo" /><span>放弃</span></button><button className="repository-icon-button" title="刷新仓库" aria-label="刷新仓库" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" /></i></button><button className="repository-icon-button sync-button" title={changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || !changedFiles.length}><i><Icon name="sync" /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}
                 {githubNotice && <div className="repository-notice"><Icon name="check" />{githubNotice}</div>}
-                <div className="repository-tree" role="tree" aria-label="GitHub Markdown 文件树">
-                  {repositoryRows.length ? repositoryRows.map((row) => row.type === 'folder' ? <div className="tree-folder" key={`folder:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }}><Icon name="folder" /><span>{row.name}</span></div> : <div className={`tree-file ${activeRepoPath === row.path ? 'active' : ''}`} key={`file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }}><button className="tree-open" onClick={() => openRepositoryRow(row)}><Icon name="map" /><span>{row.name}</span></button>{row.cached?.status !== 'clean' && <b>{row.cached?.status === 'renamed' ? 'R' : 'M'}</b>}{row.cached?.status === 'clean' && <i /> }<button className="tree-rename" title={`重命名 ${row.path}`} onClick={() => void renameRepositoryRow(row)}>重命名</button></div>) : <div className="github-empty">{githubBusy ? '正在读取仓库…' : '仓库中没有 Markdown 文件'}</div>}
+                <div className="repository-tree" role="tree" aria-label="GitHub Markdown 文件树" onContextMenu={(event) => openRepositoryMenu(event, { type: 'root', path: '', name: '仓库根目录' })} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); void dropRepositoryTarget('') }}>
+                  {repositoryRows.length ? repositoryRows.map((row) => {
+                    const isRenaming = renamingRepositoryTarget?.type === row.type && renamingRepositoryTarget.path === row.path
+                    if (row.type === 'folder') return <div className="tree-folder" role="treeitem" aria-expanded={!collapsedFolders.has(row.path)} draggable={!isRenaming} key={`folder:${row.path}`} style={{ paddingLeft: 8 + row.depth * 16 }} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(row.path) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-inline-edit"><Icon name="folder" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button onClick={() => setCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next })}><Icon name={collapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button>}</div>
+                    return <div className={`tree-file ${activeRepoPath === row.path ? 'active' : ''} ${row.cached?.status === 'deleted' ? 'deleted' : ''}`} role="treeitem" draggable={!isRenaming && row.cached?.status !== 'deleted'} key={`file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-open tree-inline-edit"><Icon name="map" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button className="tree-open" disabled={row.cached?.status === 'deleted'} onClick={() => openRepositoryRow(row)}><Icon name="map" /><span>{row.name}</span></button>}{row.cached ? row.cached.status !== 'clean' ? <b>{row.cached.status === 'renamed' ? 'R' : row.cached.status === 'added' ? 'A' : row.cached.status === 'deleted' ? 'D' : 'M'}</b> : <i className="cached" title="已拉取并同步" /> : <i className="remote" title="尚未拉取" />}</div>
+                  }) : <div className="github-empty">{githubBusy ? '正在读取仓库…' : '仓库中没有 Markdown 文件'}</div>}
                 </div>
-                <footer className="repository-status"><span className={changedFiles.length ? 'dirty' : 'clean'} />{changedFiles.length ? `${changedFiles.length} 个文件已暂存但未推送` : '所有缓存文件均已同步'}<button onClick={() => setActivePanel('github')}>仓库设置</button></footer>
+                <footer className="repository-status"><span className={changedFiles.length ? 'dirty' : 'clean'} />{changedFiles.length ? `${changedFiles.length} 个文件已暂存但未推送` : '所有缓存文件均已同步'}<button className="repository-branch-button" title="仓库设置" onClick={() => setActivePanel('github')}><Icon name="github" /><span>{githubConfig.branch}</span></button></footer>
+                {repositoryMenu && <div className="repository-context-menu" style={{ left: repositoryMenu.x, top: repositoryMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+                  <strong>{repositoryMenu.target.name}</strong>
+                  {repositoryMenu.target.type !== 'root' && <><button onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); startRepositoryRename(target) }}>重命名</button><button onClick={() => { setRepositoryClipboard({ mode: 'copy', target: repositoryMenu.target }); setRepositoryMenu(null) }}>复制</button><button onClick={() => { setRepositoryClipboard({ mode: 'cut', target: repositoryMenu.target }); setRepositoryMenu(null) }}>剪切</button></>}
+                  {(repositoryMenu.target.type === 'folder' || repositoryMenu.target.type === 'root') && <><hr/><button disabled={!repositoryClipboard} onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void pasteRepositoryClipboard(folder) }}>粘贴{repositoryClipboard ? `“${repositoryClipboard.target.name}”` : ''}</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void createRepositoryFile(folder) }}>新建 Markdown</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); createRepositoryFolder(folder) }}>新建文件夹</button></>}
+                  {repositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); void deleteRepositoryTarget(target) }}>删除</button></>}
+                </div>}
               </>}
             </div>}
           </>}
