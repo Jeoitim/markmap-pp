@@ -366,6 +366,27 @@ export default function MarkmapHooks() {
     gesture.element.draggable = gesture.originalDraggable
   }, [])
 
+  useEffect(() => {
+    let frame = 0
+    const restorePageOrigin = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        if (window.scrollX || window.scrollY) window.scrollTo(0, 0)
+      })
+    }
+    window.addEventListener('scroll', restorePageOrigin, { passive: true })
+    window.addEventListener('resize', restorePageOrigin, { passive: true })
+    window.visualViewport?.addEventListener('resize', restorePageOrigin, { passive: true })
+    document.addEventListener('focusout', restorePageOrigin)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', restorePageOrigin)
+      window.removeEventListener('resize', restorePageOrigin)
+      window.visualViewport?.removeEventListener('resize', restorePageOrigin)
+      document.removeEventListener('focusout', restorePageOrigin)
+    }
+  }, [])
+
   const diagnostics = useMemo(() => inspectMarkdown(markdown), [markdown])
   const updateSettings = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setSettings((current) => ({ ...current, [key]: value }))
   const updateMarkdown = useCallback((value: string, source = 'editor') => {
