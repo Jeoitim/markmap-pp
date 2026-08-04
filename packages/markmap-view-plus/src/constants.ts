@@ -31,6 +31,7 @@ export const defaultOptions: IMarkmapOptions = {
   clickBorder: true,
   onNodeEdit: undefined,
   onNodeAdd: undefined,
+  onNodeDelete: undefined,
   inputPlaceholder: 'Enter text',
   color: (node: INode): string => defaultColorFn(`${node.state?.path || ''}`),
   lineWidth: lineWidthFactory(),

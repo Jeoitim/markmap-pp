@@ -1,10 +1,6 @@
+import './App.css'
 import MarkmapHooks from './components/markmap-hooks'
-function App() {
-  return (
-    <div>
-      <MarkmapHooks />
-    </div>
-  )
-}
 
-export default App
+export default function App() {
+  return <MarkmapHooks />
+}

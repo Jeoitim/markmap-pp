@@ -1,4 +1,30 @@
-## markmap-plus
+## markmap++
+
+基于 `Tem-man/markmap-plus` 开发的本地 Markdown 思维导图工作台。
+
+### 第一阶段：本地编辑与实时预览
+
+- 左侧 Markdown 编辑、右侧思维导图实时预览
+- 支持导图缩放、拖动、折叠，以及节点新增、修改和删除
+- 导图内的操作会回写 Markdown
+- 每次启动加载不会被修改的操作指南示例，需要保留的内容可导出为 Markdown
+- 支持打开本地 `.md` 文件并下载当前文档
+- 支持浅色/深色界面和手机端编辑/预览切换
+- 桌面端支持拖动调整分栏、单栏收起和浏览器全屏
+- CodeMirror Markdown 高亮、行号、搜索与常见语法问题诊断
+- 编辑器字号及 Violet、GitHub、Solarized 高亮方案
+- 预览字号、可变字重与思源黑体、思源宋体、霞鹜文楷、Inter Variable、JetBrains Mono Variable 内置字体
+- 预览点阵背景可自由开启或关闭
+- 支持 Markdown、SVG、PNG、JPEG、HTML 导出及 1–4 倍位图渲染
+
+```bash
+pnpm install
+pnpm dev
+```
+
+默认开发地址为 `http://localhost:5173`。
+
+### 上游项目说明
 
 markmap-plus is an enhanced version of markmap with node creation, editing, and deletion capabilities.
 

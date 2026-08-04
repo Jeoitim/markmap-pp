@@ -135,10 +135,7 @@ export class Markmap {
         e.preventDefault();
         e.stopPropagation();
         this._actions.showAddSiblingInput(this._actions.selectedNode);
-      } else if (
-        (e.key === 'Delete' || e.key === 'Backspace') &&
-        this.options.deletable
-      ) {
+      } else if (e.key === 'Delete' && this.options.deletable) {
         e.preventDefault();
         e.stopPropagation();
         this._actions.deleteNode(this._actions.selectedNode);

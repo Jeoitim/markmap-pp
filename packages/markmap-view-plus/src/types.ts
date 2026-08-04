@@ -59,6 +59,7 @@ export interface IMarkmapOptions {
   clickBorder: boolean;
   onNodeEdit?: (node: INode, newContent: string) => void;
   onNodeAdd?: (parent: INode, child: IPureNode) => void;
+  onNodeDelete?: (parent: INode, node: INode) => void;
   inputPlaceholder: string;
 
   // Theme options

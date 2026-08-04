@@ -247,7 +247,7 @@ export class ActionManager {
       padding: 2px 6px;
       border: 2px solid #52c41a;
       border-radius: 14px;
-      background: #fff;
+      background: ${rootStyle.backgroundColor};
       box-sizing: border-box;
       outline: none;
       font-size: ${computedStyle.fontSize};
@@ -256,6 +256,7 @@ export class ActionManager {
       font-weight: ${computedStyle.fontWeight};
       letter-spacing: ${computedStyle.letterSpacing};
       color: ${computedStyle.color};
+      caret-color: ${computedStyle.color};
     `;
 
     const prevVisibility = contentNode.style.visibility;
@@ -268,6 +269,7 @@ export class ActionManager {
     setTimeout(() => {
       input.focus();
       if (opts.selectAll) input.select();
+      else input.setSelectionRange(input.value.length, input.value.length);
     }, 0);
 
     const escapeHtml = (text: string) =>
@@ -551,6 +553,8 @@ export class ActionManager {
     children.splice(index, 1);
     parent.children = children;
 
+    this.ctx.options.onNodeDelete?.(parent, node);
+
     this.selectedNode = null;
     this.hideAddUI();
     this._clearSelectionCss();
@@ -667,7 +671,7 @@ export class ActionManager {
     this._openEditOverlay(d, contentNode, {
       initialValue: contentNode.textContent || '',
       minWidth: 40,
-      selectAll: true,
+      selectAll: false,
       onCancel: () => {
         // 取消：恢复原始内容
         d.content = originalHtml;
