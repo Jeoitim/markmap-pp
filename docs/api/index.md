@@ -1,180 +1,97 @@
 ---
-title: API
+title: 导出、部署与开发
 outline: deep
 ---
 
-# API
+# 导出、部署与开发
 
-## view options
+## 导出格式
 
-The `Markmap.create` call accepts a set of options that control how users can
-interact with the mind map
-- `mode`: rendering mode, either `'display'` or `'editable'`.
-- `editable`: whether node text can be edited in-place.
-- `addable`: whether users can create new nodes from the UI.
-- `deletable`: whether nodes can be deleted.
-- `collapseOnHover`: whether child branches auto-collapse when the mouse
-  leaves a node.
-- `hoverBorder`: whether a border is shown when the mouse hovers a node.
-- `clickBorder`: whether a border is shown when a node is selected by click.
-- `inputPlaceholder`: placeholder text shown in the inline input for new nodes.
+| 格式 | 特点 | 推荐用途 |
+| --- | --- | --- |
+| Markdown | 保留源结构，可继续编辑 | 长期保存、Git 版本管理 |
+| SVG | 矢量内容，任意缩放仍清晰 | 打印、排版、设计软件 |
+| PNG | 无损位图 | 文档、演示文稿、社交平台 |
+| JPEG | 文件较小 | 快速分享和预览 |
+| HTML | 独立网页，保留矢量显示 | 离线查看、网页归档 |
 
-Example:
+PNG 和 JPEG 支持 1–4 倍渲染倍率。倍率越高，像素尺寸和文件体积越大。SVG 与 HTML 本身使用矢量内容，放大后仍保持清晰。
 
-```ts
-import { Markmap, Transformer } from 'markmap-plus';
+## GitHub Pages
 
-const transformer = new Transformer();
-const { root } = transformer.transform('# Editable mind map');
+正式部署结构为：
 
-const mm = Markmap.create(svgElement, {
-  mode: 'editable',
-  editable: true,
-  addable: true,
-  deletable: true,
-  collapseOnHover: true,
-  hoverBorder: true,
-  clickBorder: true,
-  inputPlaceholder: 'Enter text',
-});
-
-await mm.setData(root);
+```text
+https://jeoitim.github.io/markmap-pp/       # markmap++ 应用
+https://jeoitim.github.io/markmap-pp/doc/   # VitePress 文档
 ```
 
-## Transformer
+仓库内的 `.github/workflows/deploy-pages.yml` 会：
 
-`Transformer` is responsible for turning Markdown text into the data structure
-that Markmap uses to render mind maps.
+1. 安装 pnpm 10 和 Node.js 22。
+2. 检查并构建 markmap++ 应用，base 为 `/markmap-pp/`。
+3. 构建 VitePress 文档，base 为 `/markmap-pp/doc/`。
+4. 把文档产物复制到应用产物的 `doc/` 目录。
+5. 上传一个 Pages artifact 并发布。
 
-Basic usage:
+首次使用需在仓库 **Settings → Pages** 将 Source 设为 **GitHub Actions**。
 
-```ts
-import { Transformer } from 'markmap-plus';
+## Cloudflare Pages
 
-const transformer = new Transformer();
-const { root, features, frontmatter } = transformer.transform(markdown);
+Cloudflare Pages 使用域名根路径，配置如下：
+
+| 配置 | 值 |
+| --- | --- |
+| Root directory | `/` |
+| Build command | `pnpm --filter markmap-plus-plus-app build` |
+| Output directory | `examples/react-example/dist` |
+| `NODE_VERSION` | `22` |
+| `PNPM_VERSION` | `10` |
+
+如果也要在 Cloudflare 上提供文档，需要使用与 GitHub Pages 工作流相同的合并构建步骤，但将应用 base 和文档 base 分别设为 `/` 与 `/doc/`。
+
+## EdgeOne Pages
+
+| 配置 | 值 |
+| --- | --- |
+| Root directory | `./` |
+| Installation command | `pnpm install --frozen-lockfile` |
+| Build command | `pnpm --filter markmap-plus-plus-app build` |
+| Output directory | `examples/react-example/dist` |
+| Node.js | 22 |
+| pnpm | 9 |
+
+EdgeOne 当前托管构建使用 pnpm 9 读取本仓库 lockfile。不要把项目根目录改为 `examples/react-example`，否则无法解析 `packages/*` workspace 依赖。
+
+## 代码结构
+
+```text
+markmap-pp/
+├─ examples/react-example/       # markmap++ React 应用
+│  └─ src/components/
+│     ├─ markdown-editor.tsx     # CodeMirror 编辑器
+│     ├─ markdown-lint.ts        # Markdown 检查
+│     ├─ github-sync.ts          # GitHub API 与 IndexedDB
+│     └─ markmap-hooks.tsx       # 工作区与导图交互
+├─ packages/
+│  ├─ markmap-lib/               # Markdown 转换
+│  ├─ markmap-view-plus/         # 可编辑 SVG 导图
+│  └─ markmap-toolbar/           # 导图工具栏
+├─ docs/                         # markmap++ VitePress 文档
+└─ .github/workflows/            # 自动部署
 ```
 
-- `root` is the mind map tree (an `IPureNode`) that you pass to
-  `mm.setData(root)`.
-- `features` describes which plugins and features are used in the Markdown, and
-  can be used to load corresponding assets when needed.
-- `frontmatter` contains parsed front‑matter metadata (if present).
+## 常用命令
 
-In most application code you only need `root`:
-
-```ts
-import { Markmap, Transformer } from 'markmap-plus';
-
-const transformer = new Transformer();
-const { root } = transformer.transform('# My Mind Map');
-
-const mm = Markmap.create(svgElement, { mode: 'editable' });
-await mm.setData(root);
+```bash
+pnpm dev
+pnpm --filter markmap-plus-plus-app lint
+pnpm build:app
+pnpm docs:dev
+pnpm docs:build
+pnpm test
 ```
 
-## setData
+## 上游关系
 
-`setData` is an instance method on `Markmap`. It applies a new mind map tree
-to the current instance and triggers a re-render.
-
-Signature:
-
-```ts
-setData(data?: IPureNode | null, opts?: Partial<IMarkmapOptions>): Promise<void>;
-```
-
-- `data`: the `IPureNode` tree returned from `Transformer.transform`. When
-  omitted, the previous tree is kept.
-- `opts`: optional view options to update together with the data (same shape as
-  the options passed to `Markmap.create`).
-
-Typical usage:
-
-```ts
-import { Markmap, Transformer } from 'markmap-plus';
-
-const transformer = new Transformer();
-const mm = Markmap.create(svgElement, { mode: 'editable' });
-
-function update(markdown: string) {
-  const { root } = transformer.transform(markdown);
-  mm.setData(root);
-}
-```
-
-`setData` is incremental: it updates the internal tree and reuses existing
-nodes where possible, which works together with markmap-plus’s incremental
-rendering strategy to keep large diagrams responsive.
-
-## getData
-
-`getData` is an instance method on `Markmap`. It returns the current mind map tree.
-
-Type overloads:
-
-```ts
-getData(): INode | undefined;
-getData(pure: true): IPureNode | undefined;
-```
-
-- `mm.getData()` returns the internal runtime tree (`INode`) including layout `state` (positions, sizes, etc.).
-- `mm.getData(true)` returns a plain data tree (`IPureNode`) without layout `state`, suitable for serialization and storage.
-
-Common use cases:
-
-- Save the current mind map structure to a database using `mm.getData(true)`.
-- Inspect the full runtime state (for debugging or tooling) using `mm.getData()`.
-
-Example:
-
-```ts
-import { Markmap, Transformer } from 'markmap-plus';
-
-const transformer = new Transformer();
-const { root } = transformer.transform('# My Mind Map');
-
-const mm = Markmap.create(svgElement, { mode: 'editable' });
-await mm.setData(root);
-
-const runtimeTree = mm.getData();
-const pureTree = mm.getData(true);
-
-localStorage.setItem('mindmap', JSON.stringify(pureTree));
-console.log('runtime tree:', runtimeTree);
-console.log('pure tree:', pureTree);
-```
-
-## toMarkdown
-
-`toMarkdown` converts an `IPureNode` tree back into a Markdown string. It is the conceptual inverse of the `Transformer.transform` step.
-
-Signature:
-
-```ts
-function toMarkdown(root: IPureNode): string;
-```
-
-Typical round-trip usage:
-
-```ts
-import { Markmap, Transformer, toMarkdown } from 'markmap-plus';
-
-const transformer = new Transformer();
-const { root } = transformer.transform('# My Mind Map');
-
-const mm = Markmap.create(svgElement, { mode: 'editable' });
-await mm.setData(root);
-
-const pureNode = mm.getData(true);
-if (pureNode) {
-  const markdown = toMarkdown(pureNode);
-  console.log(markdown);
-}
-```
-
-The output Markdown is structured as:
-
-- Top-level and second-level nodes rendered as headings (`#`, `##`, `###`).
-- Deeper levels rendered as nested bullet lists.
-
+markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus)，后者在原始 [markmap](https://github.com/markmap/markmap) 上增加节点编辑、增删和 Markdown 回写。本项目主要扩展面向最终用户的工作台、同步、文件管理、导出和跨设备体验。

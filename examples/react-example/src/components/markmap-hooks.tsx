@@ -44,7 +44,7 @@ options:
 - 左侧编写 **Markdown**，右侧即时生成思维导图
 - 这既是一份功能演示，也是一份可直接修改的操作教程
 - 刷新页面会恢复本指南；重要内容请使用顶部 **导出** 保存
-- [Markmap 官网](https://markmap.js.org/) · [GitHub 项目](https://github.com/markmap-universe/markmap)
+- [markmap++ 文档站](https://jeoitim.github.io/markmap-pp/doc/) · GitHub 项目：[Jeoitim/markmap-pp](https://github.com/Jeoitim/markmap-pp)
 
 ## 🧭 节点与画布操作
 

@@ -47,6 +47,16 @@ jobs:
         env:
           VITE_BASE_PATH: "/${{ github.event.repository.name }}/"
 
+      - name: Build documentation
+        run: pnpm docs:build
+        env:
+          VITEPRESS_BASE_PATH: "/${{ github.event.repository.name }}/doc/"
+
+      - name: Add documentation to application artifact
+        run: |
+          mkdir -p examples/react-example/dist/doc
+          cp -R docs/.vitepress/dist/. examples/react-example/dist/doc/
+
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:

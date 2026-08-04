@@ -1,53 +1,52 @@
 ---
-title: Introduction
+title: 项目概览
 outline: deep
 ---
 
-# Introduction
+# 项目概览
 
-## What is markmap-plus
+markmap++ 是一个以 Markdown 为唯一内容来源的浏览器思维导图工作台。它基于 `Tem-man/markmap-plus` 的可编辑导图能力，补充了完整编辑器、文件管理、本地缓存、GitHub 手动同步、显示设置和高清导出。
 
-markmap-plus is an enhanced version of markmap for interactive mind maps.
+## 工作方式
 
-It keeps the familiar “Markdown → mind map” workflow, but adds richer editing
-features directly on the diagram. With markmap-plus you can:
-
-- create new nodes in the mind map
-- edit the text of existing nodes
-- delete nodes you no longer need
-- select nodes for keyboard-driven operations
-- export the current mind map back to Markdown text
-
-These capabilities make markmap-plus suitable not only for viewing mind maps,
-but also for building and maintaining them entirely in the browser.
-
-All these operations are applied incrementally to the existing SVG scene,
-without re-rendering the whole mind map from scratch, which brings a
-significant performance improvement for large diagrams.
-
-## Mode
-
-markmap-plus supports two rendering modes:
-
-- `display` mode — read-only view. Users can pan and zoom the mind map, but
-  cannot change its structure.
-- `editable` mode — fully interactive. Users can add, edit, delete and select
-  nodes directly on the diagram (as shown in the examples where
-  `mode: 'editable'` is passed to `Markmap.create`).
-
-Choose `display` when you only need to present information, and `editable`
-when you want an in-browser editor experience.
-
-Example:
-
-```ts
-import { Markmap } from 'markmap-plus';
-
-const mmDisplay = Markmap.create(svgElement, {
-  mode: 'display',
-});
-
-const mmEditable = Markmap.create(svgElement, {
-  mode: 'editable',
-});
+```text
+Markdown 文本
+    ├─ CodeMirror 编辑器：输入、高亮、检查、撤回
+    ├─ Markmap 视图：缩放、折叠、节点增删改
+    ├─ 浏览器缓存：设置、仓库绑定、本地草稿
+    ├─ GitHub 仓库：多端文件同步与提交历史
+    └─ 导出：MD / SVG / PNG / JPEG / HTML
 ```
+
+编辑器中的修改会实时转换为思维导图；在导图中编辑、增加或删除节点时，结构也会回写为 Markdown。这样既保留纯文本的可移植性，也获得可视化操作体验。
+
+## 数据保存位置
+
+| 数据 | 保存位置 | 是否随设备同步 |
+| --- | --- | --- |
+| 欢迎示例 | 应用内置 | 每次打开恢复 |
+| 显示与字体设置 | `localStorage` | 否 |
+| GitHub 仓库绑定 | `localStorage` | 否 |
+| 已拉取文件和草稿 | IndexedDB | 否 |
+| 确认同步的 Markdown | GitHub 仓库 | 是 |
+| 导出文件 | 设备下载目录 | 由用户管理 |
+
+::: tip 推荐方式
+临时整理可以直接编辑后导出 Markdown；需要长期保存、跨设备继续和查看版本历史时，使用 GitHub 仓库同步。
+:::
+
+## 为什么不是实时自动提交
+
+键入一个字符就创建一次 Git 提交会产生大量无意义历史，也容易在多个设备间制造冲突。markmap++ 采用“本地持续暂存，用户确认后同步”的方式：
+
+1. 打开仓库 Markdown 并缓存到当前设备。
+2. 编辑、重命名、移动、新建或删除文件。
+3. 文件树显示 `A`、`M`、`R`、`D` 状态。
+4. 点击“同步”，所有待处理操作合并为一个提交。
+
+## 项目边界
+
+- 应用是纯前端静态站点，不提供账户系统或服务端数据库。
+- GitHub 令牌由用户在浏览器中输入，不会进入部署产物。
+- Git 无法记录真正的空目录；不含文件的本地文件夹不会同步。
+- 当前同步后端为 GitHub，WebDAV 等方式不在第一阶段范围内。

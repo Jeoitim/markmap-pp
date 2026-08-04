@@ -1,252 +1,75 @@
 ---
-title: Example
+title: GitHub 仓库同步
 outline: deep
 ---
 
-# Example
+# GitHub 仓库同步
 
-## Live Demo
+GitHub 仓库可以同时承担 Markdown 文件存储、多设备同步和版本历史管理。markmap++ 只在用户点击“同步”后创建提交，不会随每次输入自动推送。
 
-Try the interactive demo below. You can edit the Markdown on the left, and the mind map on the right will update automatically. You can also edit nodes directly on the mind map.
+## 准备令牌
 
-<ClientOnly>
-  <MarkmapDemo />
-</ClientOnly>
+建议创建仅授权目标仓库的 fine-grained personal access token，并授予：
 
-## Vanilla JavaScript
+- Repository access：只选择存放 Markdown 的仓库。
+- Repository permissions → Contents：Read and write。
 
-The simplest way to use markmap-plus in a plain HTML page is to:
+不要把令牌写入 Markdown、仓库文件或部署平台环境变量。它只需填写在应用的仓库设置中。
 
-- Transform Markdown into a mind map tree using `Transformer`
-- Render the tree into an SVG using `Markmap`
+## 绑定步骤
 
-```html
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>markmap-plus basic example</title>
-  </head>
-  <body>
-    <button id="export-btn">Export to Markdown</button>
-    <svg id="mindmap" style="width: 100%; height: 800px"></svg>
-    <script type="module">
-      import { Markmap, Transformer, toMarkdown } from 'markmap-plus';
+1. 打开左侧“仓库”页签。
+2. 填写 `owner/repository` 或完整 GitHub 仓库地址。
+3. 填写目标分支，例如 `main`。
+4. 填写 GitHub 令牌并确认绑定。
+5. 点击文件树中的 Markdown 文件，将其下载到当前设备。
 
-      const initValue = `# Markmap Editor Demo
+底部 Git 图标和分支名可以再次打开仓库设置。
 
-## How to use
-- Edit node
-    - Double-click any node to edit
-    - Press Enter to save edits
-    - Press Esc to cancel edits
-    - Clicking elsewhere also saves
-- Add node
-    - Press Enter to add sibling node
-    - Press Tab to add child node
-    - Click + button to add arbitrary node
-- Delete node
-    - Press Delete to remove node
+## 缓存与状态
 
-## Supported Markdown Syntax
-### Heading Levels
-- Level 1 Heading
-- Level 2 Heading
-- Level 3 Heading
+| 标记 | 状态 |
+| --- | --- |
+| 灰点 | 文件存在于远程，但尚未拉取到当前设备 |
+| 绿点 | 本地缓存与远程一致 |
+| `A` | 新增文件 |
+| `M` | 修改文件 |
+| `R` | 重命名或移动文件 |
+| `D` | 删除文件 |
 
-### Text Formatting
-- **Bold text**
-- *Italic text*
-- ~~Strikethrough~~
-- \`Inline code\`
+标题栏只显示当前文件状态：绿色表示已同步，橙色表示已暂存但未推送，黄色表示同步中。
 
-## Interaction
-### Node Operations
-- Click to expand/collapse
-- Double-click to edit content
-- Drag to pan
-- Scroll to zoom
-`;
+## 文件管理
 
-      const transformer = new Transformer();
-      const { root } = transformer.transform(initValue);
+- 文件夹可折叠，灰色辅助线用于判断嵌套层级。
+- 文件和文件夹可以拖动到其他目录。
+- 右键可重命名、复制、剪切、新建、粘贴或删除。
+- 重命名在文件树中直接编辑，按 Enter 确认，按 Esc 取消。
+- 空文件夹只保存在本地，加入文件后才会体现在 Git 中。
 
-      const svg = document.getElementById('mindmap');
-      const mm = Markmap.create(svg, {
-        mode: 'editable',
-      });
+## 同步与自动提交
 
-      mm.setData(root).then(() => {
-        mm.fit();
-      });
+点击紫色同步按钮后，全部待处理文件合并到一次提交。提交说明会根据操作生成：
 
-      document.getElementById('export-btn').addEventListener('click', () => {
-        const pureNode = mm.getData(true);
-        if (pureNode) {
-          const exportedMarkdown = toMarkdown(pureNode);
-          console.log(exportedMarkdown);
-          // Create Blob object
-          const blob = new Blob([exportedMarkdown], { type: 'text/markdown' });
-          // Create download link
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'markmap.md';
-          // Trigger download
-          document.body.appendChild(a);
-          a.click();
-          // Cleanup
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }
-      });
-    </script>
-  </body>
-</html>
+```text
+update: add notes/new.md
+update: edit notes/topic.md
+update: rename old.md to archive/old.md
+update: delete draft.md
+update: change multiple markdown files
 ```
 
-## React
+同步前应用会检查远程分支是否仍是本地拉取时的版本。如果其他设备已经推送新提交，本次同步会停止，避免覆盖远程内容。
 
-Below is a minimal React component that renders an editable mind map and keeps it in sync with a textarea.
+## 刷新与放弃
 
-```tsx
-import React, { useEffect, useRef, useState } from 'react';
-import { Markmap, Transformer, toMarkdown } from 'markmap-plus';
+- “刷新”重新读取远程目录和最新提交，不会自动推送本地草稿。
+- 红色“放弃”会清除所有本地暂存操作，并让已缓存文件恢复到远程最新提交。
 
-const transformer = new Transformer();
+::: danger 放弃修改不可撤回
+执行前请确认本地草稿不再需要。已经推送到 GitHub 的提交不受影响，仍可通过 Git 历史恢复。
+:::
 
-const initialMarkdown = `# markmap-plus in React
+## 安全说明
 
-- Edit the text on the left
-- The mind map updates automatically
-`;
-
-export function MarkmapReactDemo() {
-  const [value, setValue] = useState(initialMarkdown);
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const mmRef = useRef<Markmap | null>(null);
-
-  useEffect(() => {
-    if (mmRef.current || !svgRef.current) return;
-    const mm = Markmap.create(svgRef.current, {
-      mode: 'editable',
-    });
-    mmRef.current = mm;
-  }, []);
-
-  useEffect(() => {
-    const mm = mmRef.current;
-    if (!mm) return;
-    const { root } = transformer.transform(value);
-    mm.setData(root).then(() => {
-      mm.fit();
-    });
-  }, [value]);
-
-  const handleExportMarkdown = () => {
-    const mm = mmRef.current;
-    if (!mm) return;
-    const pureNode = mm.getData(true);
-    if (!pureNode) return;
-    const markdown = toMarkdown(pureNode);
-    console.log('[markmap] exported markdown:', markdown);
-  };
-
-  return (
-    <div style={{ display: 'flex', gap: 16 }}>
-      <textarea
-        style={{ width: '40%', height: 500 }}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Type Markdown here..."
-      />
-      <div style={{ flex: 1 }}>
-        <button type="button" onClick={handleExportMarkdown}>
-          Export current mind map as Markdown
-        </button>
-        <svg
-          ref={svgRef}
-          style={{ width: '100%', height: 460, display: 'block', marginTop: 8 }}
-        />
-      </div>
-    </div>
-  );
-}
-```
-
-## Vue 3
-
-This example uses the `<script setup>` syntax in Vue 3 to render an editable mind map with markmap-plus.
-
-```vue
-<script setup lang="ts">
-import { Markmap, Transformer, toMarkdown } from 'markmap-plus';
-import { onMounted, ref, watch } from 'vue';
-
-const transformer = new Transformer();
-
-const initialMarkdown = `# markmap-plus in Vue 3
-
-- Double-click a node to edit it
-- Use Tab / Enter to add nodes
-`;
-
-const value = ref(initialMarkdown);
-const svgRef = ref<SVGSVGElement | null>(null);
-const mmRef = ref<Markmap | null>(null);
-
-onMounted(() => {
-  if (mmRef.value || !svgRef.value) return;
-  const mm = Markmap.create(svgRef.value, {
-    mode: 'editable',
-  });
-  mmRef.value = mm;
-
-  const { root } = transformer.transform(value.value);
-  mm.setData(root).then(() => {
-    mm.fit();
-  });
-});
-
-watch(
-  () => value.value,
-  (newVal) => {
-    const mm = mmRef.value;
-    if (!mm) return;
-    const { root } = transformer.transform(newVal);
-    mm.setData(root).then(() => {
-      mm.fit();
-    });
-  },
-);
-
-function exportMarkdown() {
-  const mm = mmRef.value;
-  if (!mm) return;
-  const pureNode = mm.getData(true);
-  if (!pureNode) return;
-  const markdown = toMarkdown(pureNode);
-  console.log('[markmap] exported markdown:', markdown);
-}
-</script>
-
-<template>
-  <div style="display: flex; gap: 16px">
-    <textarea
-      style="width: 40%; height: 500px"
-      :value="value"
-      @input="(e: Event) => (value = (e.target as HTMLTextAreaElement).value)"
-      placeholder="Type Markdown here..."
-    />
-    <div style="flex: 1">
-      <button type="button" @click="exportMarkdown">
-        Export current mind map as Markdown
-      </button>
-      <svg
-        ref="svgRef"
-        style="width: 100%; height: 460px; display: block; margin-top: 8px"
-      />
-    </div>
-  </div>
-</template>
-```
+仓库绑定信息保存在当前浏览器的 `localStorage`，文件内容保存在 IndexedDB。令牌不会进入 GitHub Pages 构建产物，但能访问目标仓库，因此不建议在共享设备上长期绑定。

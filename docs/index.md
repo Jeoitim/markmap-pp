@@ -1,30 +1,36 @@
 ---
-# https://vitepress.dev/reference/default-theme-home-page
 layout: home
 
 hero:
-  name: "markmap-plus"
-  text: "Interactive Mind Maps for Your Markdown"
-  tagline: Create, edit, and visualize mind maps with rich interaction
+  name: "markmap++"
+  text: "Markdown 思维导图工作台"
+  tagline: 实时编辑、自由预览、高清导出，并通过 GitHub 仓库实现多端同步与版本管理
   actions:
     - theme: brand
-      text: Get Started
-      link: /introduction/
+      text: 打开 markmap++
+      link: https://jeoitim.github.io/markmap-pp/
     - theme: alt
-      text: View API
-      link: /api/
+      text: 快速开始
+      link: /installation/
+    - theme: alt
+      text: GitHub 同步
+      link: /example/
 
 features:
-  - title: Interactive Editing
-    details: Create, edit, and delete nodes directly on the mind map with an intuitive interface.
-  - title: Markdown Driven
-    details: Seamlessly convert Markdown content into beautiful mind maps and back again.
-  - title: High Performance
-    details: Incremental rendering ensures smooth performance even with large, complex diagrams.
-  - title: Framework Agnostic
-    details: Works with Vanilla JS, React, Vue, or any other framework.
-  - title: Customizable
-    details: Rich API and options to tailor the appearance and behavior to your needs.
-  - title: Keyboard Shortcuts
-    details: Efficiently manage your mind map structure using keyboard navigation and shortcuts.
+  - title: Markdown 是唯一源文件
+    details: 左侧编辑 Markdown，右侧实时生成可缩放、可折叠、可直接编辑节点的 SVG 思维导图。
+  - title: 浏览器本地工作区
+    details: 支持语法高亮、问题诊断、撤回、主题与字体设置，草稿在离开页面后仍可保留。
+  - title: GitHub 多端同步
+    details: 以 IDE 风格文件树管理仓库 Markdown；修改先在本地暂存，确认后一次提交并推送。
+  - title: 多格式高清导出
+    details: 导出 Markdown、SVG、PNG、JPEG 和 HTML，位图支持 1–4 倍渲染倍率。
+  - title: 桌面与移动设备
+    details: 桌面端可调节和收起编辑区，移动端可在编辑与预览间切换，并支持浏览器全屏。
+  - title: 静态部署
+    details: 无需数据库和自建后端，可部署到 GitHub Pages、Cloudflare Pages 或 EdgeOne Pages。
 ---
+
+## 从这里开始
+
+markmap++ 完全运行在浏览器中。第一次使用可以直接打开应用并修改欢迎示例；示例会在下次打开时恢复，因此需要保留的内容应导出为 Markdown，或者绑定 GitHub 仓库进行持久保存。

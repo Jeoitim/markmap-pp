@@ -1,30 +1,66 @@
 ---
-title: Mind Map Usage
+title: 编辑与思维导图
 outline: deep
 ---
 
-# Mind Map Usage
+# 编辑与思维导图
 
-## Editing nodes
+## 节点操作
 
-- Double-click any node to edit.
-- Press `Enter` to save edits.
-- Press `Esc` to cancel edits.
-- Clicking elsewhere also saves.
+单击和双击具有不同含义：单击只选中节点，双击才进入文字编辑。
 
-## Adding nodes
+| 操作 | 结果 |
+| --- | --- |
+| 单击节点 | 选中节点，不编辑文字 |
+| 双击节点 | 编辑节点文字 |
+| 编辑时按 Enter | 保存文字 |
+| 选中后按 Enter | 新增同级节点 |
+| 选中后按 Tab | 新增子节点 |
+| Delete / Backspace | 删除选中的整个节点 |
+| 点击圆点 | 折叠或展开子分支 |
 
-- Press `Enter` to add a sibling node.
-- Press `Tab` to add a child node.
-- Click the `+` button to add an arbitrary node.
+如果误删或误改，点击顶部“撤回”恢复最近一次修改。
 
-## Deleting nodes
+## 画布操作
 
-- Press `Delete` / `Backspace` to delete the selected node.
+- 在空白区域拖动可平移画布。
+- 使用鼠标滚轮或触控板缩放。
+- 点击预览右上角的适应图标，让导图重新居中并适合当前区域。
+- 点击顶部全屏图标进入浏览器全屏。
+- 点阵背景可在预览设置中关闭。
 
-## Mouse interactions
+## 编辑器设置
 
-- Click a node to select it (selection enables keyboard actions).
-- Click the small circle next to a node to expand/collapse its children.
-- Click and drag on empty space to pan the viewport.
-- Use the mouse wheel (or trackpad scroll) to zoom in and out.
+编辑器右上角的设置入口提供：
+
+- 12–22px 字号调节。
+- Violet、GitHub 和 Solarized 高亮方案。
+- 跟随页面的浅色或深色背景。
+
+编辑器底部的检查状态在没有问题时显示灰色勾；发现问题时显示黄色警告和数量。点击后可以查看具体行号与说明。
+
+当前检查覆盖常见结构问题，例如：
+
+- 标题缺少空格。
+- 标题层级跳跃。
+- 列表缩进使用 Tab。
+- 围栏代码块没有闭合。
+
+## 预览设置
+
+预览右上角设置入口支持：
+
+- 调整节点字号。
+- 选择思源黑体、思源宋体、霞鹜文楷、Inter Variable 或 JetBrains Mono Variable。
+- 调整支持字体的可变字重。
+- 显示或隐藏点阵背景。
+
+## 桌面端布局
+
+拖动中间分割线可改变编辑器与预览比例。分割线上的独立长条按钮用于收起或展开编辑区；预览始终保留。
+
+仓库文件树的文字和图标会跟随编辑器字号，并通过灰色缩进线显示目录层级。
+
+## 移动端
+
+窄屏下使用顶部页签在 Markdown 和思维导图之间切换。建议横屏查看较大的导图；编辑后切到预览即可检查结构。

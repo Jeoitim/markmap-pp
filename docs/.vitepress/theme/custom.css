@@ -1,4 +1,25 @@
 :root {
-  --vp-font-family-base: system-ui, -apple-system, sans-serif;
-  --vp-font-family-mono: monospace;
+  --vp-c-brand-1: #7056e8;
+  --vp-c-brand-2: #8069ec;
+  --vp-c-brand-3: #5f45d4;
+  --vp-c-brand-soft: rgba(112, 86, 232, .14);
+  --vp-font-family-base: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.VPHomeHero .name {
+  letter-spacing: -.04em;
+}
+
+.VPHomeHero .text {
+  max-width: 760px;
+}
+
+.vp-doc table {
+  display: table;
+  width: 100%;
+}
+
+.vp-doc .custom-block.tip {
+  border-color: var(--vp-c-brand-1);
 }
