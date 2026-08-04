@@ -329,15 +329,28 @@ export default function MarkmapHooks() {
   const [repositoryClipboard, setRepositoryClipboard] = useState<RepositoryClipboard | null>(null)
   const [repositoryMenu, setRepositoryMenu] = useState<{ x: number; y: number; target: RepositoryTarget } | null>(null)
   const [draggedRepositoryTarget, setDraggedRepositoryTarget] = useState<RepositoryTarget | null>(null)
+  const [repositoryDropFolder, setRepositoryDropFolder] = useState<string | null>(null)
+  const [repositoryTouchDrag, setRepositoryTouchDrag] = useState<{ target: RepositoryTarget; dropFolder: string | null; dragging: boolean } | null>(null)
   const [renamingRepositoryTarget, setRenamingRepositoryTarget] = useState<RepositoryTarget | null>(null)
   const [repositoryRenameValue, setRepositoryRenameValue] = useState('')
   const initialMarkdownRef = useRef(markdown)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const mmRef = useRef<Markmap | null>(null)
   const imageRelayoutTimerRef = useRef<number | null>(null)
-  const repositoryLongPressTimerRef = useRef<number | null>(null)
-  const repositoryLongPressOriginRef = useRef({ x: 0, y: 0 })
   const suppressRepositoryClickRef = useRef(false)
+  const repositoryTouchGestureRef = useRef<{
+    target: RepositoryTarget
+    element: HTMLElement
+    originalDraggable: boolean
+    startX: number
+    startY: number
+    lastX: number
+    lastY: number
+    longPressed: boolean
+    dragging: boolean
+    dropFolder: string | null
+    timer: number
+  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const actionsRef = useRef<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
@@ -345,6 +358,13 @@ export default function MarkmapHooks() {
   const markdownRef = useRef(markdown)
   const historyRef = useRef<string[]>([])
   const lastEditRef = useRef({ source: '', time: 0 })
+
+  useEffect(() => () => {
+    const gesture = repositoryTouchGestureRef.current
+    if (!gesture) return
+    window.clearTimeout(gesture.timer)
+    gesture.element.draggable = gesture.originalDraggable
+  }, [])
 
   const diagnostics = useMemo(() => inspectMarkdown(markdown), [markdown])
   const updateSettings = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setSettings((current) => ({ ...current, [key]: value }))
@@ -585,13 +605,31 @@ export default function MarkmapHooks() {
     if (repositoryClipboard.mode === 'cut') setRepositoryClipboard(null)
   }
 
+  const normalizeRepositoryDropFolder = (target: RepositoryTarget, folder: string) => {
+    if (target.type === 'root' || folder === parentPath(target.path)) return null
+    if (target.type === 'folder' && (folder === target.path || folder.startsWith(`${target.path}/`))) return null
+    return folder
+  }
+
+  const repositoryDropFolderAt = (x: number, y: number) => {
+    const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-repository-type]')
+    if (!row) return null
+    const path = row.dataset.repositoryPath || ''
+    return row.dataset.repositoryType === 'file' ? parentPath(path) : path
+  }
+
+  const moveRepositoryTargetToFolder = async (target: RepositoryTarget, folder: string) => {
+    const destination = normalizeRepositoryDropFolder(target, folder)
+    if (destination === null) return
+    await relocateRepositoryTarget(target, joinPath(destination, target.name), false)
+  }
+
   const dropRepositoryTarget = async (folder: string) => {
     const target = draggedRepositoryTarget
     setDraggedRepositoryTarget(null)
-    if (!target || target.type === 'root') return
-    const nextRoot = joinPath(folder, target.name)
-    if (nextRoot === target.path) return
-    await relocateRepositoryTarget(target, nextRoot, false)
+    setRepositoryDropFolder(null)
+    if (!target) return
+    await moveRepositoryTargetToFolder(target, folder)
   }
 
   const showRepositoryMenu = (x: number, y: number, target: RepositoryTarget) => {
@@ -600,31 +638,80 @@ export default function MarkmapHooks() {
 
   const openRepositoryMenu = (event: React.MouseEvent, target: RepositoryTarget) => {
     event.preventDefault(); event.stopPropagation()
+    if (repositoryTouchGestureRef.current) return
     showRepositoryMenu(event.clientX, event.clientY, target)
   }
 
-  const cancelRepositoryLongPress = () => {
-    if (repositoryLongPressTimerRef.current !== null) window.clearTimeout(repositoryLongPressTimerRef.current)
-    repositoryLongPressTimerRef.current = null
+  const cancelRepositoryTouchGesture = () => {
+    const gesture = repositoryTouchGestureRef.current
+    if (!gesture) return
+    window.clearTimeout(gesture.timer)
+    gesture.element.draggable = gesture.originalDraggable
+    repositoryTouchGestureRef.current = null
+    setRepositoryTouchDrag(null)
   }
 
-  const startRepositoryLongPress = (event: React.PointerEvent, target: RepositoryTarget) => {
-    if (event.pointerType !== 'touch' || (event.target as HTMLElement).closest('input')) return
+  const startRepositoryTouch = (event: React.TouchEvent<HTMLElement>, target: RepositoryTarget) => {
+    if (event.touches.length !== 1 || (event.target as HTMLElement).closest('input')) return
     event.stopPropagation()
-    cancelRepositoryLongPress()
+    cancelRepositoryTouchGesture()
     suppressRepositoryClickRef.current = false
-    repositoryLongPressOriginRef.current = { x: event.clientX, y: event.clientY }
-    repositoryLongPressTimerRef.current = window.setTimeout(() => {
-      repositoryLongPressTimerRef.current = null
-      suppressRepositoryClickRef.current = target.type !== 'root'
-      showRepositoryMenu(event.clientX, event.clientY, target)
-    }, 520)
+    const touch = event.touches[0]
+    const element = event.currentTarget
+    const gesture = {
+      target,
+      element,
+      originalDraggable: element.draggable,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lastX: touch.clientX,
+      lastY: touch.clientY,
+      longPressed: false,
+      dragging: false,
+      dropFolder: null as string | null,
+      timer: 0,
+    }
+    element.draggable = false
+    gesture.timer = window.setTimeout(() => {
+      if (repositoryTouchGestureRef.current !== gesture) return
+      gesture.longPressed = true
+      setRepositoryTouchDrag({ target, dropFolder: null, dragging: false })
+    }, 450)
+    repositoryTouchGestureRef.current = gesture
   }
 
-  const moveRepositoryLongPress = (event: React.PointerEvent) => {
-    if (event.pointerType !== 'touch' || repositoryLongPressTimerRef.current === null) return
-    const { x, y } = repositoryLongPressOriginRef.current
-    if (Math.hypot(event.clientX - x, event.clientY - y) > 10) cancelRepositoryLongPress()
+  const moveRepositoryTouch = (event: React.TouchEvent<HTMLElement>) => {
+    const gesture = repositoryTouchGestureRef.current
+    if (!gesture || event.touches.length !== 1) return
+    const touch = event.touches[0]
+    gesture.lastX = touch.clientX
+    gesture.lastY = touch.clientY
+    const distance = Math.hypot(touch.clientX - gesture.startX, touch.clientY - gesture.startY)
+    if (!gesture.longPressed) {
+      if (distance > 10) cancelRepositoryTouchGesture()
+      return
+    }
+    event.preventDefault()
+    if (distance > 12) gesture.dragging = true
+    if (!gesture.dragging) return
+    const hoveredFolder = repositoryDropFolderAt(touch.clientX, touch.clientY)
+    gesture.dropFolder = hoveredFolder === null ? null : normalizeRepositoryDropFolder(gesture.target, hoveredFolder)
+    setRepositoryTouchDrag({ target: gesture.target, dropFolder: gesture.dropFolder, dragging: true })
+  }
+
+  const endRepositoryTouch = (event: React.TouchEvent<HTMLElement>) => {
+    const gesture = repositoryTouchGestureRef.current
+    if (!gesture) return
+    window.clearTimeout(gesture.timer)
+    gesture.element.draggable = gesture.originalDraggable
+    repositoryTouchGestureRef.current = null
+    setRepositoryTouchDrag(null)
+    if (!gesture.longPressed) return
+    event.preventDefault(); event.stopPropagation()
+    suppressRepositoryClickRef.current = true
+    window.setTimeout(() => { suppressRepositoryClickRef.current = false }, 400)
+    if (gesture.dragging && gesture.dropFolder !== null) void moveRepositoryTargetToFolder(gesture.target, gesture.dropFolder)
+    else if (!gesture.dragging) showRepositoryMenu(gesture.lastX, gesture.lastY, gesture.target)
   }
 
   const consumeRepositoryLongPressClick = () => {
@@ -1048,11 +1135,15 @@ export default function MarkmapHooks() {
                 <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{githubConfig.branch}</small></div><button className="discard-button" title="放弃所有本地修改" onClick={() => void discardRepositoryChanges()} disabled={githubBusy || !hasRepositoryDrafts}><Icon name="undo" /><span>放弃</span></button><button className="repository-icon-button" title="刷新仓库" aria-label="刷新仓库" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" /></i></button><button className="repository-icon-button sync-button" title={changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || !changedFiles.length}><i><Icon name="sync" /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}
                 {githubNotice && <div className="repository-notice"><Icon name="check" />{githubNotice}</div>}
-                <div className="repository-tree" role="tree" aria-label="GitHub Markdown 文件树" onContextMenu={(event) => openRepositoryMenu(event, { type: 'root', path: '', name: '仓库根目录' })} onPointerDown={(event) => startRepositoryLongPress(event, { type: 'root', path: '', name: '仓库根目录' })} onPointerMove={moveRepositoryLongPress} onPointerUp={cancelRepositoryLongPress} onPointerCancel={cancelRepositoryLongPress} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); void dropRepositoryTarget('') }}>
+                <div className={`repository-tree ${(repositoryTouchDrag ? repositoryTouchDrag.dropFolder : repositoryDropFolder) === '' ? 'drop-root' : ''} ${repositoryTouchDrag?.dragging ? 'touch-dragging' : ''}`} role="tree" aria-label="GitHub Markdown 文件树" data-repository-type="root" data-repository-path="" onContextMenu={(event) => openRepositoryMenu(event, { type: 'root', path: '', name: '仓库根目录' })} onTouchStart={(event) => startRepositoryTouch(event, { type: 'root', path: '', name: '仓库根目录' })} onTouchMove={moveRepositoryTouch} onTouchEnd={endRepositoryTouch} onTouchCancel={cancelRepositoryTouchGesture} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; const target = draggedRepositoryTarget; setRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, '') : null) }} onDrop={(event) => { event.preventDefault(); void dropRepositoryTarget('') }}>
                   {repositoryRows.length ? repositoryRows.map((row) => {
                     const isRenaming = renamingRepositoryTarget?.type === row.type && renamingRepositoryTarget.path === row.path
-                    if (row.type === 'folder') return <div className="tree-folder" role="treeitem" aria-expanded={!collapsedFolders.has(row.path)} draggable={!isRenaming} key={`folder:${row.path}`} style={{ paddingLeft: 8 + row.depth * 16 }} onPointerDown={(event) => startRepositoryLongPress(event, row)} onPointerMove={moveRepositoryLongPress} onPointerUp={cancelRepositoryLongPress} onPointerCancel={cancelRepositoryLongPress} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(row.path) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-inline-edit"><Icon name="folder" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button onClick={() => { if (consumeRepositoryLongPressClick()) return; setCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next }) }}><Icon name={collapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button>}</div>
-                    return <div className={`tree-file ${activeRepoPath === row.path ? 'active' : ''} ${row.cached?.status === 'deleted' ? 'deleted' : ''}`} role="treeitem" draggable={!isRenaming && row.cached?.status !== 'deleted'} key={`file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }} onPointerDown={(event) => startRepositoryLongPress(event, row)} onPointerMove={moveRepositoryLongPress} onPointerUp={cancelRepositoryLongPress} onPointerCancel={cancelRepositoryLongPress} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-open tree-inline-edit"><Icon name="map" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button className="tree-open" disabled={row.cached?.status === 'deleted'} onClick={() => { if (!consumeRepositoryLongPressClick()) openRepositoryRow(row) }}><Icon name="map" /><span>{row.name}</span></button>}{row.cached ? row.cached.status !== 'clean' ? <b>{row.cached.status === 'renamed' ? 'R' : row.cached.status === 'added' ? 'A' : row.cached.status === 'deleted' ? 'D' : 'M'}</b> : <i className="cached" title="已拉取并同步" /> : <i className="remote" title="尚未拉取" />}</div>
+                    const activeDropFolder = repositoryTouchDrag ? repositoryTouchDrag.dropFolder : repositoryDropFolder
+                    const isDropZone = activeDropFolder !== null && activeDropFolder !== '' && (row.path === activeDropFolder || row.path.startsWith(`${activeDropFolder}/`))
+                    const isTouchSource = repositoryTouchDrag?.target.path === row.path
+                    if (row.type === 'folder') return <div className={`tree-folder ${isDropZone ? 'drop-zone' : ''} ${isTouchSource ? 'touch-source' : ''}`} role="treeitem" aria-expanded={!collapsedFolders.has(row.path)} data-repository-type="folder" data-repository-path={row.path} draggable={!isRenaming} key={`folder:${row.path}`} style={{ paddingLeft: 8 + row.depth * 16 }} onTouchStart={(event) => startRepositoryTouch(event, row)} onTouchMove={moveRepositoryTouch} onTouchEnd={endRepositoryTouch} onTouchCancel={cancelRepositoryTouchGesture} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row); setRepositoryDropFolder(null) }} onDragEnd={() => { setDraggedRepositoryTarget(null); setRepositoryDropFolder(null) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; const target = draggedRepositoryTarget; setRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, row.path) : null) }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(row.path) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-inline-edit"><Icon name="folder" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button onClick={() => { if (consumeRepositoryLongPressClick()) return; setCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next }) }}><Icon name={collapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button>}</div>
+                    const destination = parentPath(row.path)
+                    return <div className={`tree-file ${activeRepoPath === row.path ? 'active' : ''} ${row.cached?.status === 'deleted' ? 'deleted' : ''} ${isDropZone ? 'drop-zone' : ''} ${isTouchSource ? 'touch-source' : ''}`} role="treeitem" data-repository-type="file" data-repository-path={row.path} draggable={!isRenaming && row.cached?.status !== 'deleted'} key={`file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }} onTouchStart={(event) => startRepositoryTouch(event, row)} onTouchMove={moveRepositoryTouch} onTouchEnd={endRepositoryTouch} onTouchCancel={cancelRepositoryTouchGesture} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row); setRepositoryDropFolder(null) }} onDragEnd={() => { setDraggedRepositoryTarget(null); setRepositoryDropFolder(null) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; const target = draggedRepositoryTarget; setRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, destination) : null) }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(destination) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-open tree-inline-edit"><Icon name="map" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button className="tree-open" disabled={row.cached?.status === 'deleted'} onClick={() => { if (!consumeRepositoryLongPressClick()) openRepositoryRow(row) }}><Icon name="map" /><span>{row.name}</span></button>}{row.cached ? row.cached.status !== 'clean' ? <b>{row.cached.status === 'renamed' ? 'R' : row.cached.status === 'added' ? 'A' : row.cached.status === 'deleted' ? 'D' : 'M'}</b> : <i className="cached" title="已拉取并同步" /> : <i className="remote" title="尚未拉取" />}</div>
                   }) : <div className="github-empty">{githubBusy ? '正在读取仓库…' : '仓库中没有 Markdown 文件'}</div>}
                 </div>
                 <footer className="repository-status"><span className={changedFiles.length ? 'dirty' : 'clean'} />{changedFiles.length ? `${changedFiles.length} 个文件已暂存但未推送` : '所有缓存文件均已同步'}<button className="repository-branch-button" title="仓库设置" onClick={() => setActivePanel('github')}><Icon name="github" /><span>{githubConfig.branch}</span></button></footer>
@@ -1062,6 +1153,7 @@ export default function MarkmapHooks() {
                   {(repositoryMenu.target.type === 'folder' || repositoryMenu.target.type === 'root') && <><hr/><button disabled={!repositoryClipboard} onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void pasteRepositoryClipboard(folder) }}>粘贴{repositoryClipboard ? `“${repositoryClipboard.target.name}”` : ''}</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void createRepositoryFile(folder) }}>新建 Markdown</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); createRepositoryFolder(folder) }}>新建文件夹</button></>}
                   {repositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); void deleteRepositoryTarget(target) }}>删除</button></>}
                 </div>}
+                {repositoryTouchDrag && <div className="repository-touch-drag-indicator"><Icon name={repositoryTouchDrag.dragging ? 'folder' : 'more'} /><span>{repositoryTouchDrag.dragging ? repositoryTouchDrag.dropFolder !== null ? `移动到 ${repositoryTouchDrag.dropFolder || '仓库根目录'}` : '这里不能放置' : '松开打开菜单，移动手指可拖拽'}</span></div>}
               </>}
             </div>}
           </>}

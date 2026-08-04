@@ -152,7 +152,7 @@ svg { flex: 0 0 auto; }
 .github-notice svg { width: 16px; }
 .github-unbind { height: 38px; border: 1px solid #d1545440; border-radius: 8px; color: #d15454; background: transparent; cursor: pointer; }
 
-.repository-workspace { min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--editor-bg); }
+.repository-workspace { position: relative; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--editor-bg); }
 .repository-toolbar { height: 48px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 13px; border-bottom: 1px solid var(--border); background: var(--panel-soft); }
 .repository-toolbar > div { min-width: 0; display: grid; gap: 1px; margin-right: auto; }
 .repository-toolbar strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; }
@@ -170,8 +170,12 @@ svg { flex: 0 0 auto; }
 .repository-notice { display: flex; align-items: center; gap: 6px; padding: 8px 12px; color: #39865c; background: #39865c12; font-size: 10px; }
 .repository-notice svg { width: 14px; }
 .repository-tree { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 6px 0; font-size: inherit; }
+.repository-tree.drop-root { background: color-mix(in srgb,var(--accent) 7%,var(--editor-bg)); box-shadow: inset 0 0 0 2px color-mix(in srgb,var(--accent) 68%,transparent); }
 .github-empty { padding: 24px; color: var(--muted); font-size: 11px; text-align: center; }
-.tree-folder, .tree-file { position: relative; min-height: 30px; padding-right: 7px; touch-action: pan-y; -webkit-touch-callout: none; }
+.tree-folder, .tree-file { position: relative; min-height: 30px; padding-right: 7px; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.tree-folder.drop-zone, .tree-file.drop-zone { background: color-mix(in srgb,var(--accent) 13%,var(--editor-bg)); }
+.tree-folder.drop-zone:first-of-type, .tree-file.drop-zone:first-of-type { box-shadow: inset 0 2px color-mix(in srgb,var(--accent) 58%,transparent); }
+.tree-folder.touch-source, .tree-file.touch-source { opacity: .52; }
 .tree-indent-guides { position: absolute; inset: 0 auto 0 7px; pointer-events: none; background: repeating-linear-gradient(to right,transparent 0 15px,color-mix(in srgb,var(--muted) 22%,transparent) 15px 16px); }
 .tree-folder:hover > .tree-indent-guides, .tree-file:hover > .tree-indent-guides, .tree-file.active > .tree-indent-guides { background: repeating-linear-gradient(to right,transparent 0 15px,color-mix(in srgb,var(--accent) 42%,transparent) 15px 16px); }
 .tree-folder { color: var(--muted); font-size: inherit; font-weight: 600; }
@@ -209,6 +213,8 @@ svg { flex: 0 0 auto; }
 .repository-context-menu button:disabled { opacity: .4; cursor: default; }
 .repository-context-menu button.danger { color: #d15454; }
 .repository-context-menu hr { width: 100%; margin: 5px 0; border: 0; border-top: 1px solid var(--border); }
+.repository-touch-drag-indicator { position: absolute; z-index: 155; left: 12px; right: 12px; bottom: 42px; min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 7px 12px; border: 1px solid color-mix(in srgb,var(--accent) 48%,var(--border)); border-radius: 9px; color: var(--text); background: color-mix(in srgb,var(--panel) 93%,transparent); font-size: max(12px,.86em); box-shadow: 0 10px 30px #090b1228; pointer-events: none; backdrop-filter: blur(10px); }
+.repository-touch-drag-indicator svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--accent); }
 .repository-unbound { display: grid; place-items: center; align-content: center; gap: 9px; padding: 30px; text-align: center; color: var(--muted); }
 .repository-unbound > svg { width: 34px; color: var(--accent); }
 .repository-unbound strong { color: var(--text); font-size: 13px; }
