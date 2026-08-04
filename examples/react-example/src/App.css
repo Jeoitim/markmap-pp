@@ -171,7 +171,7 @@ svg { flex: 0 0 auto; }
 .repository-notice svg { width: 14px; }
 .repository-tree { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 6px 0; font-size: inherit; }
 .github-empty { padding: 24px; color: var(--muted); font-size: 11px; text-align: center; }
-.tree-folder, .tree-file { position: relative; min-height: 30px; padding-right: 7px; }
+.tree-folder, .tree-file { position: relative; min-height: 30px; padding-right: 7px; touch-action: pan-y; -webkit-touch-callout: none; }
 .tree-indent-guides { position: absolute; inset: 0 auto 0 7px; pointer-events: none; background: repeating-linear-gradient(to right,transparent 0 15px,color-mix(in srgb,var(--muted) 22%,transparent) 15px 16px); }
 .tree-folder:hover > .tree-indent-guides, .tree-file:hover > .tree-indent-guides, .tree-file.active > .tree-indent-guides { background: repeating-linear-gradient(to right,transparent 0 15px,color-mix(in srgb,var(--accent) 42%,transparent) 15px 16px); }
 .tree-folder { color: var(--muted); font-size: inherit; font-weight: 600; }

@@ -335,6 +335,9 @@ export default function MarkmapHooks() {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const mmRef = useRef<Markmap | null>(null)
   const imageRelayoutTimerRef = useRef<number | null>(null)
+  const repositoryLongPressTimerRef = useRef<number | null>(null)
+  const repositoryLongPressOriginRef = useRef({ x: 0, y: 0 })
+  const suppressRepositoryClickRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const actionsRef = useRef<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
@@ -591,9 +594,43 @@ export default function MarkmapHooks() {
     await relocateRepositoryTarget(target, nextRoot, false)
   }
 
+  const showRepositoryMenu = (x: number, y: number, target: RepositoryTarget) => {
+    setRepositoryMenu({ x: Math.max(8, Math.min(x, window.innerWidth - 190)), y: Math.max(8, Math.min(y, window.innerHeight - 290)), target })
+  }
+
   const openRepositoryMenu = (event: React.MouseEvent, target: RepositoryTarget) => {
     event.preventDefault(); event.stopPropagation()
-    setRepositoryMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 290), target })
+    showRepositoryMenu(event.clientX, event.clientY, target)
+  }
+
+  const cancelRepositoryLongPress = () => {
+    if (repositoryLongPressTimerRef.current !== null) window.clearTimeout(repositoryLongPressTimerRef.current)
+    repositoryLongPressTimerRef.current = null
+  }
+
+  const startRepositoryLongPress = (event: React.PointerEvent, target: RepositoryTarget) => {
+    if (event.pointerType !== 'touch' || (event.target as HTMLElement).closest('input')) return
+    event.stopPropagation()
+    cancelRepositoryLongPress()
+    suppressRepositoryClickRef.current = false
+    repositoryLongPressOriginRef.current = { x: event.clientX, y: event.clientY }
+    repositoryLongPressTimerRef.current = window.setTimeout(() => {
+      repositoryLongPressTimerRef.current = null
+      suppressRepositoryClickRef.current = target.type !== 'root'
+      showRepositoryMenu(event.clientX, event.clientY, target)
+    }, 520)
+  }
+
+  const moveRepositoryLongPress = (event: React.PointerEvent) => {
+    if (event.pointerType !== 'touch' || repositoryLongPressTimerRef.current === null) return
+    const { x, y } = repositoryLongPressOriginRef.current
+    if (Math.hypot(event.clientX - x, event.clientY - y) > 10) cancelRepositoryLongPress()
+  }
+
+  const consumeRepositoryLongPressClick = () => {
+    if (!suppressRepositoryClickRef.current) return false
+    suppressRepositoryClickRef.current = false
+    return true
   }
 
   const pushRepositoryChanges = async () => {
@@ -676,7 +713,10 @@ export default function MarkmapHooks() {
     })
     mmRef.current = mm
     const { root } = transformer.transform(initialMarkdownRef.current)
-    void mm.setData(root).then(() => mm.fit())
+    void mm.setData(root).then(() => {
+      const { width, height } = svgRef.current?.getBoundingClientRect() || { width: 0, height: 0 }
+      if (width > 0 && height > 0) return mm.fit()
+    })
     return () => {
       if (imageRelayoutTimerRef.current !== null) window.clearTimeout(imageRelayoutTimerRef.current)
       mm.destroy(); mmRef.current = null
@@ -803,6 +843,21 @@ export default function MarkmapHooks() {
     document.addEventListener('fullscreenchange', handleFullscreen)
     return () => document.removeEventListener('fullscreenchange', handleFullscreen)
   }, [])
+
+  useEffect(() => {
+    if (mobilePane !== 'preview') return
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const mm = mmRef.current
+        if (mm) void mm.setData().then(() => mm.fit())
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      if (secondFrame) window.cancelAnimationFrame(secondFrame)
+    }
+  }, [mobilePane])
 
   useEffect(() => {
     if (!actionMenuOpen) return
@@ -993,11 +1048,11 @@ export default function MarkmapHooks() {
                 <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{githubConfig.branch}</small></div><button className="discard-button" title="放弃所有本地修改" onClick={() => void discardRepositoryChanges()} disabled={githubBusy || !hasRepositoryDrafts}><Icon name="undo" /><span>放弃</span></button><button className="repository-icon-button" title="刷新仓库" aria-label="刷新仓库" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" /></i></button><button className="repository-icon-button sync-button" title={changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || !changedFiles.length}><i><Icon name="sync" /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}
                 {githubNotice && <div className="repository-notice"><Icon name="check" />{githubNotice}</div>}
-                <div className="repository-tree" role="tree" aria-label="GitHub Markdown 文件树" onContextMenu={(event) => openRepositoryMenu(event, { type: 'root', path: '', name: '仓库根目录' })} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); void dropRepositoryTarget('') }}>
+                <div className="repository-tree" role="tree" aria-label="GitHub Markdown 文件树" onContextMenu={(event) => openRepositoryMenu(event, { type: 'root', path: '', name: '仓库根目录' })} onPointerDown={(event) => startRepositoryLongPress(event, { type: 'root', path: '', name: '仓库根目录' })} onPointerMove={moveRepositoryLongPress} onPointerUp={cancelRepositoryLongPress} onPointerCancel={cancelRepositoryLongPress} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); void dropRepositoryTarget('') }}>
                   {repositoryRows.length ? repositoryRows.map((row) => {
                     const isRenaming = renamingRepositoryTarget?.type === row.type && renamingRepositoryTarget.path === row.path
-                    if (row.type === 'folder') return <div className="tree-folder" role="treeitem" aria-expanded={!collapsedFolders.has(row.path)} draggable={!isRenaming} key={`folder:${row.path}`} style={{ paddingLeft: 8 + row.depth * 16 }} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(row.path) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-inline-edit"><Icon name="folder" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button onClick={() => setCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next })}><Icon name={collapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button>}</div>
-                    return <div className={`tree-file ${activeRepoPath === row.path ? 'active' : ''} ${row.cached?.status === 'deleted' ? 'deleted' : ''}`} role="treeitem" draggable={!isRenaming && row.cached?.status !== 'deleted'} key={`file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-open tree-inline-edit"><Icon name="map" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button className="tree-open" disabled={row.cached?.status === 'deleted'} onClick={() => openRepositoryRow(row)}><Icon name="map" /><span>{row.name}</span></button>}{row.cached ? row.cached.status !== 'clean' ? <b>{row.cached.status === 'renamed' ? 'R' : row.cached.status === 'added' ? 'A' : row.cached.status === 'deleted' ? 'D' : 'M'}</b> : <i className="cached" title="已拉取并同步" /> : <i className="remote" title="尚未拉取" />}</div>
+                    if (row.type === 'folder') return <div className="tree-folder" role="treeitem" aria-expanded={!collapsedFolders.has(row.path)} draggable={!isRenaming} key={`folder:${row.path}`} style={{ paddingLeft: 8 + row.depth * 16 }} onPointerDown={(event) => startRepositoryLongPress(event, row)} onPointerMove={moveRepositoryLongPress} onPointerUp={cancelRepositoryLongPress} onPointerCancel={cancelRepositoryLongPress} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(row.path) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-inline-edit"><Icon name="folder" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button onClick={() => { if (consumeRepositoryLongPressClick()) return; setCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next }) }}><Icon name={collapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button>}</div>
+                    return <div className={`tree-file ${activeRepoPath === row.path ? 'active' : ''} ${row.cached?.status === 'deleted' ? 'deleted' : ''}`} role="treeitem" draggable={!isRenaming && row.cached?.status !== 'deleted'} key={`file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }} onPointerDown={(event) => startRepositoryLongPress(event, row)} onPointerMove={moveRepositoryLongPress} onPointerUp={cancelRepositoryLongPress} onPointerCancel={cancelRepositoryLongPress} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-open tree-inline-edit"><Icon name="map" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button className="tree-open" disabled={row.cached?.status === 'deleted'} onClick={() => { if (!consumeRepositoryLongPressClick()) openRepositoryRow(row) }}><Icon name="map" /><span>{row.name}</span></button>}{row.cached ? row.cached.status !== 'clean' ? <b>{row.cached.status === 'renamed' ? 'R' : row.cached.status === 'added' ? 'A' : row.cached.status === 'deleted' ? 'D' : 'M'}</b> : <i className="cached" title="已拉取并同步" /> : <i className="remote" title="尚未拉取" />}</div>
                   }) : <div className="github-empty">{githubBusy ? '正在读取仓库…' : '仓库中没有 Markdown 文件'}</div>}
                 </div>
                 <footer className="repository-status"><span className={changedFiles.length ? 'dirty' : 'clean'} />{changedFiles.length ? `${changedFiles.length} 个文件已暂存但未推送` : '所有缓存文件均已同步'}<button className="repository-branch-button" title="仓库设置" onClick={() => setActivePanel('github')}><Icon name="github" /><span>{githubConfig.branch}</span></button></footer>
