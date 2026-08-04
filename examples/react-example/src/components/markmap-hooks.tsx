@@ -330,7 +330,7 @@ export default function MarkmapHooks() {
   const [repositoryMenu, setRepositoryMenu] = useState<{ x: number; y: number; target: RepositoryTarget } | null>(null)
   const [draggedRepositoryTarget, setDraggedRepositoryTarget] = useState<RepositoryTarget | null>(null)
   const [repositoryDropFolder, setRepositoryDropFolder] = useState<string | null>(null)
-  const [repositoryTouchDrag, setRepositoryTouchDrag] = useState<{ target: RepositoryTarget; dropFolder: string | null; dragging: boolean } | null>(null)
+  const [repositoryTouchDrag, setRepositoryTouchDrag] = useState<{ target: RepositoryTarget; dropFolder: string | null; dragging: boolean; x: number; y: number } | null>(null)
   const [renamingRepositoryTarget, setRenamingRepositoryTarget] = useState<RepositoryTarget | null>(null)
   const [repositoryRenameValue, setRepositoryRenameValue] = useState('')
   const initialMarkdownRef = useRef(markdown)
@@ -675,7 +675,7 @@ export default function MarkmapHooks() {
     gesture.timer = window.setTimeout(() => {
       if (repositoryTouchGestureRef.current !== gesture) return
       gesture.longPressed = true
-      setRepositoryTouchDrag({ target, dropFolder: null, dragging: false })
+      setRepositoryTouchDrag({ target, dropFolder: null, dragging: false, x: gesture.lastX, y: gesture.lastY })
     }, 450)
     repositoryTouchGestureRef.current = gesture
   }
@@ -696,7 +696,7 @@ export default function MarkmapHooks() {
     if (!gesture.dragging) return
     const hoveredFolder = repositoryDropFolderAt(touch.clientX, touch.clientY)
     gesture.dropFolder = hoveredFolder === null ? null : normalizeRepositoryDropFolder(gesture.target, hoveredFolder)
-    setRepositoryTouchDrag({ target: gesture.target, dropFolder: gesture.dropFolder, dragging: true })
+    setRepositoryTouchDrag({ target: gesture.target, dropFolder: gesture.dropFolder, dragging: true, x: touch.clientX, y: touch.clientY })
   }
 
   const endRepositoryTouch = (event: React.TouchEvent<HTMLElement>) => {
@@ -1153,6 +1153,7 @@ export default function MarkmapHooks() {
                   {(repositoryMenu.target.type === 'folder' || repositoryMenu.target.type === 'root') && <><hr/><button disabled={!repositoryClipboard} onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void pasteRepositoryClipboard(folder) }}>粘贴{repositoryClipboard ? `“${repositoryClipboard.target.name}”` : ''}</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void createRepositoryFile(folder) }}>新建 Markdown</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); createRepositoryFolder(folder) }}>新建文件夹</button></>}
                   {repositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); void deleteRepositoryTarget(target) }}>删除</button></>}
                 </div>}
+                {repositoryTouchDrag?.dragging && <div className={`repository-touch-drag-ghost ${repositoryTouchDrag.dropFolder === null ? 'invalid' : ''}`} style={{ left: Math.min(repositoryTouchDrag.x + 14, window.innerWidth - 190), top: Math.min(repositoryTouchDrag.y + 14, window.innerHeight - 48) }}><Icon name={repositoryTouchDrag.target.type === 'folder' ? 'folder' : 'map'} /><span>{repositoryTouchDrag.target.name}</span></div>}
                 {repositoryTouchDrag && <div className="repository-touch-drag-indicator"><Icon name={repositoryTouchDrag.dragging ? 'folder' : 'more'} /><span>{repositoryTouchDrag.dragging ? repositoryTouchDrag.dropFolder !== null ? `移动到 ${repositoryTouchDrag.dropFolder || '仓库根目录'}` : '这里不能放置' : '松开打开菜单，移动手指可拖拽'}</span></div>}
               </>}
             </div>}

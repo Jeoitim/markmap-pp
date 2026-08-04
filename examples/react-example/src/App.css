@@ -165,10 +165,10 @@ svg { flex: 0 0 auto; }
 .repository-toolbar .discard-button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 7px; color: #cf4d4d; border-color: #cf4d4d45; background: #cf4d4d0b; }
 .discard-button svg { width: 13px; height: 13px; }
 .repository-toolbar button:disabled { opacity: .45; cursor: not-allowed; }
-.repository-error { display: flex; align-items: center; gap: 6px; padding: 8px 12px; color: #d15454; background: #d1545412; font-size: 10px; }
-.repository-error svg { width: 14px; }
-.repository-notice { display: flex; align-items: center; gap: 6px; padding: 8px 12px; color: #39865c; background: #39865c12; font-size: 10px; }
-.repository-notice svg { width: 14px; }
+.repository-error { display: flex; align-items: center; gap: 7px; padding: 9px 12px; color: #d15454; background: #d1545412; font-size: max(12px,.88em); line-height: 1.4; }
+.repository-error svg { width: 15px; flex: 0 0 auto; }
+.repository-notice { display: flex; align-items: center; gap: 7px; padding: 9px 12px; color: #39865c; background: #39865c12; font-size: max(12px,.88em); line-height: 1.4; }
+.repository-notice svg { width: 15px; flex: 0 0 auto; }
 .repository-tree { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 6px 0; font-size: inherit; }
 .repository-tree.drop-root { background: color-mix(in srgb,var(--accent) 7%,var(--editor-bg)); box-shadow: inset 0 0 0 2px color-mix(in srgb,var(--accent) 68%,transparent); }
 .github-empty { padding: 24px; color: var(--muted); font-size: 11px; text-align: center; }
@@ -213,6 +213,11 @@ svg { flex: 0 0 auto; }
 .repository-context-menu button:disabled { opacity: .4; cursor: default; }
 .repository-context-menu button.danger { color: #d15454; }
 .repository-context-menu hr { width: 100%; margin: 5px 0; border: 0; border-top: 1px solid var(--border); }
+.repository-touch-drag-ghost { position: fixed; z-index: 170; width: 176px; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid color-mix(in srgb,var(--accent) 62%,var(--border)); border-radius: 7px; color: var(--text); background: color-mix(in srgb,var(--panel) 94%,transparent); font-size: max(12px,.86em); box-shadow: 0 10px 26px #090b1238; pointer-events: none; opacity: .94; backdrop-filter: blur(9px); }
+.repository-touch-drag-ghost.invalid { border-color: color-mix(in srgb,#d15454 62%,var(--border)); opacity: .66; }
+.repository-touch-drag-ghost svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--accent); }
+.repository-touch-drag-ghost.invalid svg { color: #d15454; }
+.repository-touch-drag-ghost span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repository-touch-drag-indicator { position: absolute; z-index: 155; left: 12px; right: 12px; bottom: 42px; min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 7px 12px; border: 1px solid color-mix(in srgb,var(--accent) 48%,var(--border)); border-radius: 9px; color: var(--text); background: color-mix(in srgb,var(--panel) 93%,transparent); font-size: max(12px,.86em); box-shadow: 0 10px 30px #090b1228; pointer-events: none; backdrop-filter: blur(10px); }
 .repository-touch-drag-indicator svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--accent); }
 .repository-unbound { display: grid; place-items: center; align-content: center; gap: 9px; padding: 30px; text-align: center; color: var(--muted); }
