@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import katex from 'katex'
 import { Markmap, toMarkdown, Transformer } from 'markmap-plus'
+import 'katex/dist/katex.min.css'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
 import '@fontsource-variable/noto-sans-sc/wght.css'
@@ -23,50 +25,112 @@ import {
   type RemoteMarkdownFile,
 } from './github-sync'
 
+window.katex = katex as unknown as typeof window.katex
 const transformer = new Transformer()
 const SETTINGS_KEY = 'markmap-plus-plus:settings'
 const VIRTUAL_FOLDERS_KEY = 'markmap-plus-plus:virtual-folders'
 
-const starterDocument = `# markmap++
+const starterDocument = `---
+title: markmap++ 使用指南
+options:
+  colorFreezeLevel: 2
+  maxWidth: 360
+---
 
-## 欢迎使用
-- 左侧是 Markdown 编辑器，右侧是实时思维导图
-- 可以直接修改这份示例来体验功能
-- 刷新或重新打开页面后，示例会恢复为这份操作指南
-- 需要保留内容时，请使用顶部“导出”保存 Markdown
+# markmap++
 
-## 节点操作
-- 单击节点：只选中节点，不会进入文字编辑
-- 双击节点：进入文字编辑，此时按 Enter 保存文字
-- 单击选中后按 Enter：新增同级节点
-- 单击选中后按 Tab：新增子节点
-- 单击选中后按 Delete 或 Backspace：删除整个节点
-- 误操作后可以点击顶部的“撤回”
+## 👋 欢迎使用
 
-## 画布操作
-- 拖动画布自由移动
-- 滚轮缩放视图
-- 点击圆点折叠分支
-- 点击预览右上角的适应图标，让导图重新居中
+- 左侧编写 **Markdown**，右侧即时生成思维导图
+- 这既是一份功能演示，也是一份可直接修改的操作教程
+- 刷新页面会恢复本指南；重要内容请使用顶部 **导出** 保存
+- [Markmap 官网](https://markmap.js.org/) · [GitHub 项目](https://github.com/markmap-universe/markmap)
 
-## 编辑与显示
-- 拖动中间分割线可以调整编辑器和预览宽度
-- 分割线上的长条按钮可以收起或展开编辑器
-- 编辑器和预览右上角都可以调整字号与显示设置
-- 顶部按钮可以切换全屏和深浅色模式
+## 🧭 节点与画布操作
 
-## GitHub 多端同步
-- 点击编辑区的“仓库”，填写 owner/repository、分支和具有 Contents 读写权限的 GitHub 令牌
-- 绑定成功后可以在 Markdown 与仓库文件树之间切换，底部 Git 图标和分支名可重新打开仓库设置
-- 点击仓库中的 Markdown 文件后，它会下载到当前设备并长期缓存
-- 文件和文件夹支持拖动、折叠及右键菜单，可重命名、复制、剪切、新建和删除
-- 灰点表示尚未拉取；A、M、R、D 分别表示新增、修改、重命名和删除
-- 标题栏绿点表示已同步，橙点表示已暂存但未推送，黄点表示正在同步
-- 确认修改后点击“同步”，markmap++ 才会创建一次提交并推送全部修改
+| 图标 | 操作 | 效果 |
+| :--: | --- | --- |
+| 🖱️ | 单击 / 双击节点 | 选中节点 / 编辑文字 |
+| ↩️ | 选中后按 Enter | 新增同级节点 |
+| ⇥ | 选中后按 Tab | 新增子节点 |
+| ⌫ | Delete / Backspace | 删除整个节点 |
+| ↶ | 点击顶部“撤回” | 恢复最近一次修改 |
+| ✥ | 拖动画布 / 滚轮 | 移动画布 / 缩放视图 |
+| ◉ | 点击节点圆点 | 折叠或展开分支 |
 
-## 导出
-- 支持 SVG、PNG、JPEG 和 HTML
-- 位图可选择渲染倍率
+## ✍️ Markdown 丰富语法
+
+### 文字样式
+
+- **粗体**、*斜体*、~~删除线~~、==高亮== 与 \`行内代码\`
+- 很长很长的文字会根据 maxWidth 自动换行，适合记录完整说明
+- 有序步骤
+  1. 在左侧拖动光标选中文字
+  2. 输入或粘贴 Markdown
+  3. 在右侧查看实时结果
+
+### 任务清单
+
+- [x] 表格
+- [x] LaTeX 公式
+- [x] Checkbox
+- [x] 在线图片
+- [ ] 用你的内容继续探索
+
+### 代码块
+
+\`\`\`js
+const message = 'Hello, markmap++'
+console.log(message)
+\`\`\`
+
+## ∑ LaTeX 公式
+
+### 实际渲染
+
+- 行内公式：圆的面积是 $A = \\pi r^2$
+- 二次方程求根公式：$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
+
+### 公式源码示例
+
+\`\`\`latex
+\\int_{-\\infty}^{\\infty} e^{-x^2} \\, dx = \\sqrt{\\pi}
+\`\`\`
+
+## 🖼️ 在线图片
+
+### Markmap
+
+![Markmap 图标](https://markmap.js.org/favicon.png)
+
+### GitHub
+
+![GitHub 图标](https://cdn.simpleicons.org/github/7056e8)
+
+## 🎛️ 编辑与显示
+
+| 位置 | 能做什么 |
+| --- | --- |
+| 中间分割线 | 拖动调整两侧宽度；长条按钮收起或展开编辑器 |
+| 编辑器右上角 | 调整字号与语法高亮方案 |
+| 预览右上角 | 适应画布、切换字体/字重和点阵背景 |
+| 页面右上角 | 打开说明、撤回、导出、全屏和深浅色模式 |
+
+## ☁️ GitHub 多端同步
+
+| 状态 | 含义 | 下一步 |
+| :--: | --- | --- |
+| 灰点 | 文件尚未拉取 | 单击文件下载到本机缓存 |
+| A / M | 新增 / 已修改 | 检查内容后点击“同步” |
+| R / D | 已重命名 / 已删除 | 同步后写入远端仓库 |
+| 🟢 | 已同步 | 可以继续编辑 |
+| 🟠 | 已暂存、未推送 | 点击“同步”创建提交并推送 |
+
+## 📦 导出
+
+- Markdown：保留可继续编辑的源文件
+- SVG / HTML：适合网页与无限缩放
+- PNG / JPEG：适合分享，可选择 1×–4× 渲染倍率
 `
 
 type Pane = 'editor' | 'preview'
@@ -267,6 +331,7 @@ export default function MarkmapHooks() {
   const initialMarkdownRef = useRef(markdown)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const mmRef = useRef<Markmap | null>(null)
+  const imageRelayoutTimerRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
   const resizeWidthRef = useRef(editorWidth)
@@ -608,7 +673,10 @@ export default function MarkmapHooks() {
     mmRef.current = mm
     const { root } = transformer.transform(initialMarkdownRef.current)
     void mm.setData(root).then(() => mm.fit())
-    return () => { mm.destroy(); mmRef.current = null }
+    return () => {
+      if (imageRelayoutTimerRef.current !== null) window.clearTimeout(imageRelayoutTimerRef.current)
+      mm.destroy(); mmRef.current = null
+    }
   }, [syncFromMap])
 
   useEffect(() => {
@@ -670,9 +738,40 @@ export default function MarkmapHooks() {
 
   useEffect(() => {
     const mm = mmRef.current
-    if (!mm) return
+    const svg = svgRef.current
+    if (!mm || !svg) return
+    let disposed = false
+    const trackedImages: HTMLImageElement[] = []
+    const scheduleRelayout = () => {
+      if (disposed) return
+      if (imageRelayoutTimerRef.current !== null) window.clearTimeout(imageRelayoutTimerRef.current)
+      imageRelayoutTimerRef.current = window.setTimeout(() => {
+        imageRelayoutTimerRef.current = null
+        if (!disposed) void mm.setData()
+      }, 40)
+    }
     const { root } = transformer.transform(renderedMarkdown)
-    void mm.setData(root)
+    void mm.setData(root).then(() => {
+      if (disposed) return
+      svg.querySelectorAll('img').forEach((image) => {
+        if (!image.complete) {
+          trackedImages.push(image)
+          image.addEventListener('load', scheduleRelayout, { once: true })
+          image.addEventListener('error', scheduleRelayout, { once: true })
+        }
+      })
+    })
+    return () => {
+      disposed = true
+      trackedImages.forEach((image) => {
+        image.removeEventListener('load', scheduleRelayout)
+        image.removeEventListener('error', scheduleRelayout)
+      })
+      if (imageRelayoutTimerRef.current !== null) {
+        window.clearTimeout(imageRelayoutTimerRef.current)
+        imageRelayoutTimerRef.current = null
+      }
+    }
   }, [renderedMarkdown])
 
   useEffect(() => {
@@ -721,8 +820,13 @@ export default function MarkmapHooks() {
   const startResize = (event: React.PointerEvent) => {
     if (editorCollapsed) return
     event.preventDefault()
+    const handle = event.currentTarget
+    const pointerId = event.pointerId
+    const controller = new AbortController()
+    handle.setPointerCapture(pointerId)
     workspaceRef.current?.classList.add('resizing')
     const move = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return
       const rect = workspaceRef.current?.getBoundingClientRect()
       if (!rect) return
       const width = Math.max(24, Math.min(76, ((pointer.clientX - rect.left) / rect.width) * 100))
@@ -730,11 +834,16 @@ export default function MarkmapHooks() {
       workspaceRef.current!.style.gridTemplateColumns = `${width}% 18px 1fr`
     }
     const stop = () => {
+      if (controller.signal.aborted) return
+      controller.abort()
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId)
       setEditorWidth(resizeWidthRef.current)
       workspaceRef.current?.classList.remove('resizing')
-      document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', stop)
     }
-    document.addEventListener('pointermove', move); document.addEventListener('pointerup', stop)
+    document.addEventListener('pointermove', move, { signal: controller.signal })
+    document.addEventListener('pointerup', stop, { signal: controller.signal })
+    document.addEventListener('pointercancel', stop, { signal: controller.signal })
+    window.addEventListener('blur', stop, { signal: controller.signal })
   }
 
   const toggleEditor = () => {

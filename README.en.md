@@ -17,6 +17,7 @@ The application runs entirely in the browser. No application server or database 
 ## Key capabilities
 
 - Live Markdown editing with syntax highlighting, search, line numbers, undo, and common-structure diagnostics.
+- GFM tables, inline and display LaTeX, task checkboxes, and Markdown images, including automatic relayout after images load.
 - Interactive mind maps with pan, zoom, branch folding, in-place node editing, creation, deletion, and Markdown write-back.
 - Resizable desktop panes, a collapsible editor, fullscreen mode, and mobile editor/preview tabs.
 - Light and dark themes with configurable editor and preview typography.

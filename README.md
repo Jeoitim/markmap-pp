@@ -21,6 +21,7 @@ markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus)
 - CodeMirror 6 编辑器，支持 Markdown 高亮、行号、搜索和撤回。
 - 常见 Markdown 结构检查；编辑器底部显示问题数量和对应行号。
 - 编辑内容时实时更新右侧思维导图，无需手动刷新。
+- 支持 GFM 表格、LaTeX 行内/块级公式、任务 checkbox 和 Markdown 图片；公式字体随应用一同构建，图片加载完成后会自动重排节点。
 - 桌面端可拖动分割线调整编辑器宽度，也可收起编辑器专注预览。
 - 移动端在 Markdown 编辑与思维导图预览之间切换。
 - 支持浏览器全屏以及全局浅色、深色主题。

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
+import { indentWithTab } from '@codemirror/commands'
 import { Compartment } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { markdown } from '@codemirror/lang-markdown'
 import { linter, lintGutter } from '@codemirror/lint'
-import { EditorView } from '@codemirror/view'
+import { EditorView, keymap } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import { inspectMarkdown } from './markdown-lint'
@@ -22,11 +23,18 @@ function editorTheme(dark: boolean, fontSize: number, scheme: HighlightScheme) {
     EditorView.theme({
       '&': { height: '100%', backgroundColor: 'var(--editor-bg)', color: 'var(--editor-text)' },
       '.cm-scroller': { fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace', fontSize: `${fontSize}px`, lineHeight: '1.72' },
-      '.cm-content': { padding: '18px 10px 60px 4px', caretColor: 'var(--accent)' },
+      '.cm-content': {
+        padding: '18px 10px 60px 4px',
+        caretColor: 'var(--accent)',
+        cursor: 'text',
+      },
       '.cm-line': { paddingLeft: '8px' },
       '.cm-gutters': { backgroundColor: 'var(--editor-bg)', color: 'var(--editor-gutter)', border: 'none', paddingLeft: '8px' },
       '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--editor-active)' },
-      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: '#7056e83f !important' },
+      '.cm-selectionLayer .cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground': {
+        backgroundColor: dark ? '#9d8cff66 !important' : '#7056e852 !important',
+      },
+      '& ::selection': { backgroundColor: dark ? '#9d8cff66' : '#7056e852' },
       '&.cm-focused': { outline: 'none' },
       '.cm-lintRange-error': { backgroundImage: 'none', textDecoration: 'underline wavy #d84b4b' },
       '.cm-lintRange-warning': { backgroundImage: 'none', textDecoration: 'underline wavy #d39b35' },
@@ -72,6 +80,7 @@ export default function MarkdownEditor({ value, onChange, dark, fontSize, scheme
         lintGutter(),
         linter((editor) => inspectMarkdown(editor.state.doc.toString()), { delay: 250 }),
         EditorView.lineWrapping,
+        keymap.of([indentWithTab]),
         EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: 'false' }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !externalUpdate.current) onChangeRef.current(update.state.doc.toString())

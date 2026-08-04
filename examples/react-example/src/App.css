@@ -42,7 +42,7 @@ svg { flex: 0 0 auto; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 .workspace { height: calc(100vh - 64px); display: grid; background: var(--border); }
-.workspace.resizing { cursor: col-resize; user-select: none; }
+.workspace.resizing { cursor: col-resize; }
 .editor-pane, .preview-pane { min-width: 0; min-height: 0; display: grid; grid-template-rows: 43px 1fr; overflow: hidden; background: var(--panel); }
 .editor-pane { position: relative; grid-template-rows: 43px 1fr 31px; }
 .editor-pane.repository-view { grid-template-rows: 43px 1fr; }
@@ -85,6 +85,13 @@ svg { flex: 0 0 auto; }
 .map-canvas { position: relative; min-height: 0; overflow: hidden; background-color: var(--panel-soft); background-image: radial-gradient(circle, color-mix(in srgb,var(--muted) 23%,transparent) 1px, transparent 1px); background-size: 22px 22px; }
 .map-canvas.no-grid { background-image: none; }
 .map-canvas > svg { display: block; width: 100%; height: 100%; }
+.map-canvas .markmap-foreign table { border-spacing: 0; font-size: .9em; }
+.map-canvas .markmap-foreign th,
+.map-canvas .markmap-foreign td { padding: .3em .55em; }
+.map-canvas .markmap-foreign th { background: color-mix(in srgb, var(--panel-soft) 82%, transparent); font-weight: 650; }
+.map-canvas .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
+.map-canvas .markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
+.map-canvas .markmap-foreign .katex-display { margin: .2em 0; }
 .markmap-node-edit-overlay-input { background: var(--panel) !important; color: var(--text) !important; caret-color: var(--text) !important; }
 :root[data-theme='dark'] .map-canvas > svg { --markmap-text-color: #f4f6f9; --markmap-code-bg: #2a303a; --markmap-code-color: #fff; --markmap-circle-open-bg: #181b21; }
 .split-handle { position: relative; z-index: 4; width: 18px; background: transparent; touch-action: none; }
