@@ -30,7 +30,7 @@ svg { flex: 0 0 auto; }
 .save-dot.synced { background: #39ad72; box-shadow: 0 0 0 3px #39ad7218; }
 .save-dot.dirty { background: #d8872d; box-shadow: 0 0 0 3px #d8872d1c; }
 .save-dot.syncing { background: #d7b638; box-shadow: 0 0 0 3px #d7b6381c; animation: sync-pulse 1s ease-in-out infinite; }
-.actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.actions { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .button, .icon-button, .fit-button, .header-icon { border: 1px solid var(--border); background: var(--panel); cursor: pointer; transition: .16s ease; }
 .button { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 13px; border-radius: 9px; font-size: 13px; font-weight: 600; }
 .button svg, .icon-button svg, .fit-button svg, .header-icon svg { display: block; width: 17px; height: 17px; margin: auto; }
@@ -39,6 +39,12 @@ svg { flex: 0 0 auto; }
 .button.primary:hover { background: var(--accent-hover); }
 .button:disabled, .icon-button:disabled { opacity: .45; cursor: not-allowed; }
 .icon-button { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; }
+.more-action, .action-overflow-menu, .mobile-pane-switch { display: none; }
+.action-overflow-menu { position: absolute; z-index: 80; top: calc(100% + 9px); right: 0; width: 190px; padding: 6px; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); box-shadow: 0 16px 45px #0b0d1338; }
+.action-overflow-menu button { width: 100%; height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 7px; color: var(--text); background: transparent; font-size: 12px; cursor: pointer; }
+.action-overflow-menu button:hover { background: var(--panel-soft); }
+.action-overflow-menu button:disabled { opacity: .42; cursor: not-allowed; }
+.action-overflow-menu svg { width: 16px; height: 16px; color: var(--muted); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 .workspace { height: calc(100vh - 64px); display: grid; background: var(--border); }
@@ -222,25 +228,28 @@ svg { flex: 0 0 auto; }
 .export-submit:hover { background: var(--accent-hover); }
 .export-submit:disabled { opacity: .65; cursor: wait; }
 .export-submit svg { width: 18px; }
-.mobile-tabs { display: none; }
-
 @keyframes panel-in { from { opacity: 0; transform: translateY(7px) scale(.98); } }
 @keyframes sync-pulse { 50% { opacity: .45; } }
+
+@media (max-width: 920px) {
+  .topbar { grid-template-columns: auto 1fr; }
+  .document-name, .collapsible-action { display: none; }
+  .more-action { display: grid; }
+  .action-overflow-menu { display: grid; }
+}
 
 @media (max-width: 720px) {
   .topbar { height: 58px; grid-template-columns: auto 1fr; padding: 0 12px; gap: 10px; }
   .brand-name { font-size: 17px; }
   .brand-mark { width: 31px; height: 31px; }
-  .document-name { display: none; }
   .actions { gap: 5px; }
   .button { width: 34px; height: 34px; justify-content: center; padding: 0; }
   .button span { display: none; }
   .icon-button { width: 34px; height: 34px; }
-  .mobile-tabs { height: 43px; display: grid; grid-template-columns: 1fr 1fr; background: var(--panel); border-bottom: 1px solid var(--border); }
-  .mobile-tabs button { position: relative; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 650; }
-  .mobile-tabs button.active { color: var(--accent); }
-  .mobile-tabs button.active::after { content: ''; position: absolute; left: 25%; right: 25%; bottom: 0; height: 2px; border-radius: 2px; background: var(--accent); }
-  .workspace { height: calc(100vh - 101px); display: block !important; }
+  .mobile-pane-switch { height: 29px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 0; border-radius: 7px; color: var(--accent); background: color-mix(in srgb,var(--accent) 9%,transparent); font-size: 11px; cursor: pointer; }
+  .mobile-pane-switch:hover { background: color-mix(in srgb,var(--accent) 15%,transparent); }
+  .mobile-pane-switch svg { width: 14px; height: 14px; }
+  .workspace { height: calc(100vh - 58px); display: block !important; }
   .editor-pane, .preview-pane { height: 100%; }
   .workspace.mobile-editor .preview-pane, .workspace.mobile-preview .editor-pane { display: none; }
   .split-handle { display: none; }

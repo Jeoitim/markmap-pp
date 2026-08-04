@@ -238,21 +238,23 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
+type IconName = 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'more' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   check: <path d="m5 12 4 4L19 6"/>,
   'chevron-down': <path d="m6 9 6 6 6-6"/>,
   'chevron-left': <path d="m15 18-6-6 6-6"/>,
   'chevron-right': <path d="m9 18 6-6-6-6"/>,
+  collapse: <><path d="M4 14h6v6M20 10h-6V4"/><path d="M14 20v-6h6M10 4v6H4"/></>,
   download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>,
-  expand: <><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/><path d="m3 8 5-5m8-5 5 5M3 16l5 5m8 0 5-5"/></>,
+  expand: <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>,
   focus: <><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></>,
   folder: <><path d="M3 7.5V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3Z"/><path d="M3 9h18"/></>,
   github: <><circle cx="6" cy="5" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="8" cy="19" r="2"/><path d="M6 7v5a3 3 0 0 0 3 3h5a4 4 0 0 0 4-4V8M8 17v-2"/></>,
   help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.5-1.2 1-1.2 2"/><path d="M12 17h.01"/></>,
   map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15m6-12v15"/></>,
   moon: <path d="M20 15.2A8 8 0 1 1 8.8 4 6.5 6.5 0 0 0 20 15.2Z"/>,
+  more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
   refresh: <><path d="M20 7v5h-5"/><path d="M18.2 16.5A8 8 0 1 1 19.8 9L20 12"/></>,
   settings: <><path d="M4 7h10m4 0h2M4 12h3m4 0h9M4 17h8m4 0h4"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></>,
   sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></>,
@@ -305,6 +307,7 @@ export default function MarkmapHooks() {
   const [editorCollapsed, setEditorCollapsed] = useState(false)
   const [canUndo, setCanUndo] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
   const [exportScale, setExportScale] = useState(2)
   const [exporting, setExporting] = useState(false)
@@ -333,6 +336,7 @@ export default function MarkmapHooks() {
   const mmRef = useRef<Markmap | null>(null)
   const imageRelayoutTimerRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const actionsRef = useRef<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
   const resizeWidthRef = useRef(editorWidth)
   const markdownRef = useRef(markdown)
@@ -800,6 +804,22 @@ export default function MarkmapHooks() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreen)
   }, [])
 
+  useEffect(() => {
+    if (!actionMenuOpen) return
+    const closeMenu = (event: PointerEvent) => {
+      if (!actionsRef.current?.contains(event.target as Node)) setActionMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActionMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeMenu)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeMenu)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [actionMenuOpen])
+
   const openFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -943,23 +963,27 @@ export default function MarkmapHooks() {
       <header className="topbar">
         <div className="brand" aria-label="markmap++"><span className="brand-mark"><Icon name="map" /></span><span className="brand-name">markmap<span>++</span></span></div>
         <div className="document-name" title={fileName}><span className={`save-dot ${titleSyncState}`} /><span>{fileName}</span><small>{titleSyncText}</small></div>
-        <nav className="actions" aria-label="文档操作">
+        <nav ref={actionsRef} className="actions" aria-label="文档操作">
           <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
-          <button type="button" className="button secondary" onClick={() => fileInputRef.current?.click()}><Icon name="folder" /><span>打开</span></button>
-          <button type="button" className="button secondary" onClick={() => setActivePanel('help')}><Icon name="help" /><span>说明</span></button>
-          <button type="button" className="button secondary" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
+          <button type="button" className="button secondary collapsible-action" onClick={() => fileInputRef.current?.click()}><Icon name="folder" /><span>打开</span></button>
+          <button type="button" className="button secondary collapsible-action" onClick={() => setActivePanel('help')}><Icon name="help" /><span>说明</span></button>
+          <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" onClick={() => { setExportError(''); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
-          <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'x' : 'expand'} /></button>
+          <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
           <button type="button" className="icon-button" aria-label={dark ? '切换浅色模式' : '切换深色模式'} title={dark ? '浅色模式' : '深色模式'} onClick={() => setDark((value) => !value)}><Icon name={dark ? 'sun' : 'moon'} /></button>
+          <button type="button" className="icon-button more-action" aria-label="更多操作" title="更多操作" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
+          {actionMenuOpen && <div className="action-overflow-menu">
+            <button type="button" onClick={() => { setActionMenuOpen(false); fileInputRef.current?.click() }}><Icon name="folder" /><span>打开 Markdown</span></button>
+            <button type="button" onClick={() => { setActionMenuOpen(false); setActivePanel('help') }}><Icon name="help" /><span>使用说明</span></button>
+            <button type="button" onClick={() => { setActionMenuOpen(false); undoLastChange() }} disabled={!canUndo}><Icon name="undo" /><span>撤回修改</span></button>
+          </div>}
         </nav>
       </header>
-
-      <div className="mobile-tabs" role="tablist" aria-label="工作区视图"><button className={mobilePane === 'editor' ? 'active' : ''} onClick={() => setMobilePane('editor')}>Markdown</button><button className={mobilePane === 'preview' ? 'active' : ''} onClick={() => setMobilePane('preview')}>思维导图</button></div>
 
       <section ref={workspaceRef} className={`workspace mobile-${mobilePane}`} style={{ gridTemplateColumns: gridColumns }}>
         <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' ? 'repository-view' : ''}`} aria-label="Markdown 编辑器">
           {!editorCollapsed && <>
-            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button></div><button className="header-icon" onClick={() => setActivePanel(editorView === 'repository' ? 'github' : 'editor')} title={editorView === 'repository' ? '仓库设置' : '编辑器设置'}><Icon name="settings" /></button></div>
+            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button><button className="header-icon" onClick={() => setActivePanel(editorView === 'repository' ? 'github' : 'editor')} title={editorView === 'repository' ? '仓库设置' : '编辑器设置'}><Icon name="settings" /></button></div>
             {editorView === 'markdown' ? <>
               <MarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} scheme={settings.highlightScheme} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span><span>Markdown</span></footer>
@@ -992,7 +1016,7 @@ export default function MarkmapHooks() {
 
         <section className="preview-pane" aria-label="思维导图预览">
           <>
-            <div className="pane-header"><div><span className="status-light purple" />思维导图</div><button type="button" className="fit-button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button className="header-icon" onClick={() => setActivePanel('preview')} title="预览设置"><Icon name="settings" /></button></div>
+            <div className="pane-header"><div><span className="status-light purple" />思维导图</div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>Markdown</span></button><button type="button" className="fit-button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button className="header-icon" onClick={() => setActivePanel('preview')} title="预览设置"><Icon name="settings" /></button></div>
             <div className={`map-canvas ${settings.showGrid ? '' : 'no-grid'}`}><svg ref={svgRef} /></div>
           </>
         </section>
