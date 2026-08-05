@@ -132,6 +132,9 @@ svg { flex: 0 0 auto; }
 .switch-field input { width: 38px; height: 20px; accent-color: var(--accent); }
 .settings-note { display: flex; gap: 9px; padding: 12px; border-radius: 9px; color: var(--muted); background: var(--panel-soft); font-size: 12px; line-height: 1.55; }
 .settings-note svg { width: 17px; color: #d39b35; }
+.settings-note.code-options-note svg { color: var(--accent); }
+.code-controlled { opacity: .5; }
+.code-controlled input, .code-controlled select { cursor: not-allowed; }
 .field input[type='text'], .field input[type='password'] { width: 100%; height: 40px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; outline: none; color: var(--text); background: var(--panel-soft); font-size: 13px; }
 .field input[type='text']:focus, .field input[type='password']:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent); }
 .help-body { display: grid; gap: 18px; padding: 22px; font-size: 13px; }

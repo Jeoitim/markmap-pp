@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import katex from 'katex'
-import { Markmap, toMarkdown, Transformer } from 'markmap-plus'
+import { defaultOptions, deriveOptions, Markmap, toMarkdown, Transformer } from 'markmap-plus'
+import type { IMarkmapJSONOptions, IMarkmapOptions } from 'markmap-view-plus'
 import 'katex/dist/katex.min.css'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
@@ -29,6 +30,7 @@ window.katex = katex as unknown as typeof window.katex
 const transformer = new Transformer()
 const SETTINGS_KEY = 'markmap-plus-plus:settings'
 const VIRTUAL_FOLDERS_KEY = 'markmap-plus-plus:virtual-folders'
+const MARKMAP_PREVIEW_ID = 'markmap-preview'
 
 const starterDocument = `---
 title: markmap++ 使用指南
@@ -162,6 +164,81 @@ const previewFonts: Record<PreviewFont, { label: string; family: string }> = {
   wenkai: { label: '霞鹜文楷（LXGW WenKai）', family: '"LXGW WenKai", cursive' },
   inter: { label: 'Inter Variable', family: '"Inter Variable", sans-serif' },
   mono: { label: 'JetBrains Mono Variable', family: '"JetBrains Mono Variable", monospace' },
+}
+
+type CodeOptions = Partial<IMarkmapJSONOptions> & {
+  font?: string
+  fontFamily?: string
+  fontSize?: number | string
+  fontWeight?: number | string
+  showGrid?: boolean
+}
+
+interface CodeFontOptions {
+  shorthand?: string
+  family?: string
+  size?: string
+  weight?: string
+  controlsFamily: boolean
+  controlsSize: boolean
+  controlsWeight: boolean
+}
+
+interface DocumentRenderConfig {
+  root: ReturnType<Transformer['transform']>['root']
+  markmapOptions: Partial<IMarkmapOptions>
+  optionKeys: string[]
+  style: string
+  showGrid?: boolean
+  font: CodeFontOptions
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function cssDeclaration(style: string, property: string) {
+  const expression = new RegExp(`(?:^|[;{\\s])${property}\\s*:\\s*([^;}]+)`, 'gi')
+  return Array.from(style.matchAll(expression)).at(-1)?.[1]?.trim()
+}
+
+function cssLength(value: unknown) {
+  if (typeof value === 'number') return `${value}px`
+  if (typeof value === 'string' && value.trim()) return /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${value.trim()}px` : value.trim()
+}
+
+function buildDocumentRenderConfig(markdown: string): DocumentRenderConfig {
+  const transformed = transformer.transform(markdown)
+  const frontmatter = recordValue(transformed.frontmatter)
+  const markmap = recordValue(frontmatter.markmap)
+  const options = { ...markmap, ...recordValue(frontmatter.options) } as CodeOptions
+  const rawStyle = typeof frontmatter.style === 'string' ? frontmatter.style : ''
+  const style = rawStyle.replaceAll('${id}', MARKMAP_PREVIEW_ID)
+  const shorthand = typeof options.font === 'string' ? options.font.trim() : cssDeclaration(style, '--markmap-font') || cssDeclaration(style, 'font')
+  const family = typeof options.fontFamily === 'string' ? options.fontFamily.trim() : cssDeclaration(style, 'font-family')
+  const size = cssLength(options.fontSize) || cssDeclaration(style, 'font-size')
+  const weight = options.fontWeight == null ? cssDeclaration(style, 'font-weight') : String(options.fontWeight)
+  return {
+    root: transformed.root,
+    markmapOptions: deriveOptions(options),
+    optionKeys: Object.keys(options).filter((key) => !['htmlParser', 'extraCss', 'extraJs'].includes(key)),
+    style,
+    showGrid: typeof options.showGrid === 'boolean' ? options.showGrid : undefined,
+    font: {
+      shorthand,
+      family,
+      size,
+      weight,
+      controlsFamily: Boolean(shorthand || family),
+      controlsSize: Boolean(shorthand || size),
+      controlsWeight: Boolean(shorthand || weight),
+    },
+  }
+}
+
+function resolveFontFamily(value: string | undefined, fallback: string) {
+  if (!value) return fallback
+  return value in previewFonts ? previewFonts[value as PreviewFont].family : value
 }
 
 interface RepositoryRow {
@@ -388,6 +465,18 @@ export default function MarkmapHooks() {
   }, [])
 
   const diagnostics = useMemo(() => inspectMarkdown(markdown), [markdown])
+  const documentRenderConfig = useMemo(() => buildDocumentRenderConfig(renderedMarkdown), [renderedMarkdown])
+  const codeFont = documentRenderConfig.font
+  const selectedFontFamily = previewFonts[settings.previewFont].family
+  const effectiveFontFamily = resolveFontFamily(codeFont.family, selectedFontFamily)
+  const effectiveFontSizeCss = codeFont.size || `${settings.previewFontSize}px`
+  const effectiveFontSize = Number.parseFloat(effectiveFontSizeCss) || settings.previewFontSize
+  const effectiveFontWeightCss = codeFont.weight || String(settings.previewWeight)
+  const effectiveFontWeight = Number.parseFloat(effectiveFontWeightCss) || settings.previewWeight
+  const effectiveShowGrid = documentRenderConfig.showGrid ?? settings.showGrid
+  const fontPreviewStyle: React.CSSProperties = codeFont.shorthand
+    ? { font: codeFont.shorthand }
+    : { fontFamily: effectiveFontFamily, fontSize: effectiveFontSizeCss, fontWeight: effectiveFontWeightCss }
   const updateSettings = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setSettings((current) => ({ ...current, [key]: value }))
   const updateMarkdown = useCallback((value: string, source = 'editor') => {
     const current = markdownRef.current
@@ -407,6 +496,21 @@ export default function MarkmapHooks() {
     const data = mmRef.current?.getData(true)
     if (data) updateMarkdown(toMarkdown(data), 'map')
   }, [updateMarkdown])
+  const viewOptions = useCallback((codeOptions: Partial<IMarkmapOptions>): Partial<IMarkmapOptions> => ({
+    ...defaultOptions,
+    autoFit: false,
+    editable: true,
+    addable: true,
+    deletable: true,
+    collapseOnHover: false,
+    hoverBorder: true,
+    clickBorder: true,
+    duration: 220,
+    inputPlaceholder: '输入节点内容',
+    onNodeEdit: syncFromMap,
+    onNodeAdd: syncFromMap,
+    ...codeOptions,
+  }), [syncFromMap])
 
   const undoLastChange = useCallback(() => {
     const previous = historyRef.current.pop()
@@ -815,13 +919,10 @@ export default function MarkmapHooks() {
 
   useEffect(() => {
     if (!svgRef.current) return
-    const mm = Markmap.create(svgRef.current, {
-      mode: 'editable', autoFit: false, collapseOnHover: false, duration: 220,
-      inputPlaceholder: '输入节点内容', onNodeEdit: syncFromMap, onNodeAdd: syncFromMap,
-    })
+    const initialConfig = buildDocumentRenderConfig(initialMarkdownRef.current)
+    const mm = Markmap.create(svgRef.current, viewOptions(initialConfig.markmapOptions))
     mmRef.current = mm
-    const { root } = transformer.transform(initialMarkdownRef.current)
-    void mm.setData(root).then(() => {
+    void mm.setData(initialConfig.root).then(() => {
       const { width, height } = svgRef.current?.getBoundingClientRect() || { width: 0, height: 0 }
       if (width > 0 && height > 0) return mm.fit()
     })
@@ -829,7 +930,7 @@ export default function MarkmapHooks() {
       if (imageRelayoutTimerRef.current !== null) window.clearTimeout(imageRelayoutTimerRef.current)
       mm.destroy(); mmRef.current = null
     }
-  }, [syncFromMap])
+  }, [viewOptions])
 
   useEffect(() => {
     const syncAfterDelete = (event: KeyboardEvent) => {
@@ -902,8 +1003,7 @@ export default function MarkmapHooks() {
         if (!disposed) void mm.setData()
       }, 40)
     }
-    const { root } = transformer.transform(renderedMarkdown)
-    void mm.setData(root).then(() => {
+    void mm.setData(documentRenderConfig.root, viewOptions(documentRenderConfig.markmapOptions)).then(() => {
       if (disposed) return
       svg.querySelectorAll('img').forEach((image) => {
         if (!image.complete) {
@@ -924,27 +1024,28 @@ export default function MarkmapHooks() {
         imageRelayoutTimerRef.current = null
       }
     }
-  }, [renderedMarkdown])
+  }, [documentRenderConfig, viewOptions])
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     const svg = svgRef.current
     if (svg) {
-      svg.style.setProperty('--markmap-text-color', dark ? '#f4f6f9' : '#30333a')
-      svg.style.setProperty('--markmap-circle-open-bg', dark ? '#191c22' : '#ffffff')
-      svg.style.setProperty('--markmap-code-bg', dark ? '#2a303a' : '#eef0f4')
-      svg.style.setProperty('--markmap-code-color', dark ? '#ffffff' : '#444852')
+      const codeStyle = documentRenderConfig.style
+      svg.style.setProperty('--markmap-text-color', cssDeclaration(codeStyle, '--markmap-text-color') || (dark ? '#f4f6f9' : '#30333a'))
+      svg.style.setProperty('--markmap-circle-open-bg', cssDeclaration(codeStyle, '--markmap-circle-open-bg') || (dark ? '#191c22' : '#ffffff'))
+      svg.style.setProperty('--markmap-code-bg', cssDeclaration(codeStyle, '--markmap-code-bg') || (dark ? '#2a303a' : '#eef0f4'))
+      svg.style.setProperty('--markmap-code-color', cssDeclaration(codeStyle, '--markmap-code-color') || (dark ? '#ffffff' : '#444852'))
     }
-  }, [dark])
+  }, [dark, documentRenderConfig.style])
 
   useEffect(() => {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* storage may be disabled */ }
     const svg = svgRef.current
     if (!svg) return
-    const { family } = previewFonts[settings.previewFont]
-    svg.style.setProperty('--markmap-font', `${settings.previewWeight} ${settings.previewFontSize}px/${Math.round(settings.previewFontSize * 1.35)}px ${family}`)
+    const font = codeFont.shorthand || `${effectiveFontWeightCss} ${effectiveFontSizeCss}/1.35 ${effectiveFontFamily}`
+    svg.style.setProperty('--markmap-font', font)
     window.setTimeout(() => void mmRef.current?.setData().then(() => mmRef.current?.fit()), 50)
-  }, [settings])
+  }, [codeFont.shorthand, effectiveFontFamily, effectiveFontSizeCss, effectiveFontWeightCss, settings])
 
   useEffect(() => {
     const handleFullscreen = () => setFullscreen(Boolean(document.fullscreenElement))
@@ -1044,6 +1145,11 @@ export default function MarkmapHooks() {
     const height = Math.max(1, Math.ceil(y2 - y1 + padding * 2))
     const clone = svg.cloneNode(true) as SVGSVGElement
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    if (documentRenderConfig.style) {
+      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+      style.textContent = documentRenderConfig.style
+      clone.prepend(style)
+    }
     clone.setAttribute('viewBox', `${x1 - padding} ${y1 - padding} ${width} ${height}`)
     clone.setAttribute('width', String(width * exportScale))
     clone.setAttribute('height', String(height * exportScale))
@@ -1062,14 +1168,17 @@ export default function MarkmapHooks() {
     documentNode.querySelectorAll('foreignObject').forEach((foreignObject) => {
       const text = documentNode.createElementNS('http://www.w3.org/2000/svg', 'text')
       const x = Number(foreignObject.getAttribute('x') || 0) + 6
-      const height = Number(foreignObject.getAttribute('height') || settings.previewFontSize * 1.5)
+      const height = Number(foreignObject.getAttribute('height') || effectiveFontSize * 1.5)
       text.setAttribute('x', String(x))
       text.setAttribute('y', String(height / 2))
       text.setAttribute('dominant-baseline', 'middle')
       text.setAttribute('fill', dark ? '#f4f6f9' : '#30333a')
-      text.setAttribute('font-size', String(settings.previewFontSize))
-      text.setAttribute('font-weight', String(settings.previewWeight))
-      text.setAttribute('font-family', settings.previewFont === 'notoSerif' ? 'SimSun, serif' : settings.previewFont === 'wenkai' ? 'KaiTi, cursive' : settings.previewFont === 'mono' ? 'Consolas, monospace' : 'Arial, sans-serif')
+      if (codeFont.shorthand) text.setAttribute('style', `font:${codeFont.shorthand}`)
+      else {
+        text.setAttribute('font-size', effectiveFontSizeCss)
+        text.setAttribute('font-weight', String(effectiveFontWeight))
+        text.setAttribute('font-family', effectiveFontFamily)
+      }
       text.textContent = foreignObject.textContent?.replace(/\s+/g, ' ').trim() || ''
       foreignObject.replaceWith(text)
     })
@@ -1123,6 +1232,7 @@ export default function MarkmapHooks() {
 
   return (
     <main className="app-shell">
+      {documentRenderConfig.style && <style>{documentRenderConfig.style}</style>}
       <header className="topbar">
         <div className="brand" aria-label="markmap++"><span className="brand-mark"><Icon name="map" /></span><span className="brand-name">markmap<span>++</span></span></div>
         <div className="document-name" title={fileName}><span className={`save-dot ${titleSyncState}`} /><span>{fileName}</span><small>{titleSyncText}</small></div>
@@ -1186,7 +1296,7 @@ export default function MarkmapHooks() {
         <section className="preview-pane" aria-label="思维导图预览">
           <>
             <div className="pane-header"><div><span className="status-light purple" />思维导图</div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>Markdown</span></button><button type="button" className="fit-button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button className="header-icon" onClick={() => setActivePanel('preview')} title="预览设置"><Icon name="settings" /></button></div>
-            <div className={`map-canvas ${settings.showGrid ? '' : 'no-grid'}`}><svg ref={svgRef} /></div>
+            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`}><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
           </>
         </section>
       </section>
@@ -1222,11 +1332,12 @@ export default function MarkmapHooks() {
             <div className="settings-note"><Icon name="warning" /><span>语法检查包括标题层级、代码块闭合与缩进一致性，问题会直接标记在编辑器中。</span></div>
           </div>}
           {activePanel === 'preview' && <div className="settings-body">
-            <label className="field"><span>节点字号 <b>{settings.previewFontSize}px</b></span><input type="range" min="12" max="28" value={settings.previewFontSize} onChange={(event) => updateSettings('previewFontSize', Number(event.target.value))} /></label>
-            <label className="field"><span>字体</span><select value={settings.previewFont} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
-            <label className="field"><span>字重 <b>{settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
-            <label className="switch-field"><span><strong>点阵背景</strong><small>辅助观察画布移动与缩放</small></span><input type="checkbox" checked={settings.showGrid} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
-            <div className="font-samples"><small>字体预览</small><span style={{ fontFamily: previewFonts[settings.previewFont].family, fontWeight: settings.previewWeight }}>思维导图 Mind Map 0123</span></div>
+            {documentRenderConfig.optionKeys.length > 0 && <div className="settings-note code-options-note"><Icon name="check" /><span>Frontmatter 正在控制：{documentRenderConfig.optionKeys.join('、')}。代码配置优先于此面板。</span></div>}
+            <label className={`field ${codeFont.controlsSize ? 'code-controlled' : ''}`}><span>节点字号 <b>{codeFont.controlsSize ? `${effectiveFontSizeCss} · 代码` : `${settings.previewFontSize}px`}</b></span><input type="range" min="12" max="28" value={settings.previewFontSize} disabled={codeFont.controlsSize} onChange={(event) => updateSettings('previewFontSize', Number(event.target.value))} /></label>
+            <label className={`field ${codeFont.controlsFamily ? 'code-controlled' : ''}`}><span>字体{codeFont.controlsFamily && <b>由代码控制</b>}</span><select value={settings.previewFont} disabled={codeFont.controlsFamily} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
+            <label className={`field ${codeFont.controlsWeight ? 'code-controlled' : ''}`}><span>字重 <b>{codeFont.controlsWeight ? `${effectiveFontWeightCss} · 代码` : settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} disabled={codeFont.controlsWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
+            <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>点阵背景</strong><small>{documentRenderConfig.showGrid !== undefined ? '由 Frontmatter 代码控制' : '辅助观察画布移动与缩放'}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
+            <div className="font-samples"><small>字体预览{(codeFont.controlsFamily || codeFont.controlsSize || codeFont.controlsWeight) && ' · 代码配置'}</small><span style={fontPreviewStyle}>思维导图 Mind Map 0123</span></div>
           </div>}
           {activePanel === 'export' && <div className="settings-body">
             <div className="format-grid">{(['png', 'jpeg', 'svg', 'html', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MD' : format.toUpperCase()}</strong><small>{format === 'png' ? '无损位图' : format === 'jpeg' ? '体积更小' : format === 'svg' ? '无限清晰' : format === 'html' ? '网页文件' : '源文件'}</small></button>)}</div>
