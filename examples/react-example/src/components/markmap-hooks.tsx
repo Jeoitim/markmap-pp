@@ -146,6 +146,7 @@ interface AppSettings {
   previewFontSize: number
   previewFont: PreviewFont
   previewWeight: number
+  colorFreezeLevel: number
   showGrid: boolean
 }
 
@@ -155,6 +156,7 @@ const defaultSettings: AppSettings = {
   previewFontSize: 16,
   previewFont: 'notoSans',
   previewWeight: 400,
+  colorFreezeLevel: 2,
   showGrid: true,
 }
 
@@ -186,9 +188,10 @@ interface CodeFontOptions {
 
 interface DocumentRenderConfig {
   root: ReturnType<Transformer['transform']>['root']
-  markmapOptions: Partial<IMarkmapOptions>
+  jsonOptions: CodeOptions
   optionKeys: string[]
   style: string
+  colorFreezeLevel?: number
   showGrid?: boolean
   font: CodeFontOptions
 }
@@ -218,11 +221,13 @@ function buildDocumentRenderConfig(markdown: string): DocumentRenderConfig {
   const family = typeof options.fontFamily === 'string' ? options.fontFamily.trim() : cssDeclaration(style, 'font-family')
   const size = cssLength(options.fontSize) || cssDeclaration(style, 'font-size')
   const weight = options.fontWeight == null ? cssDeclaration(style, 'font-weight') : String(options.fontWeight)
+  const parsedColorFreezeLevel = Number(options.colorFreezeLevel)
   return {
     root: transformed.root,
-    markmapOptions: deriveOptions(options),
+    jsonOptions: options,
     optionKeys: Object.keys(options).filter((key) => !['htmlParser', 'extraCss', 'extraJs'].includes(key)),
     style,
+    colorFreezeLevel: options.colorFreezeLevel != null && Number.isFinite(parsedColorFreezeLevel) ? parsedColorFreezeLevel : undefined,
     showGrid: typeof options.showGrid === 'boolean' ? options.showGrid : undefined,
     font: {
       shorthand,
@@ -473,11 +478,17 @@ export default function MarkmapHooks() {
   const effectiveFontSize = Number.parseFloat(effectiveFontSizeCss) || settings.previewFontSize
   const effectiveFontWeightCss = codeFont.weight || String(settings.previewWeight)
   const effectiveFontWeight = Number.parseFloat(effectiveFontWeightCss) || settings.previewWeight
+  const effectiveColorFreezeLevel = documentRenderConfig.colorFreezeLevel ?? settings.colorFreezeLevel
   const effectiveShowGrid = documentRenderConfig.showGrid ?? settings.showGrid
+  const effectiveMarkmapOptions = useMemo<Partial<IMarkmapOptions>>(() => deriveOptions({
+    ...documentRenderConfig.jsonOptions,
+    colorFreezeLevel: effectiveColorFreezeLevel,
+  }), [documentRenderConfig.jsonOptions, effectiveColorFreezeLevel])
   const fontPreviewStyle: React.CSSProperties = codeFont.shorthand
     ? { font: codeFont.shorthand }
     : { fontFamily: effectiveFontFamily, fontSize: effectiveFontSizeCss, fontWeight: effectiveFontWeightCss }
   const updateSettings = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setSettings((current) => ({ ...current, [key]: value }))
+  const resetSettings = () => setSettings({ ...defaultSettings })
   const updateMarkdown = useCallback((value: string, source = 'editor') => {
     const current = markdownRef.current
     if (value === current) return
@@ -920,7 +931,10 @@ export default function MarkmapHooks() {
   useEffect(() => {
     if (!svgRef.current) return
     const initialConfig = buildDocumentRenderConfig(initialMarkdownRef.current)
-    const mm = Markmap.create(svgRef.current, viewOptions(initialConfig.markmapOptions))
+    const mm = Markmap.create(svgRef.current, viewOptions(deriveOptions({
+      ...initialConfig.jsonOptions,
+      colorFreezeLevel: initialConfig.colorFreezeLevel ?? defaultSettings.colorFreezeLevel,
+    })))
     mmRef.current = mm
     void mm.setData(initialConfig.root).then(() => {
       const { width, height } = svgRef.current?.getBoundingClientRect() || { width: 0, height: 0 }
@@ -1003,7 +1017,7 @@ export default function MarkmapHooks() {
         if (!disposed) void mm.setData()
       }, 40)
     }
-    void mm.setData(documentRenderConfig.root, viewOptions(documentRenderConfig.markmapOptions)).then(() => {
+    void mm.setData(documentRenderConfig.root, viewOptions(effectiveMarkmapOptions)).then(() => {
       if (disposed) return
       svg.querySelectorAll('img').forEach((image) => {
         if (!image.complete) {
@@ -1024,7 +1038,7 @@ export default function MarkmapHooks() {
         imageRelayoutTimerRef.current = null
       }
     }
-  }, [documentRenderConfig, viewOptions])
+  }, [documentRenderConfig, effectiveMarkmapOptions, viewOptions])
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
@@ -1303,7 +1317,7 @@ export default function MarkmapHooks() {
 
       {activePanel && <div className="panel-backdrop" onMouseDown={() => setActivePanel(null)}>
         <section className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><strong>{activePanel === 'editor' ? '编辑器设置' : activePanel === 'preview' ? '预览设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : '导出思维导图'}</strong><small>{activePanel === 'export' ? '选择格式与清晰度' : activePanel === 'github' ? '本地暂存，确认后一次提交并推送' : activePanel === 'help' ? '不会覆盖当前 Markdown' : '更改会立即生效'}</small></div><button className="header-icon" onClick={() => setActivePanel(null)} aria-label="关闭"><Icon name="x" /></button></header>
+          <header><div><strong>{activePanel === 'editor' ? '编辑器设置' : activePanel === 'preview' ? '预览设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : '导出思维导图'}</strong><small>{activePanel === 'export' ? '选择格式与清晰度' : activePanel === 'github' ? '本地暂存，确认后一次提交并推送' : activePanel === 'help' ? '不会覆盖当前 Markdown' : '更改会立即生效'}</small></div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />恢复默认设置</button>}<button className="header-icon" onClick={() => setActivePanel(null)} aria-label="关闭"><Icon name="x" /></button></div></header>
           {activePanel === 'github' && <div className="github-body">
             {!githubConfig ? <div className="github-bind-form">
               <label className="field"><span>仓库</span><input type="text" value={repositoryInput} onChange={(event) => setRepositoryInput(event.target.value)} placeholder="owner/repository" /></label>
@@ -1336,6 +1350,7 @@ export default function MarkmapHooks() {
             <label className={`field ${codeFont.controlsSize ? 'code-controlled' : ''}`}><span>节点字号 <b>{codeFont.controlsSize ? `${effectiveFontSizeCss} · 代码` : `${settings.previewFontSize}px`}</b></span><input type="range" min="12" max="28" value={settings.previewFontSize} disabled={codeFont.controlsSize} onChange={(event) => updateSettings('previewFontSize', Number(event.target.value))} /></label>
             <label className={`field ${codeFont.controlsFamily ? 'code-controlled' : ''}`}><span>字体{codeFont.controlsFamily && <b>由代码控制</b>}</span><select value={settings.previewFont} disabled={codeFont.controlsFamily} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
             <label className={`field ${codeFont.controlsWeight ? 'code-controlled' : ''}`}><span>字重 <b>{codeFont.controlsWeight ? `${effectiveFontWeightCss} · 代码` : settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} disabled={codeFont.controlsWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
+            <label className={`field ${documentRenderConfig.colorFreezeLevel !== undefined ? 'code-controlled' : ''}`}><span>颜色层级 <b>{documentRenderConfig.colorFreezeLevel !== undefined ? `${effectiveColorFreezeLevel} · 代码` : effectiveColorFreezeLevel}</b></span><input type="range" min="0" max="6" step="1" value={effectiveColorFreezeLevel} disabled={documentRenderConfig.colorFreezeLevel !== undefined} onChange={(event) => updateSettings('colorFreezeLevel', Number(event.target.value))} /><small>从指定层级开始继承分支颜色，0 表示不锁定</small></label>
             <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>点阵背景</strong><small>{documentRenderConfig.showGrid !== undefined ? '由 Frontmatter 代码控制' : '辅助观察画布移动与缩放'}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
             <div className="font-samples"><small>字体预览{(codeFont.controlsFamily || codeFont.controlsSize || codeFont.controlsWeight) && ' · 代码配置'}</small><span style={fontPreviewStyle}>思维导图 Mind Map 0123</span></div>
           </div>}

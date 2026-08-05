@@ -115,8 +115,12 @@ svg { flex: 0 0 auto; }
 .settings-panel { width: min(430px, calc(100vw - 32px)); overflow: hidden; border: 1px solid var(--border); border-radius: 15px; background: var(--panel); box-shadow: 0 24px 70px #0b0d1338; animation: panel-in .16s ease-out; }
 .settings-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 17px 18px 14px; border-bottom: 1px solid var(--border); }
 .settings-panel > header > div { display: grid; gap: 3px; }
+.settings-panel > header > .panel-header-actions { display: flex; align-items: center; gap: 8px; }
 .settings-panel > header strong { font-size: 15px; }
 .settings-panel > header small { color: var(--muted); font-size: 12px; }
+.reset-settings-button { display: inline-flex; align-items: center; gap: 5px; height: 29px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: var(--panel); cursor: pointer; font-size: 12px; transition: .16s ease; }
+.reset-settings-button:hover { border-color: #b9b0e8; color: var(--text); background: var(--panel-soft); }
+.reset-settings-button svg { width: 14px; height: 14px; }
 .settings-body { display: grid; gap: 21px; padding: 22px; }
 .field { display: grid; gap: 10px; color: var(--muted); font-size: 13px; }
 .field > span { display: flex; justify-content: space-between; color: var(--text); font-weight: 600; }
