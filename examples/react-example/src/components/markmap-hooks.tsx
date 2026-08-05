@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import katex from 'katex'
 import { defaultOptions, deriveOptions, Markmap, toMarkdown, Transformer } from 'markmap-plus'
-import type { IMarkmapJSONOptions, IMarkmapOptions } from 'markmap-view-plus'
+import type { IMarkmapJSONOptions, IMarkmapOptions } from 'markmap-plus'
 import 'katex/dist/katex.min.css'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
