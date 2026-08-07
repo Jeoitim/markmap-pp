@@ -51,8 +51,8 @@ options:
 ## 👋 欢迎使用
 
 - 左侧编写 **Markdown**，右侧即时生成思维导图
-- 这既是一份功能演示，也是一份可直接修改的操作教程
-- 刷新页面会恢复本指南；重要内容请使用顶部 **导出** 保存
+- 这里集中介绍节点、画布、Markdown、导出与 GitHub 文档同步
+- 需要修改内容时，请回到左侧 Markdown 编辑器；重要内容请使用顶部 **导出** 保存
 - [markmap++ 文档站](https://jeoitim.github.io/markmap-pp/doc/) · GitHub 项目：[Jeoitim/markmap-pp](https://github.com/Jeoitim/markmap-pp)
 
 ## 🧭 节点与画布操作
@@ -144,6 +144,7 @@ console.log(message)
 
 type Pane = 'editor' | 'preview'
 type Panel = Pane | 'export' | 'github' | 'help' | null
+const HELP_TIP_COUNT = 5
 type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html'
 type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 
@@ -492,6 +493,7 @@ export default function MarkmapHooks() {
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
   const [settings, setSettings] = useState(loadSettings)
   const [activePanel, setActivePanel] = useState<Panel>(null)
+  const [helpTipIndex, setHelpTipIndex] = useState(0)
   const [editorWidth, setEditorWidth] = useState(38)
   const [editorCollapsed, setEditorCollapsed] = useState(false)
   const [canUndo, setCanUndo] = useState(false)
@@ -558,6 +560,7 @@ export default function MarkmapHooks() {
   const markdownRef = useRef(markdown)
   const historyRef = useRef<string[]>([])
   const lastEditRef = useRef({ source: '', time: 0 })
+  const helpTouchStartRef = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => () => {
     const gesture = repositoryTouchGestureRef.current
@@ -607,6 +610,22 @@ export default function MarkmapHooks() {
     : { fontFamily: effectiveFontFamily, fontSize: effectiveFontSizeCss, fontWeight: effectiveFontWeightCss }
   const updateSettings = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setSettings((current) => ({ ...current, [key]: value }))
   const resetSettings = () => setSettings({ ...defaultSettings })
+  const openHelpPanel = () => { setHelpTipIndex(0); setActivePanel('help') }
+  const moveHelpTip = (direction: number) => setHelpTipIndex((current) => (current + direction + HELP_TIP_COUNT) % HELP_TIP_COUNT)
+  const startHelpSwipe = (event: React.TouchEvent<HTMLElement>) => {
+    const touch = event.touches[0]
+    if (touch) helpTouchStartRef.current = { x: touch.clientX, y: touch.clientY }
+  }
+  const endHelpSwipe = (event: React.TouchEvent<HTMLElement>) => {
+    const start = helpTouchStartRef.current
+    helpTouchStartRef.current = null
+    const touch = event.changedTouches[0]
+    if (!start || !touch) return
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+    if (Math.abs(deltaX) < 42 || Math.abs(deltaX) < Math.abs(deltaY)) return
+    moveHelpTip(deltaX < 0 ? 1 : -1)
+  }
   const updateMarkdown = useCallback((value: string, source = 'editor') => {
     const current = markdownRef.current
     if (value === current) return
@@ -1242,8 +1261,10 @@ export default function MarkmapHooks() {
 
   const openRepositoryCommit = async (commit: GitHubRepositoryCommit) => {
     if (!githubConfig) return
+    const branchHeadSha = repositoryGraph?.branches.find((branch) => branch.name === githubConfig.branch)?.sha
+    const isLatestCommit = commit.sha === branchHeadSha || (!repositoryCommitRef && commit.sha === remoteHead)
     setGithubBusy(true); setGithubError(''); setGithubNotice('')
-    setRepositoryCommitRef(commit.sha)
+    if (!isLatestCommit) setRepositoryCommitRef(commit.sha)
     setRemoteHead('')
     setRemoteFiles([])
     setActiveRepoPath(null)
@@ -1253,11 +1274,14 @@ export default function MarkmapHooks() {
     setRepositoryDropFolder(null)
     setRepositoryGraph(null)
     try {
-      const result = await listRemoteMarkdown(githubConfig, commit.sha)
+      const result = await (isLatestCommit ? refreshRepository(githubConfig) : listRemoteMarkdown(githubConfig, commit.sha))
       setRemoteHead(result.head)
       setRemoteFiles(result.files)
-      setGithubNotice(`正在查看 commit ${commit.sha.slice(0, 7)} 的文件状态`)
+      setRepositoryCommitRef(isLatestCommit ? null : commit.sha)
+      setEditorView('repository')
+      setGithubNotice(isLatestCommit ? '已回到最新 commit，可继续编辑并查看 Git 状态' : `正在查看 commit ${commit.sha.slice(0, 7)} 的文件状态`)
     } catch (error) {
+      setRepositoryCommitRef(isLatestCommit ? repositoryCommitRef : commit.sha)
       setGithubError(error instanceof Error ? error.message : '切换到 commit 失败')
     } finally { setGithubBusy(false) }
   }
@@ -1298,6 +1322,17 @@ export default function MarkmapHooks() {
     }, 180)
     return () => window.clearTimeout(timer)
   }, [markdown])
+
+  useEffect(() => {
+    if (activePanel !== 'help') return
+    const moveWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      event.preventDefault()
+      setHelpTipIndex((current) => (current + (event.key === 'ArrowRight' ? 1 : -1) + HELP_TIP_COUNT) % HELP_TIP_COUNT)
+    }
+    window.addEventListener('keydown', moveWithKeyboard)
+    return () => window.removeEventListener('keydown', moveWithKeyboard)
+  }, [activePanel])
 
   useEffect(() => {
     if (!githubConfig) return
@@ -1609,6 +1644,51 @@ export default function MarkmapHooks() {
   const repositoryMenuFile = repositoryMenu?.target.type === 'file' ? repositoryRows.find((row) => row.type === 'file' && row.path === repositoryMenu.target.path) : undefined
   const titleSyncState = activeCachedFile ? githubBusy ? 'syncing' : activeCachedFile.status === 'clean' ? 'synced' : 'dirty' : saveState
   const titleSyncText = activeCachedFile ? githubBusy ? '同步中' : activeCachedFile.status === 'clean' ? '已同步' : '已暂存但未推送' : saveState === 'saved' ? '当前内容已更新' : '正在更新预览…'
+  const helpTips = [
+    {
+      kicker: 'TIP 01 · START',
+      title: '快速上手',
+      description: '把 Markdown 当作内容，把思维导图当作结构预览。',
+      content: <>
+        <div className="help-tip-callout"><Icon name="map" /><span><strong>左侧写内容，右侧看结构。</strong> 输入 Markdown 后，预览会即时生成；本页用于快速了解编辑器和思维导图的主要功能。</span></div>
+        <div className="help-tip-steps"><div><b>01</b><span><strong>编写</strong>在左侧编辑器中输入标题、列表或正文。</span></div><div><b>02</b><span><strong>观察</strong>右侧会同步更新节点、层级和连接关系。</span></div><div><b>03</b><span><strong>保存</strong>使用顶部导出保存副本，或绑定 GitHub 管理文档。</span></div></div>
+        <p className="help-tip-note">刷新页面会恢复默认操作指南；重要内容请及时导出或保存到仓库。</p>
+      </>,
+    },
+    {
+      kicker: 'TIP 02 · CANVAS',
+      title: '节点与画布操作',
+      description: '先选中，再编辑；画布本身可以自由移动和缩放。',
+      content: <div className="help-tip-actions"><div><b>单击节点</b><span>选中节点，Enter 新增同级节点。</span></div><div><b>双击节点</b><span>进入文字编辑，Enter 保存当前文字。</span></div><div><b>Tab</b><span>为当前节点新增一个子节点。</span></div><div><b>Delete / Backspace</b><span>删除选中的整个节点；需要时可点击顶部“撤回”。</span></div><div><b>拖动画布</b><span>按住空白区域拖动，浏览超出视口的内容。</span></div><div><b>滚轮 / 触控板</b><span>缩放画布；点击节点圆点折叠或展开分支。</span></div><div><b>适应画布</b><span>点击预览右上角的适应按钮，让完整导图回到视口。</span></div><div><b>分割线</b><span>拖动中间分割线调整编辑器和预览的宽度。</span></div></div>,
+    },
+    {
+      kicker: 'TIP 03 · MARKDOWN',
+      title: 'Markdown 丰富语法',
+      description: '用轻量语法表达层级、重点和更完整的资料。',
+      content: <>
+        <div className="help-tip-section"><strong>文字与结构</strong><div className="help-tip-chip-row"><code># 标题</code><code>**粗体**</code><code>*斜体*</code><code>~~删除线~~</code><code>==高亮==</code><code>`行内代码`</code></div></div>
+        <div className="help-tip-section"><strong>适合思维导图的内容</strong><ul><li>使用标题和缩进列表组织层级，标题越深，分支层级越深。</li><li>有序列表、无序列表和任务清单适合拆解步骤与待办事项。</li><li>表格、LaTeX 公式、代码块和在线图片可以保留在 Markdown 中。</li></ul></div>
+        <div className="help-tip-callout subtle"><Icon name="check" /><span>较长文字会按节点最大宽度自动换行；需要更清晰的结构时，可以拆成多个子节点。</span></div>
+      </>,
+    },
+    {
+      kicker: 'TIP 04 · EDIT & EXPORT',
+      title: '编辑、显示与导出',
+      description: '把阅读体验调到合适状态，再选择适合用途的输出格式。',
+      content: <div className="help-tip-grid"><div><strong>编辑器设置</strong><span>调整 Markdown 字号和语法高亮方案。</span></div><div><strong>预览设置</strong><span>调整节点字号、字体、字重、配色冻结层级和点阵背景。</span></div><div><strong>主题切换</strong><span>顶部月亮/太阳按钮切换深色与浅色模式。</span></div><div><strong>导出 Markdown</strong><span>保留可继续编辑的源文件。</span></div><div><strong>导出 SVG / HTML</strong><span>适合网页、分享和无限缩放。</span></div><div><strong>导出 PNG / JPEG</strong><span>适合图片分享，可选择渲染倍率。</span></div></div>,
+    },
+    {
+      kicker: 'TIP 05 · GITHUB',
+      title: 'GitHub 文档同步',
+      description: '文件先保存在浏览器本地缓存，确认后再推送到远程仓库。',
+      content: <>
+        <div className="help-tip-steps"><div><b>01</b><span><strong>绑定</strong>在仓库设置中填写仓库、分支和具有 Contents 权限的令牌。</span></div><div><b>02</b><span><strong>编辑</strong>打开文件后修改内容，状态会显示为 M；新文件显示为 A。</span></div><div><b>03</b><span><strong>同步</strong>点击仓库页同步按钮，一次性创建 commit 并推送。</span></div></div>
+        <div className="help-tip-statuses"><span><i className="clean" />已同步</span><span><i className="dirty" />已修改</span><span><i className="added" />新文件</span><span><i className="remote" />尚未拉取</span></div>
+        <p className="help-tip-note">仓库底部的分支按钮可以查看 Git Graph、切换分支，或打开某个 commit 阶段的文件树。历史文件打开后是独立缓存，不会改变当前分支的编辑状态。</p>
+      </>,
+    },
+  ]
+  const currentHelpTip = helpTips[helpTipIndex]
 
   return (
     <main className="app-shell">
@@ -1619,7 +1699,7 @@ export default function MarkmapHooks() {
         <nav ref={actionsRef} className="actions" aria-label="文档操作">
           <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
           <button type="button" className="button secondary collapsible-action" onClick={() => fileInputRef.current?.click()}><Icon name="folder" /><span>打开</span></button>
-          <button type="button" className="button secondary collapsible-action" onClick={() => setActivePanel('help')}><Icon name="help" /><span>说明</span></button>
+          <button type="button" className="button secondary collapsible-action" onClick={openHelpPanel}><Icon name="help" /><span>说明</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
           <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
@@ -1627,7 +1707,7 @@ export default function MarkmapHooks() {
           <button type="button" className="icon-button more-action" aria-label="更多操作" title="更多操作" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
           {actionMenuOpen && <div className="action-overflow-menu">
             <button type="button" onClick={() => { setActionMenuOpen(false); fileInputRef.current?.click() }}><Icon name="folder" /><span>打开 Markdown</span></button>
-            <button type="button" onClick={() => { setActionMenuOpen(false); setActivePanel('help') }}><Icon name="help" /><span>使用说明</span></button>
+            <button type="button" onClick={() => { setActionMenuOpen(false); openHelpPanel() }}><Icon name="help" /><span>使用说明</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); undoLastChange() }} disabled={!canUndo}><Icon name="undo" /><span>撤回修改</span></button>
           </div>}
         </nav>
@@ -1696,7 +1776,7 @@ export default function MarkmapHooks() {
 
       {activePanel && <div className="panel-backdrop" onMouseDown={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }}>
         <section className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><strong>{activePanel === 'editor' ? '编辑器设置' : activePanel === 'preview' ? '预览设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : exportTab === 'repository' ? '另存到 Git 仓库' : '导出思维导图'}</strong><small>{activePanel === 'export' ? exportTab === 'repository' ? '选择仓库位置并暂存当前 Markdown' : '选择格式与清晰度' : activePanel === 'github' ? '本地暂存，确认后一次提交并推送' : activePanel === 'help' ? '不会覆盖当前 Markdown' : '更改会立即生效'}</small></div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />恢复默认设置</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label="关闭"><Icon name="x" /></button></div></header>
+          <header><div><strong>{activePanel === 'editor' ? '编辑器设置' : activePanel === 'preview' ? '预览设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : exportTab === 'repository' ? '另存到 Git 仓库' : '导出思维导图'}</strong>{activePanel !== 'help' && <small>{activePanel === 'export' ? exportTab === 'repository' ? '选择仓库位置并暂存当前 Markdown' : '选择格式与清晰度' : activePanel === 'github' ? '本地暂存，确认后一次提交并推送' : '更改会立即生效'}</small>}</div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />恢复默认设置</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label="关闭"><Icon name="x" /></button></div></header>
           {activePanel === 'github' && <div className="github-body">
             {!githubConfig ? <div className="github-bind-form">
               <label className="field"><span>仓库</span><input type="text" value={repositoryInput} onChange={(event) => setRepositoryInput(event.target.value)} placeholder="owner/repository" /></label>
@@ -1714,9 +1794,17 @@ export default function MarkmapHooks() {
             </div>}
           </div>}
           {activePanel === 'help' && <div className="help-body">
-            <div className="help-callout"><strong>单击是选中，双击才是编辑</strong><span>只单击节点时，Enter 会新增同级节点；双击出现输入框后，Enter 才会保存文字。</span></div>
-            <dl><div><dt>单击节点</dt><dd>选中节点</dd></div><div><dt>双击节点</dt><dd>编辑文字</dd></div><div><dt>Enter</dt><dd>选中时新增同级；编辑时保存</dd></div><div><dt>Tab</dt><dd>新增子节点</dd></div><div><dt>Delete / Backspace</dt><dd>删除选中的整个节点</dd></div><div><dt>撤回</dt><dd>恢复最近一次修改或误删</dd></div></dl>
-            <p>画布支持拖动、滚轮缩放和点击圆点折叠分支。</p>
+            <div className="help-tip-stage" role="region" aria-roledescription="carousel" aria-label="使用说明提示卡片" onTouchStart={startHelpSwipe} onTouchEnd={endHelpSwipe}>
+              <button type="button" className="help-tip-nav" onClick={() => moveHelpTip(-1)} aria-label="上一条说明"><Icon name="chevron-left" /></button>
+              <article className="help-tip-card" aria-live="polite">
+                <div className="help-tip-heading"><span>{currentHelpTip.kicker}</span><small>{helpTipIndex + 1} / {HELP_TIP_COUNT}</small></div>
+                <h2>{currentHelpTip.title}</h2>
+                <p className="help-tip-description">{currentHelpTip.description}</p>
+                {currentHelpTip.content}
+              </article>
+              <button type="button" className="help-tip-nav" onClick={() => moveHelpTip(1)} aria-label="下一条说明"><Icon name="chevron-right" /></button>
+            </div>
+            <div className="help-tip-footer"><div className="help-tip-dots" role="tablist" aria-label="选择说明提示"><span className="sr-only">当前提示</span>{helpTips.map((tip, index) => <button type="button" key={tip.kicker} className={index === helpTipIndex ? 'active' : ''} role="tab" aria-selected={index === helpTipIndex} aria-label={`查看第 ${index + 1} 条：${tip.title}`} onClick={() => setHelpTipIndex(index)} />)}</div></div>
           </div>}
           {activePanel === 'editor' && <div className="settings-body">
             <label className="field"><span>字号 <b>{settings.editorFontSize}px</b></span><input type="range" min="12" max="22" value={settings.editorFontSize} onChange={(event) => updateSettings('editorFontSize', Number(event.target.value))} /></label>
