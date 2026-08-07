@@ -463,6 +463,7 @@ export default function MarkmapHooks() {
   const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
   const [exportScale, setExportScale] = useState(2)
+  const [exportTab, setExportTab] = useState<'file' | 'repository'>('file')
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const [showDiagnostics, setShowDiagnostics] = useState(false)
@@ -479,8 +480,14 @@ export default function MarkmapHooks() {
   const [githubNotice, setGithubNotice] = useState('')
   const [virtualFolders, setVirtualFolders] = useState<string[]>([])
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set())
+  const [repositorySaveCollapsedFolders, setRepositorySaveCollapsedFolders] = useState<Set<string>>(() => new Set())
   const [repositoryClipboard, setRepositoryClipboard] = useState<RepositoryClipboard | null>(null)
   const [repositoryMenu, setRepositoryMenu] = useState<{ x: number; y: number; target: RepositoryTarget } | null>(null)
+  const [repositorySaveMode, setRepositorySaveMode] = useState(false)
+  const [repositorySaveFolder, setRepositorySaveFolder] = useState('')
+  const [repositorySaveName, setRepositorySaveName] = useState('')
+  const [repositoryNewFolderParent, setRepositoryNewFolderParent] = useState<string | null>(null)
+  const [repositoryNewFolderName, setRepositoryNewFolderName] = useState('')
   const [draggedRepositoryTarget, setDraggedRepositoryTarget] = useState<RepositoryTarget | null>(null)
   const [repositoryDropFolder, setRepositoryDropFolder] = useState<string | null>(null)
   const [repositoryTouchDrag, setRepositoryTouchDrag] = useState<{ target: RepositoryTarget; dropFolder: string | null; dragging: boolean; x: number; y: number } | null>(null)
@@ -672,6 +679,75 @@ export default function MarkmapHooks() {
     } finally { setGithubBusy(false) }
   }
 
+  const cancelRepositorySave = () => {
+    setRepositorySaveMode(false)
+    setRepositorySaveFolder('')
+    setRepositorySaveName('')
+    setRepositoryNewFolderParent(null)
+    setRepositoryNewFolderName('')
+    setRepositoryMenu(null)
+    setDraggedRepositoryTarget(null)
+    setRepositoryDropFolder(null)
+    setRepositoryTouchDrag(null)
+  }
+
+  const startRepositorySave = () => {
+    if (!githubConfig) {
+      setGithubError('请先绑定 GitHub 仓库')
+      setActivePanel('github')
+      return
+    }
+    const currentName = baseName(fileName) || '未命名.md'
+    setRepositorySaveName(/\.md$/i.test(currentName) ? currentName : `${currentName}.md`)
+    setRepositorySaveFolder('')
+    setRepositorySaveCollapsedFolders(new Set())
+    setRepositorySaveMode(true)
+    setExportTab('repository')
+    setActivePanel('export')
+    setGithubError('')
+    setGithubNotice('')
+    setGithubBusy(true)
+    void refreshRepository(githubConfig)
+      .catch((error) => setGithubError(error instanceof Error ? error.message : '刷新仓库失败'))
+      .finally(() => setGithubBusy(false))
+  }
+
+  const saveCurrentDocumentToRepository = async () => {
+    if (!githubConfig) return
+    let name = repositorySaveName.trim()
+    if (!name) { setGithubError('请输入 Markdown 文件名'); return }
+    if (!/\.md$/i.test(name)) name += '.md'
+    const path = joinPath(repositorySaveFolder, name)
+    const occupied = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, new Set()).some((row) => row.path === path)
+    if (!validRepositoryPath(path) || /[\\/]/.test(name) || name === '.' || name === '..') { setGithubError('文件名无效，不能包含路径分隔符'); return }
+    if (occupied) { setGithubError(`“${path}”已存在，请换一个文件名`); return }
+    if (!remoteHead) { setGithubError('仓库尚未准备好，请先刷新文件树'); return }
+
+    setGithubBusy(true); setGithubError(''); setGithubNotice('')
+    try {
+      const repoKey = repoKeyOf(githubConfig)
+      const file: CachedMarkdownFile = {
+        id: `${repoKey}:${path}`,
+        repoKey,
+        path,
+        originalPath: path,
+        content: markdown,
+        baseContent: '',
+        baseSha: '',
+        baseCommit: remoteHead,
+        status: 'added',
+        updatedAt: Date.now(),
+      }
+      await putCachedFile(file)
+      setCachedFiles((current) => [...current, file].sort((a, b) => a.path.localeCompare(b.path)))
+      cancelRepositorySave()
+      activateCachedFile(file)
+      setGithubNotice(`已暂存到 ${path}，点击仓库页“同步”后推送`)
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '另存失败')
+    } finally { setGithubBusy(false) }
+  }
+
   const repositoryFilesForTarget = async (target: RepositoryTarget) => {
     if (!githubConfig || target.type === 'root') return []
     const rows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, new Set())
@@ -771,15 +847,40 @@ export default function MarkmapHooks() {
     activateCachedFile(file)
   }
 
-  const createRepositoryFolder = (folder: string) => {
-    if (!githubConfig) return
-    const name = window.prompt('新建文件夹', '新建文件夹')?.trim()
-    if (!name) return
+  const createRepositoryFolderAt = (folder: string, requestedName: string) => {
+    if (!githubConfig) return null
+    const name = requestedName.trim()
+    if (!name) return null
     const path = joinPath(folder, name)
-    if (!validRepositoryPath(path) || virtualFolders.includes(path)) { setGithubError('文件夹名称无效或已存在'); return }
+    const occupied = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, new Set()).some((row) => row.path === path)
+    if (!validRepositoryPath(path) || /[\\/]/.test(name) || name === '.' || name === '..' || occupied) { setGithubError(occupied ? '文件夹或文件已存在' : '文件夹名称无效'); return null }
     const next = [...virtualFolders, path].sort()
     setVirtualFolders(next); saveVirtualFolders(repoKeyOf(githubConfig), next)
     setCollapsedFolders((current) => { const value = new Set(current); value.delete(folder); return value })
+    return path
+  }
+
+  const createRepositoryFolder = (folder: string) => {
+    if (!githubConfig) return
+    const name = window.prompt('新建文件夹', '新建文件夹')?.trim()
+    if (name) createRepositoryFolderAt(folder, name)
+  }
+
+  const beginRepositoryFolderCreation = () => {
+    setGithubError('')
+    setRepositoryNewFolderParent(repositorySaveFolder)
+    setRepositoryNewFolderName('')
+  }
+
+  const finishRepositoryFolderCreation = () => {
+    if (repositoryNewFolderParent === null) return
+    const path = createRepositoryFolderAt(repositoryNewFolderParent, repositoryNewFolderName)
+    if (path) {
+      setRepositorySaveCollapsedFolders((current) => { const next = new Set(current); next.delete(repositoryNewFolderParent); return next })
+      setRepositorySaveFolder(path)
+      setRepositoryNewFolderParent(null)
+      setRepositoryNewFolderName('')
+    }
   }
 
   const deleteRepositoryTarget = async (target: RepositoryTarget) => {
@@ -1340,6 +1441,7 @@ export default function MarkmapHooks() {
   const changedFiles = cachedFiles.filter((file) => file.status !== 'clean')
   const hasRepositoryDrafts = changedFiles.length > 0 || virtualFolders.length > 0
   const repositoryRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, collapsedFolders)
+  const repositorySaveRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, repositorySaveCollapsedFolders)
   const titleSyncState = activeCachedFile ? githubBusy ? 'syncing' : activeCachedFile.status === 'clean' ? 'synced' : 'dirty' : saveState
   const titleSyncText = activeCachedFile ? githubBusy ? '同步中' : activeCachedFile.status === 'clean' ? '已同步' : '已暂存但未推送' : saveState === 'saved' ? '当前内容已更新' : '正在更新预览…'
 
@@ -1354,7 +1456,7 @@ export default function MarkmapHooks() {
           <button type="button" className="button secondary collapsible-action" onClick={() => fileInputRef.current?.click()}><Icon name="folder" /><span>打开</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={() => setActivePanel('help')}><Icon name="help" /><span>说明</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
-          <button type="button" className="button primary" onClick={() => { setExportError(''); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
+          <button type="button" className="button primary" onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
           <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
           <button type="button" className="icon-button" aria-label={dark ? '切换浅色模式' : '切换深色模式'} title={dark ? '浅色模式' : '深色模式'} onClick={() => setDark((value) => !value)}><Icon name={dark ? 'sun' : 'moon'} /></button>
           <button type="button" className="icon-button more-action" aria-label="更多操作" title="更多操作" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
@@ -1414,9 +1516,9 @@ export default function MarkmapHooks() {
         </section>
       </section>
 
-      {activePanel && <div className="panel-backdrop" onMouseDown={() => setActivePanel(null)}>
-        <section className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><strong>{activePanel === 'editor' ? '编辑器设置' : activePanel === 'preview' ? '预览设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : '导出思维导图'}</strong><small>{activePanel === 'export' ? '选择格式与清晰度' : activePanel === 'github' ? '本地暂存，确认后一次提交并推送' : activePanel === 'help' ? '不会覆盖当前 Markdown' : '更改会立即生效'}</small></div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />恢复默认设置</button>}<button className="header-icon" onClick={() => setActivePanel(null)} aria-label="关闭"><Icon name="x" /></button></div></header>
+      {activePanel && <div className="panel-backdrop" onMouseDown={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }}>
+        <section className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><strong>{activePanel === 'editor' ? '编辑器设置' : activePanel === 'preview' ? '预览设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : exportTab === 'repository' ? '另存到 Git 仓库' : '导出思维导图'}</strong><small>{activePanel === 'export' ? exportTab === 'repository' ? '选择仓库位置并暂存当前 Markdown' : '选择格式与清晰度' : activePanel === 'github' ? '本地暂存，确认后一次提交并推送' : activePanel === 'help' ? '不会覆盖当前 Markdown' : '更改会立即生效'}</small></div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />恢复默认设置</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label="关闭"><Icon name="x" /></button></div></header>
           {activePanel === 'github' && <div className="github-body">
             {!githubConfig ? <div className="github-bind-form">
               <label className="field"><span>仓库</span><input type="text" value={repositoryInput} onChange={(event) => setRepositoryInput(event.target.value)} placeholder="owner/repository" /></label>
@@ -1430,8 +1532,7 @@ export default function MarkmapHooks() {
               <div className="settings-note"><Icon name="check" /><span>编辑只写入浏览器本地缓存。只有点击仓库页的“同步”按钮时，才会自动创建一个 commit 并推送。</span></div>
               {githubError && <div className="export-error"><Icon name="warning" />{githubError}</div>}
               {githubNotice && <div className="github-notice"><Icon name="check" />{githubNotice}</div>}
-              <button className="export-submit" onClick={() => { setEditorView('repository'); setActivePanel(null) }}><Icon name="folder" />打开仓库文件树</button>
-              <button className="github-unbind" type="button" onClick={() => { saveGitHubConfig(null); setGithubConfig(null); setRemoteFiles([]); setRemoteHead(''); setEditorView('markdown'); setGithubNotice('') }}>解除仓库绑定</button>
+              <button className="github-unbind" type="button" onClick={() => { cancelRepositorySave(); saveGitHubConfig(null); setGithubConfig(null); setRemoteFiles([]); setRemoteHead(''); setEditorView('markdown'); setGithubNotice('') }}>解除仓库绑定</button>
             </div>}
           </div>}
           {activePanel === 'help' && <div className="help-body">
@@ -1453,11 +1554,45 @@ export default function MarkmapHooks() {
             <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>点阵背景</strong><small>{documentRenderConfig.showGrid !== undefined ? '由 Frontmatter 代码控制' : '辅助观察画布移动与缩放'}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
             <div className="font-samples"><small>字体预览{(codeFont.controlsFamily || codeFont.controlsSize || codeFont.controlsWeight) && ' · 代码配置'}</small><span style={fontPreviewStyle}>思维导图 Mind Map 0123</span></div>
           </div>}
-          {activePanel === 'export' && <div className="settings-body">
-            <div className="format-grid">{(['png', 'jpeg', 'svg', 'html', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MD' : format.toUpperCase()}</strong><small>{format === 'png' ? '无损位图' : format === 'jpeg' ? '体积更小' : format === 'svg' ? '无限清晰' : format === 'html' ? '网页文件' : '源文件'}</small></button>)}</div>
-            <label className="field"><span>渲染倍率 <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md'} /><small>{exportFormat === 'svg' ? '倍率设置 SVG 的画布尺寸，矢量内容始终清晰' : exportFormat === 'html' ? 'HTML 将保留可缩放矢量图' : exportFormat === 'md' ? 'Markdown 源文件无需倍率' : `预计输出为当前内容尺寸的 ${exportScale} 倍`}</small></label>
-            {exportError && <div className="export-error"><Icon name="warning" />{exportError}</div>}
-            <button className="export-submit" disabled={exporting} onClick={() => void exportDocument()}><Icon name="download" />{exporting ? '正在生成…' : `导出 ${exportFormat.toUpperCase()}`}</button>
+          {activePanel === 'export' && <div className="settings-body export-panel-body">
+            <div className="export-tabs" role="tablist" aria-label="导出方式">
+              <button role="tab" aria-selected={exportTab === 'file'} className={exportTab === 'file' ? 'active' : ''} onClick={() => { setExportError(''); cancelRepositorySave(); setExportTab('file') }}><Icon name="download" /><span>导出文件</span></button>
+              <button role="tab" aria-selected={exportTab === 'repository'} className={exportTab === 'repository' ? 'active' : ''} onClick={() => { setExportError(''); setExportTab('repository') }}><Icon name="github" /><span>另存到仓库</span></button>
+            </div>
+            {exportTab === 'file' ? <>
+              <div className="format-grid">{(['png', 'jpeg', 'svg', 'html', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MD' : format.toUpperCase()}</strong><small>{format === 'png' ? '无损位图' : format === 'jpeg' ? '体积更小' : format === 'svg' ? '无限清晰' : format === 'html' ? '网页文件' : '源文件'}</small></button>)}</div>
+              <label className="field"><span>渲染倍率 <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md'} /><small>{exportFormat === 'svg' ? '倍率设置 SVG 的画布尺寸，矢量内容始终清晰' : exportFormat === 'html' ? 'HTML 将保留可缩放矢量图' : exportFormat === 'md' ? 'Markdown 源文件无需倍率' : `预计输出为当前内容尺寸的 ${exportScale} 倍`}</small></label>
+              {exportError && <div className="export-error"><Icon name="warning" />{exportError}</div>}
+              <button className="export-submit" disabled={exporting} onClick={() => void exportDocument()}><Icon name="download" />{exporting ? '正在生成…' : `导出 ${exportFormat.toUpperCase()}`}</button>
+            </> : repositorySaveMode ? <div className="repository-save-dialog">
+              <div className="repository-save-dialog-head">
+                <div className="repository-save-breadcrumbs"><button onClick={() => setRepositorySaveFolder('')} className={!repositorySaveFolder ? 'active' : ''}><Icon name="github" /><span>{githubConfig?.repo || '仓库'}</span></button>{repositorySaveFolder.split('/').filter(Boolean).map((part, index, parts) => { const path = parts.slice(0, index + 1).join('/'); return <span className="repository-save-breadcrumb" key={path}><Icon name="chevron-right" /><button onClick={() => setRepositorySaveFolder(path)} className={path === repositorySaveFolder ? 'active' : ''}>{part}</button></span> })}</div>
+                <button className="repository-new-folder-button" disabled={githubBusy} onClick={beginRepositoryFolderCreation}><Icon name="folder" /><span>新建文件夹</span></button>
+              </div>
+              {repositoryNewFolderParent !== null && <div className="repository-new-folder-form"><Icon name="folder" /><input autoFocus value={repositoryNewFolderName} placeholder="文件夹名称" aria-label="新建文件夹名称" onChange={(event) => setRepositoryNewFolderName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryFolderCreation(); if (event.key === 'Escape') { setRepositoryNewFolderParent(null); setRepositoryNewFolderName('') } }} /><button className="confirm" onClick={finishRepositoryFolderCreation}>创建</button><button onClick={() => { setRepositoryNewFolderParent(null); setRepositoryNewFolderName('') }}>取消</button></div>}
+              <div className="repository-save-tree-area">
+                {githubError && <div className="export-error"><Icon name="warning" />{githubError}</div>}
+                <div className="repository-save-tree" role="tree" aria-label="选择 GitHub 保存位置">
+                  <button className={`repository-save-tree-row root ${!repositorySaveFolder ? 'selected' : ''}`} onClick={() => setRepositorySaveFolder('')}><Icon name="github" /><span>{githubConfig?.repo || '仓库根目录'}</span></button>
+                  {repositorySaveRows.length ? repositorySaveRows.map((row) => row.type === 'folder' ? <button className={`repository-save-tree-row folder ${row.path === repositorySaveFolder ? 'selected' : ''}`} key={`save-folder:${row.path}`} style={{ paddingLeft: 12 + row.depth * 18 }} title="选择位置并展开或收起" onClick={() => { setRepositorySaveFolder(row.path); setRepositorySaveCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next }) }}><Icon name={repositorySaveCollapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button> : <button className={`repository-save-tree-row file ${parentPath(row.path) === repositorySaveFolder ? 'in-folder' : ''}`} key={`save-file:${row.path}`} style={{ paddingLeft: 31 + row.depth * 18 }} onClick={() => { setRepositorySaveFolder(parentPath(row.path)); setRepositorySaveName(row.name) }}><Icon name="map" /><span>{row.name}</span>{row.cached?.status === 'added' && <b>A</b>}{row.cached?.status === 'modified' && <b>M</b>}</button>) : <div className="repository-save-empty">仓库中还没有 Markdown 文件，可以直接在当前目录保存。</div>}
+                </div>
+              </div>
+              <div className="repository-save-footer">
+                <label className="repository-save-name"><span>文件名</span><input value={repositorySaveName} aria-label="另存文件名" onChange={(event) => setRepositorySaveName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveCurrentDocumentToRepository() }} /></label>
+                <small>保存位置：{repositorySaveFolder || '仓库根目录'}</small>
+                <div className="repository-save-actions"><button className="repository-save-confirm" onClick={() => void saveCurrentDocumentToRepository()} disabled={githubBusy}>保存</button><button onClick={cancelRepositorySave} disabled={githubBusy}>取消</button></div>
+              </div>
+            </div> : <>
+              {!githubConfig ? <>
+                <div className="settings-note"><Icon name="github" /><span>先绑定一个 GitHub 仓库，之后可以浏览仓库文件树、创建文件夹，并将当前 Markdown 暂存到指定位置。</span></div>
+                <button className="export-submit" onClick={() => setActivePanel('github')}><Icon name="github" />绑定 GitHub 仓库</button>
+              </> : <>
+                <div className="github-repo-card"><Icon name="github" /><span><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{githubConfig.branch} · {remoteHead ? remoteHead.slice(0, 7) : '尚未刷新'}</small></span></div>
+                <div className="settings-note"><Icon name="folder" /><span>进入仓库文件树后，点击文件夹选择保存位置；也可以新建文件夹并编辑文件名。</span></div>
+                {githubNotice && <div className="github-notice"><Icon name="check" />{githubNotice}</div>}
+                <button className="export-submit" disabled={githubBusy} onClick={startRepositorySave}><Icon name="folder" />选择仓库位置</button>
+              </>}
+            </>}
           </div>}
         </section>
       </div>}
