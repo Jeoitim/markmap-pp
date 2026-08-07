@@ -17,12 +17,12 @@ const palette = {
   solarized: { heading: '#268bd2', keyword: '#d33682', link: '#2aa198', code: '#cb4b16', quote: '#859900' },
 }
 
-function editorTheme(dark: boolean, fontSize: number, scheme: HighlightScheme) {
+function editorTheme(dark: boolean, fontSize: number, fontFamily: string, fontWeight: number, scheme: HighlightScheme) {
   const colors = palette[scheme]
   return [
     EditorView.theme({
       '&': { height: '100%', backgroundColor: 'var(--editor-bg)', color: 'var(--editor-text)' },
-      '.cm-scroller': { fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace', fontSize: `${fontSize}px`, lineHeight: '1.72' },
+      '.cm-scroller': { fontFamily, fontSize: `${fontSize}px`, fontWeight: String(fontWeight), lineHeight: '1.72' },
       '.cm-content': {
         padding: '18px 10px 60px 4px',
         caretColor: 'var(--accent)',
@@ -57,16 +57,18 @@ interface MarkdownEditorProps {
   onChange: (value: string) => void
   dark: boolean
   fontSize: number
+  fontFamily: string
+  fontWeight: number
   scheme: HighlightScheme
 }
 
-export default function MarkdownEditor({ value, onChange, dark, fontSize, scheme }: MarkdownEditorProps) {
+export default function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, scheme }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
   const themeCompartment = useRef(new Compartment())
   const externalUpdate = useRef(false)
-  const initialConfigRef = useRef({ value, dark, fontSize, scheme })
+  const initialConfigRef = useRef({ value, dark, fontSize, fontFamily, fontWeight, scheme })
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
 
@@ -86,7 +88,7 @@ export default function MarkdownEditor({ value, onChange, dark, fontSize, scheme
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !externalUpdate.current) onChangeRef.current(update.state.doc.toString())
         }),
-        themeCompartment.current.of(editorTheme(initialConfigRef.current.dark, initialConfigRef.current.fontSize, initialConfigRef.current.scheme)),
+        themeCompartment.current.of(editorTheme(initialConfigRef.current.dark, initialConfigRef.current.fontSize, initialConfigRef.current.fontFamily, initialConfigRef.current.fontWeight, initialConfigRef.current.scheme)),
       ],
     })
     viewRef.current = view
@@ -105,8 +107,8 @@ export default function MarkdownEditor({ value, onChange, dark, fontSize, scheme
   }, [value])
 
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: themeCompartment.current.reconfigure(editorTheme(dark, fontSize, scheme)) })
-  }, [dark, fontSize, scheme])
+    viewRef.current?.dispatch({ effects: themeCompartment.current.reconfigure(editorTheme(dark, fontSize, fontFamily, fontWeight, scheme)) })
+  }, [dark, fontSize, fontFamily, fontWeight, scheme])
 
   return <div className="code-editor" ref={hostRef} />
 }

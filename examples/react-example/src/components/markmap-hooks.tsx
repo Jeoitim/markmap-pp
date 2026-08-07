@@ -154,6 +154,8 @@ type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 
 interface AppSettings {
   editorFontSize: number
+  editorFont: PreviewFont
+  editorWeight: number
   highlightScheme: HighlightScheme
   previewFontSize: number
   previewFont: PreviewFont
@@ -165,6 +167,8 @@ interface AppSettings {
 
 const defaultSettings: AppSettings = {
   editorFontSize: 14,
+  editorFont: 'notoSans',
+  editorWeight: 400,
   highlightScheme: 'violet',
   previewFontSize: 16,
   previewFont: 'notoSans',
@@ -2248,10 +2252,10 @@ ${documentRenderConfig.style}
           {!editorCollapsed && <>
             <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="AI Agent"><Icon name="bot" />AI Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button>{editorView !== 'agent' && <button className="header-icon" onClick={() => setActivePanel(editorView === 'repository' ? 'github' : 'editor')} title={editorView === 'repository' ? '仓库设置' : '编辑器设置'}><Icon name="settings" /></button>}</div>
             {editorView === 'markdown' ? <>
-              <MarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} scheme={settings.highlightScheme} />
+              <MarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span><span>Markdown</span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
-            </> : editorView === 'agent' ? <AgentPanel files={cachedFiles.filter((file) => file.status !== 'deleted')} activePath={activeRepoPath} onApplyChange={applyAgentChange} onCreateFile={createAgentFile} onCommit={pushRepositoryChanges} getGitContext={getAgentGitContext} remoteFileCount={remoteFiles.length} onLoadAllFiles={loadAllRepositoryNotes} loadingFiles={githubBusyAction === 'load-repository'} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
+            </> : editorView === 'agent' ? <AgentPanel files={cachedFiles.filter((file) => file.status !== 'deleted')} activePath={activeRepoPath} onApplyChange={applyAgentChange} onCreateFile={createAgentFile} onCommit={pushRepositoryChanges} getGitContext={getAgentGitContext} remoteFileCount={remoteFiles.length} onLoadAllFiles={loadAllRepositoryNotes} loadingFiles={githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {!githubConfig ? <div className="repository-unbound"><Icon name="github" /><strong>尚未绑定 GitHub 仓库</strong><span>绑定后可浏览 Markdown 文件并在本地暂存修改。</span><button onClick={() => setActivePanel('github')}>绑定仓库</button></div> : <>
                 <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{repositoryCommitRef ? `commit ${repositoryCommitRef.slice(0, 7)}` : githubConfig.branch}</small></div><button className="discard-button" title={repositoryCommitRef ? '查看 commit 阶段时不能放弃当前分支修改' : '放弃所有本地修改'} onClick={() => void discardRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !hasRepositoryDrafts}><Icon name="undo" className={repositoryDiscardLoading ? 'loading-icon' : undefined} /><span>放弃</span></button><button className="repository-icon-button" title="刷新当前分支" aria-label="刷新当前分支" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" className={repositoryRefreshLoading ? 'loading-icon' : undefined} /></i></button><button className="repository-icon-button sync-button" title={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !changedFiles.length}><i><Icon name="sync" className={repositorySyncLoading ? 'loading-icon' : undefined} /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}
@@ -2339,7 +2343,10 @@ ${documentRenderConfig.style}
           </div>}
           {activePanel === 'editor' && <div className="settings-body">
             <label className="field"><span>字号 <b>{settings.editorFontSize}px</b></span><input type="range" min="12" max="22" value={settings.editorFontSize} onChange={(event) => updateSettings('editorFontSize', Number(event.target.value))} /></label>
+            <label className="field"><span>字体</span><select value={settings.editorFont} onChange={(event) => updateSettings('editorFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
+            <label className="field"><span>字重 <b>{settings.editorWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.editorWeight} onChange={(event) => updateSettings('editorWeight', Number(event.target.value))} /></label>
             <label className="field"><span>高亮方案</span><select value={settings.highlightScheme} onChange={(event) => updateSettings('highlightScheme', event.target.value as HighlightScheme)}><option value="violet">Violet</option><option value="github">GitHub</option><option value="solarized">Solarized</option></select></label>
+            <div className="font-samples"><small>编辑器与 AI 聊天预览</small><span style={{ fontFamily: previewFonts[settings.editorFont].family, fontSize: `${settings.editorFontSize}px`, fontWeight: settings.editorWeight }}>Markdown AI Chat 0123</span></div>
             <div className="settings-note"><Icon name="warning" /><span>语法检查包括标题层级、代码块闭合与缩进一致性，问题会直接标记在编辑器中。</span></div>
           </div>}
           {activePanel === 'preview' && <div className="settings-body">

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, type ComponentPropsWithoutRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { askAgent, testAgentConnection, type AgentProposal } from './agent-client'
+import { askAgent, testAgentConnection, type AgentMessage, type AgentProposal } from './agent-client'
 import { conversationMarkdown, createConversation, loadAgentConversations, saveAgentConversations, type AgentConversation } from './agent-history'
 import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
 import type { CachedMarkdownFile } from './github-sync'
@@ -16,9 +16,99 @@ function withActiveProfile(config: AgentProviderConfig): AgentProviderConfig {
   return { ...config, providerProfiles: { ...config.providerProfiles, [config.provider]: profileOf(config) } }
 }
 
+function MermaidDiagram({ chart }: { chart: string }) {
+  const [result, setResult] = useState<{ chart: string; svg: string; error: string }>({ chart: '', svg: '', error: '' })
+  const [sourceOpen, setSourceOpen] = useState(false)
+  const [sourceCopied, setSourceCopied] = useState(false)
+  const [zoomOpen, setZoomOpen] = useState(false)
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const id = useId().replace(/:/g, '')
+  const gesture = useRef<{ points: Record<number, { x: number; y: number }>; panStart?: { x: number; y: number; originX: number; originY: number }; pinchStart?: { distance: number; zoom: number } }>({ points: {} })
+
+  useEffect(() => {
+    let active = true
+    void import('mermaid').then(({ default: mermaid }) => {
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'default' })
+      return mermaid.render(`agent-mermaid-${id}`, chart)
+    }).then((rendered) => { if (active) setResult({ chart, svg: rendered.svg, error: '' }) }).catch(() => { if (active) setResult({ chart, svg: '', error: '图表语法无法渲染，以下保留原始 Mermaid 代码。' }) })
+    return () => { active = false }
+  }, [chart, id])
+
+  const current = result.chart === chart ? result : { svg: '', error: '' }
+  const copySource = async () => {
+    try { await navigator.clipboard.writeText(chart); setSourceCopied(true); window.setTimeout(() => setSourceCopied(false), 1600) } catch { setSourceCopied(false) }
+  }
+  const toggleSource = () => { setSourceOpen((value) => !value); setSourceCopied(false) }
+  const openFullscreen = () => {
+    setPan({ x: 0, y: 0 }); setZoomOpen(true)
+    window.requestAnimationFrame(() => {
+      const viewport = document.querySelector<HTMLDivElement>('.agent-mermaid-modal .agent-mermaid-viewport')
+      const viewBox = current.svg.match(/viewBox=["']\s*[\d.-]+\s+[\d.-]+\s+([\d.-]+)\s+([\d.-]+)/i)
+      const width = Number(viewBox?.[1]) || 720
+      const height = Number(viewBox?.[2]) || 480
+      if (viewport) setZoom(Math.max(.35, Math.min(4, viewport.clientWidth * .86 / width, viewport.clientHeight * .86 / height)))
+    })
+  }
+  const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const state = gesture.current
+    state.points[event.pointerId] = { x: event.clientX, y: event.clientY }
+    const points = Object.values(state.points)
+    if (points.length === 1) state.panStart = { x: event.clientX, y: event.clientY, originX: pan.x, originY: pan.y }
+    if (points.length === 2) state.pinchStart = { distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y), zoom }
+  }
+  const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = gesture.current
+    if (!state.points[event.pointerId]) return
+    state.points[event.pointerId] = { x: event.clientX, y: event.clientY }
+    const points = Object.values(state.points)
+    if (points.length === 2 && state.pinchStart) {
+      const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+      setZoom(Math.min(4, Math.max(.35, state.pinchStart.zoom * distance / Math.max(1, state.pinchStart.distance))))
+    } else if (points.length === 1 && state.panStart) setPan({ x: state.panStart.originX + event.clientX - state.panStart.x, y: state.panStart.originY + event.clientY - state.panStart.y })
+  }
+  const pointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => { delete gesture.current.points[event.pointerId]; gesture.current.panStart = undefined; gesture.current.pinchStart = undefined }
+  const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => { event.preventDefault(); setZoom((value) => Math.min(4, Math.max(.35, value * (event.deltaY < 0 ? 1.1 : .9)))) }
+  return <figure className="agent-mermaid"><figcaption><span>Mermaid 图表</span><span><button type="button" className="agent-icon-button" onClick={toggleSource} title={sourceOpen ? '查看图表' : '查看源代码'} aria-label={sourceOpen ? '查看图表' : '查看源代码'}><AgentGlyph name={sourceOpen ? 'diagram' : 'code'} /></button><button type="button" className="agent-icon-button" onClick={openFullscreen} disabled={!current.svg} title="全屏查看" aria-label="全屏查看"><AgentGlyph name="fullscreen" /></button></span></figcaption>{sourceOpen ? <section className="agent-code-block agent-mermaid-source"><header><span>mermaid</span><button type="button" className="agent-icon-button" onClick={() => void copySource()} title={sourceCopied ? '已复制' : '复制源代码'} aria-label={sourceCopied ? '已复制' : '复制源代码'}><AgentGlyph name="copy" /></button></header><pre><code>{chart}</code></pre></section> : current.svg ? <div dangerouslySetInnerHTML={{ __html: current.svg }} /> : current.error ? <small>{current.error}</small> : <small>正在渲染图表…</small>}{zoomOpen && current.svg && <div className="agent-mermaid-modal" role="dialog" aria-modal="true" aria-label="全屏查看 Mermaid 图表" onMouseDown={(event) => { if (event.target === event.currentTarget) setZoomOpen(false) }}><section><header><strong>Mermaid 图表 <small>{Math.round(zoom * 100)}%</small></strong><button type="button" onClick={() => setZoomOpen(false)} aria-label="退出全屏查看"><AgentGlyph name="close" /></button></header><div className="agent-mermaid-viewport" onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}><div className="agent-mermaid-zoom-layer" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} dangerouslySetInnerHTML={{ __html: current.svg }} /></div></section></div>}</figure>
+}
+
+function AgentPre({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
+  const child = Children.toArray(children)[0]
+  const code = isValidElement<{ className?: string; children?: ReactNode }>(child) ? child : null
+  const language = code?.props.className?.match(/language-([\w-]+)/)?.[1] || 'text'
+  const raw = String(code?.props.children || '').replace(/\n$/, '')
+  const [copied, setCopied] = useState(false)
+
+  if (language === 'mermaid') return <MermaidDiagram chart={raw} />
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(raw); setCopied(true); window.setTimeout(() => setCopied(false), 1600) } catch { setCopied(false) }
+  }
+  return <section className="agent-code-block"><header><span>{language}</span><button type="button" className="agent-icon-button" onClick={() => void copy()} title={copied ? '已复制' : '复制代码'} aria-label={copied ? '已复制' : '复制代码'}><AgentGlyph name="copy" /></button></header><pre {...props}>{children}</pre></section>
+}
+
+function StreamingAgentPre({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
+  const child = Children.toArray(children)[0]
+  const code = isValidElement<{ className?: string }>(child) ? child : null
+  const language = code?.props.className?.match(/language-([\w-]+)/)?.[1] || 'text'
+  if (language !== 'mermaid') return <AgentPre {...props}>{children}</AgentPre>
+  return <section className="agent-code-block agent-mermaid-pending"><header><span>mermaid</span><small>回答完成后渲染图表</small></header><pre {...props}>{children}</pre></section>
+}
+
 function AgentMarkdown({ children, streaming = false }: { children: string; streaming?: boolean }) {
-  if (streaming) return <p className="agent-streaming-text">{children}<b aria-hidden="true" /></p>
-  return <div className="agent-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown></div>
+  const content = <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: streaming ? StreamingAgentPre : AgentPre }}>{children}</ReactMarkdown>
+  return <div className={`agent-markdown${streaming ? ' agent-streaming-markdown' : ''}`}>{content}{streaming && <b aria-hidden="true" />}</div>
+}
+
+function ConversationMessage({ message, editing, editText, onEdit, onEditText, onCancelEdit, onSubmitEdit, onRegenerate, onSelectVersion }: { message: AgentMessage; editing: boolean; editText: string; onEdit: () => void; onEditText: (value: string) => void; onCancelEdit: () => void; onSubmitEdit: () => void; onRegenerate: () => void; onSelectVersion: (index: number) => void }) {
+  const [copied, setCopied] = useState(false)
+  const version = message.answerVersions?.[message.activeAnswerVersion || 0]
+  const content = version?.content || message.content
+  const reasoningSummary = version?.reasoningSummary || message.reasoningSummary
+  const reasoningDurationSeconds = version?.reasoningDurationSeconds ?? message.reasoningDurationSeconds
+  const copy = async () => { try { await navigator.clipboard.writeText(content); setCopied(true); window.setTimeout(() => setCopied(false), 1600) } catch { setCopied(false) } }
+  return <div className={`agent-message ${message.role}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>{message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />已思考（用时 {reasoningDurationSeconds}s）</summary>{reasoningSummary && <span>{reasoningSummary}</span>}</details>}{message.role === 'user' && editing ? <div className="agent-question-editor"><textarea value={editText} onChange={(event) => onEditText(event.target.value)} /><footer><button type="button" onClick={onCancelEdit}>取消</button><button type="button" onClick={onSubmitEdit} disabled={!editText.trim()}>重新提问</button></footer></div> : <AgentMarkdown>{content}</AgentMarkdown>}<footer className="agent-message-actions">{message.role === 'user' ? <button type="button" className="agent-icon-button" onClick={onEdit} title="修改提问" aria-label="修改提问"><AgentGlyph name="edit" /></button> : <><button type="button" className="agent-icon-button" onClick={() => void copy()} title={copied ? '已复制' : '复制回答'} aria-label={copied ? '已复制' : '复制回答'}><AgentGlyph name="copy" /></button><button type="button" className="agent-icon-button" onClick={onRegenerate} title="重新生成" aria-label="重新生成"><AgentGlyph name="refresh" /></button>{(message.answerVersions?.length || 0) > 1 && <span className="agent-answer-switch"><button type="button" onClick={() => onSelectVersion(Math.max(0, (message.activeAnswerVersion || 0) - 1))} disabled={(message.activeAnswerVersion || 0) === 0} aria-label="上一版回答"><AgentGlyph name="arrow-left" /></button><small>{(message.activeAnswerVersion || 0) + 1}/{message.answerVersions!.length}</small><button type="button" onClick={() => onSelectVersion(Math.min(message.answerVersions!.length - 1, (message.activeAnswerVersion || 0) + 1))} disabled={(message.activeAnswerVersion || 0) === message.answerVersions!.length - 1} aria-label="下一版回答"><AgentGlyph name="arrow-right" /></button></span>}</>}</footer></div></div>
 }
 
 interface AgentPanelProps {
@@ -31,9 +121,12 @@ interface AgentPanelProps {
   remoteFileCount: number
   onLoadAllFiles: () => Promise<void>
   loadingFiles: boolean
+  fontSize: number
+  fontFamily: string
+  fontWeight: number
 }
 
-function AgentGlyph({ name }: { name: 'bot' | 'send' | 'settings' | 'refresh' | 'check' | 'close' | 'history' | 'download' | 'plus' | 'git' | 'shield' | 'alert' | 'brain' | 'chevron' | 'folder' | 'file' }) {
+function AgentGlyph({ name }: { name: 'bot' | 'send' | 'settings' | 'refresh' | 'check' | 'close' | 'history' | 'download' | 'plus' | 'git' | 'shield' | 'alert' | 'brain' | 'chevron' | 'folder' | 'file' | 'copy' | 'code' | 'diagram' | 'fullscreen' | 'edit' | 'arrow-left' | 'arrow-right' }) {
   const paths = {
     bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
     send: <><path d="m21 3-7.5 18-3.8-7.7L2 9.5 21 3Z"/><path d="m9.7 13.3 4.1-4.1"/></>,
@@ -49,6 +142,12 @@ function AgentGlyph({ name }: { name: 'bot' | 'send' | 'settings' | 'refresh' | 
     chevron: <path d="m7 10 5 5 5-5"/>,
     folder: <><path d="M3 7.5V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3Z"/><path d="M3 9h18"/></>,
     file: <><path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8 13h8M8 17h6"/></>,
+    copy: <><rect x="8" y="8" width="11" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></>,
+    code: <><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/></>,
+    diagram: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 15 3-3 3 2 4-5M7 8h.01"/></>,
+    fullscreen: <><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></>,
+    edit: <><path d="m4 20 4.2-1 10-10a2.2 2.2 0 0 0-3.1-3.1l-10 10L4 20Z"/><path d="m13.5 6.5 4 4"/></>,
+    'arrow-left': <path d="m14 6-6 6 6 6"/>, 'arrow-right': <path d="m10 6 6 6-6 6"/>,
   }
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }
@@ -78,7 +177,7 @@ function ProposalDiff({ proposal, file, onAccept, onReject }: { proposal: AgentP
   </article>
 }
 
-export default function AgentPanel({ files, activePath, onApplyChange, onCreateFile, onCommit, getGitContext, remoteFileCount, onLoadAllFiles, loadingFiles }: AgentPanelProps) {
+export default function AgentPanel({ files, activePath, onApplyChange, onCreateFile, onCommit, getGitContext, remoteFileCount, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
   const [mode, setMode] = useState<AgentMode>('chat')
   const [config, setConfig] = useState<AgentProviderConfig>(defaultAgentProviderConfig)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -99,6 +198,9 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   const [error, setError] = useState('')
   const [streamingReply, setStreamingReply] = useState('')
   const [streamingReasoning, setStreamingReasoning] = useState('')
+  const [editingQuestion, setEditingQuestion] = useState<number | null>(null)
+  const [editedQuestion, setEditedQuestion] = useState('')
+  const [lastRequest, setLastRequest] = useState<{ text: string; userIndex?: number } | null>(null)
   const [thinkingStartedAt, setThinkingStartedAt] = useState<number | null>(null)
   const [thinkingSeconds, setThinkingSeconds] = useState(0)
   const [answerStarted, setAnswerStarted] = useState(false)
@@ -233,14 +335,21 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     try { await testAgentConnection(config); setNotice('连接成功。') } catch (reason) { setError(reason instanceof Error ? reason.message : '连接失败') } finally { setBusy(null) }
   }
 
-  const send = async () => {
-    const text = input.trim()
+  const send = async (replacement?: { text: string; userIndex?: number }) => {
+    const text = (replacement?.text || input).trim()
     if (!text || busy) return
-    const nextMessages = [...conversation.messages, { role: 'user' as const, content: text }]
-    const requestMessages = [...conversation.messages.filter((_, index) => index > 0), { role: 'user' as const, content: text }]
+    const revising = replacement?.userIndex !== undefined
+    const revisionIndex = replacement?.userIndex ?? -1
+    const sourceMessages = revising ? conversation.messages.map((message, index) => index === revisionIndex ? { ...message, content: text } : message) : conversation.messages
+    const answerIndex = revising ? revisionIndex + 1 : -1
+    const replacingAnswer = revising && sourceMessages[answerIndex]?.role === 'assistant'
+    const nextMessages = revising ? sourceMessages : [...sourceMessages, { role: 'user' as const, content: text }]
+    const requestMessages = revising ? sourceMessages.slice(1, revisionIndex + 1) : [...sourceMessages.filter((_, index) => index > 0), { role: 'user' as const, content: text }]
+    setLastRequest(revising ? { text, userIndex: revisionIndex } : { text })
     const startedAt = Date.now()
     saveConversation({ ...conversation, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: nextMessages, updatedAt: Date.now() })
-    setInput(''); setBusy('send'); setError(''); setStreamingReply(''); setStreamingReasoning(''); setAnswerStarted(false); setThinkingSeconds(0); setThinkingStartedAt(startedAt); replyBufferRef.current = ''; receivedStreamTextRef.current = false
+    if (!revising) setInput('')
+    setEditingQuestion(null); setBusy('send'); setError(''); setStreamingReply(''); setStreamingReasoning(''); setAnswerStarted(false); setThinkingSeconds(0); setThinkingStartedAt(startedAt); replyBufferRef.current = ''; receivedStreamTextRef.current = false
     try {
       const sources = selectedFiles.map((file) => ({ path: file.path, content: file.content }))
       const gitContext = await getGitContext(sources.map((file) => file.path))
@@ -254,7 +363,13 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
         waitForReply()
       })
       const reasoningDurationSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
-      saveConversation({ ...conversation, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: [...nextMessages, { role: 'assistant', content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds }], updatedAt: Date.now() })
+      const answer: AgentMessage = { role: 'assistant', content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds }
+      const finalMessages = replacingAnswer ? nextMessages.map((message, index) => {
+        if (index !== answerIndex) return message
+        const versions = [...(message.answerVersions || [{ content: message.content, reasoningSummary: message.reasoningSummary, reasoningDurationSeconds: message.reasoningDurationSeconds }]), { content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds }]
+        return { ...answer, answerVersions: versions, activeAnswerVersion: versions.length - 1 }
+      }) : [...nextMessages, answer]
+      saveConversation({ ...conversation, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: finalMessages, updatedAt: Date.now() })
       if (result.proposals.length) {
         if (config.permissionMode === 'auto') {
           result.proposals.forEach((proposal) => { if (proposal.action === 'create') onCreateFile(proposal.path, proposal.content); else onApplyChange(proposal.path, proposal.content) })
@@ -267,7 +382,14 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     } catch (reason) { setError(reason instanceof Error ? reason.message : '模型请求失败') } finally { setBusy(null); setThinkingStartedAt(null) }
   }
 
-  return <div className="agent-workspace">
+  const selectAnswerVersion = (messageIndex: number, versionIndex: number) => {
+    const messages = conversation.messages.map((message, index) => index === messageIndex ? { ...message, activeAnswerVersion: versionIndex } : message)
+    // eslint-disable-next-line react-hooks/purity -- version switching updates history timing on click.
+    saveConversation({ ...conversation, messages, updatedAt: Date.now() })
+  }
+  const beginQuestionEdit = (index: number, text: string) => { setEditingQuestion(index); setEditedQuestion(text); setError('') }
+
+  return <div className="agent-workspace" style={{ '--agent-font-size': `${fontSize}px`, '--agent-font-family': fontFamily, '--agent-font-weight': fontWeight } as CSSProperties}>
     <header className="agent-toolbar"><div className="agent-mode-tabs" role="tablist"><button type="button" className={mode === 'chat' ? 'active' : ''} onClick={() => setMode('chat')}>Chat</button><button type="button" className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>Edit</button></div><span>{providerDefinition(config.provider).label} · {config.model || '未选择模型'}</span><button ref={historyButtonRef} type="button" className="agent-settings-button" onClick={() => setHistoryOpen((value) => !value)} title="对话历史"><AgentGlyph name="history" /></button><button type="button" className="agent-settings-button" onClick={() => setSettingsOpen((value) => !value)} title="AI 配置"><AgentGlyph name="settings" /></button></header>
     {settingsOpen && <section className="agent-settings" aria-label="AI 服务配置">
       <header><div><strong>AI 服务配置</strong><small>配置 AI Agent 的聊天与笔记编辑能力</small></div><button type="button" onClick={() => setSettingsOpen(false)} aria-label="关闭配置"><AgentGlyph name="close" /></button></header>
@@ -279,9 +401,9 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       <p className="agent-local-note">密钥仅保存在当前浏览器本地；请求会直接发送到所选 AI 服务商。</p>
     </section>}
     {notice && <div className="agent-notice"><AgentGlyph name="check" />{notice}</div>}
-    {error && <div className="agent-error">{error}</div>}
+    {error && <div className="agent-error"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
     {historyOpen && <section className="agent-history" ref={historyRef}><header><strong>对话历史</strong><button type="button" onClick={startConversation}><AgentGlyph name="plus" />新对话</button></header>{conversations.map((item) => <div className={item.id === conversation.id ? 'active' : ''} key={item.id}><button type="button" onClick={() => { setConversation(item); setProposals([]); setCommitRequested(false); setHistoryOpen(false) }}><strong>{item.title}</strong><small>{new Date(item.updatedAt).toLocaleString('zh-CN')}</small></button><button type="button" onClick={() => exportConversation(item)} title="导出 Markdown"><AgentGlyph name="download" /></button></div>)}</section>}
-    <div className="agent-conversation">{conversation.messages.map((message, index) => <div className={`agent-message ${message.role}`} key={`${message.role}:${index}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>{message.reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />已思考（用时 {message.reasoningDurationSeconds}s）</summary>{message.reasoningSummary && <span>{message.reasoningSummary}</span>}</details>}<AgentMarkdown>{message.content}</AgentMarkdown></div></div>)}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div><details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
+    <div className="agent-conversation">{conversation.messages.map((message, index) => <ConversationMessage key={`${message.role}:${index}`} message={message} editing={editingQuestion === index} editText={editedQuestion} onEdit={() => beginQuestionEdit(index, message.content)} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = conversation.messages[index - 1]; if (question?.role === 'user') void send({ text: question.content, userIndex: index - 1 }) }} onSelectVersion={(version) => selectAnswerVersion(index, version)} />)}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div><details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
     {(proposals.length > 0 || commitRequested) && <section className="agent-proposals"><header><strong>待审核操作</strong><span>{proposals.length + (commitRequested ? 1 : 0)} 项</span></header>{proposals.map((proposal) => {
       const file = files.find((item) => item.path === proposal.path)
       if (!file && proposal.action !== 'create') return null

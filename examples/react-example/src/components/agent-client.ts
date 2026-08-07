@@ -3,11 +3,19 @@ import { providerProtocol } from './agent-provider'
 
 export type AgentMode = 'chat' | 'edit'
 
+export interface AgentAnswerVersion {
+  content: string
+  reasoningSummary?: string
+  reasoningDurationSeconds?: number
+}
+
 export interface AgentMessage {
   role: 'user' | 'assistant'
   content: string
   reasoningSummary?: string
   reasoningDurationSeconds?: number
+  answerVersions?: AgentAnswerVersion[]
+  activeAnswerVersion?: number
 }
 
 export interface AgentSourceFile {
@@ -51,7 +59,11 @@ function parseResult(content: string, mode: AgentMode, knownPaths: Set<string>, 
   if (mode === 'chat') return { reply: content.trim() || '没有收到模型回复。', proposals: [], commitRequested: false, reasoningSummary }
   const source = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
   let parsed: { reply?: unknown; changes?: unknown; commit?: unknown }
-  try { parsed = JSON.parse(source) as { reply?: unknown; changes?: unknown } } catch { throw new Error('模型没有返回可审核的 JSON 修改方案，请重试或换用支持 JSON 输出的模型。') }
+  const candidates = [source, source.slice(source.indexOf('{'), source.lastIndexOf('}') + 1)].filter(Boolean)
+  try {
+    parsed = candidates.map((candidate) => { try { return JSON.parse(candidate) as { reply?: unknown; changes?: unknown; commit?: unknown } } catch { return undefined } }).find(Boolean)!
+    if (!parsed) throw new Error('invalid JSON')
+  } catch { throw new Error('模型没有返回完整的 JSON 修改方案。请重试；若修改内容较大，请提高最大 Token 数或缩小编辑范围。') }
   const changes = Array.isArray(parsed.changes) ? parsed.changes : []
   const proposals = changes.flatMap((item, index) => {
     if (!item || typeof item !== 'object') return []
@@ -67,7 +79,7 @@ async function requestOpenAiCompatible(config: AgentProviderConfig, messages: Ag
   const response = await fetch(endpoint(config.baseUrl, '/chat/completions'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, messages: [{ role: 'system', content: system }, ...messages], temperature: config.temperature, max_tokens: config.maxTokens, stream: true, ...(config.reasoningEnabled ? { reasoning_effort: config.reasoningEffort } : {}) }),
+    body: JSON.stringify({ model: config.model, messages: [{ role: 'system', content: system }, ...messages], temperature: config.temperature, max_tokens: config.maxTokens, stream: true, ...(mode === 'edit' ? { response_format: { type: 'json_object' } } : {}), ...(config.reasoningEnabled ? { reasoning_effort: config.reasoningEffort } : {}) }),
   })
   if (!response.ok) throw new Error(`模型请求失败：${response.status} ${await response.text()}`)
   if (response.headers.get('content-type')?.includes('text/event-stream') && response.body) {
