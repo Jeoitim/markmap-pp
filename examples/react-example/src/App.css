@@ -351,6 +351,22 @@ svg { flex: 0 0 auto; }
 .font-samples span { font-size: 18px; }
 .font-samples small { color: var(--muted); font-family: "Inter Variable", sans-serif; font-size: 12px; font-weight: 600; }
 .export-panel-body { gap: 17px; }
+.export-appearance-options { display: grid; gap: 11px; padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-soft); }
+.export-section-heading { display: grid; gap: 3px; }
+.export-section-heading strong { color: var(--text); font-size: 13px; }
+.export-section-heading small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.export-color-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); font-size: 13px; font-weight: 600; }
+.export-color-control { display: inline-flex; align-items: center; gap: 8px; }
+.export-color-control input[type='color'] { width: 42px; height: 30px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); cursor: pointer; }
+.export-color-control input[type='color']:disabled { opacity: .45; cursor: not-allowed; }
+.export-color-control code { min-width: 64px; color: var(--muted); font: 11px "JetBrains Mono Variable",monospace; letter-spacing: .02em; }
+.export-color-presets { display: flex; align-items: center; gap: 7px; margin-top: -3px; }
+.export-color-presets::before { content: '预设'; margin-right: 2px; color: var(--muted); font-size: 11px; }
+.export-color-presets button { width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); cursor: pointer; }
+.export-color-presets button:hover, .export-color-presets button.active { border-color: var(--accent); box-shadow: 0 0 0 2px #7056e812; }
+.export-color-presets button:disabled { opacity: .45; cursor: not-allowed; }
+.export-color-presets button span { width: 14px; height: 14px; display: block; border: 1px solid #8d929c55; border-radius: 4px; }
+.export-appearance-switch { padding-top: 10px; border-top: 1px solid var(--border); }
 .export-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-soft); }
 .export-tabs button { min-width: 0; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; }
 .export-tabs button:hover { color: var(--text); background: color-mix(in srgb,var(--accent) 7%,transparent); }

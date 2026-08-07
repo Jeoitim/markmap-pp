@@ -147,6 +147,7 @@ type Pane = 'editor' | 'preview'
 type Panel = Pane | 'export' | 'github' | 'help' | null
 const HELP_TIP_COUNT = 5
 type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html'
+type ExportTextTheme = 'auto' | 'light' | 'dark'
 type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 
 interface AppSettings {
@@ -229,6 +230,8 @@ function inlineComputedStyles(source: Element, target: Element) {
   const declarations: string[] = []
   for (let index = 0; index < computed.length; index += 1) {
     const property = computed.item(index)
+    const isThemeColor = property === 'color' || property === '-webkit-text-fill-color' || property === 'text-decoration-color' || (property.endsWith('color') && !property.startsWith('background')) || property === 'fill' || property === 'stroke'
+    if (isThemeColor) continue
     const value = computed.getPropertyValue(property)
     if (value) declarations.push(`${property}:${value}`)
   }
@@ -460,6 +463,14 @@ function saveBlob(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+function colorLuminance(color: string) {
+  const match = color.match(/^#([\da-f]{6})$/i)
+  if (!match) return 1
+  const channels = [0, 2, 4].map((start) => Number.parseInt(match[1].slice(start, start + 2), 16) / 255)
+  const linear = channels.map((channel) => channel <= .03928 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
+  return linear[0] * .2126 + linear[1] * .7152 + linear[2] * .0722
+}
+
 export default function MarkmapHooks() {
   const [markdown, setMarkdown] = useState(loadDocument)
   const [renderedMarkdown, setRenderedMarkdown] = useState(markdown)
@@ -478,6 +489,9 @@ export default function MarkmapHooks() {
   const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
   const [exportScale, setExportScale] = useState(2)
+  const [exportBackgroundColor, setExportBackgroundColor] = useState(() => dark ? '#15181d' : '#fafafa')
+  const [exportTransparentBackground, setExportTransparentBackground] = useState(false)
+  const [exportTextTheme, setExportTextTheme] = useState<ExportTextTheme>('auto')
   const [exportTab, setExportTab] = useState<'file' | 'repository'>('file')
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
@@ -578,6 +592,9 @@ export default function MarkmapHooks() {
   const effectiveFontWeightCss = codeFont.weight || String(settings.previewWeight)
   const effectiveColorFreezeLevel = documentRenderConfig.colorFreezeLevel ?? settings.colorFreezeLevel
   const effectiveShowGrid = documentRenderConfig.showGrid ?? settings.showGrid
+  const exportAutoDarkMode = colorLuminance(exportBackgroundColor) < .48
+  const exportDarkMode = exportTextTheme === 'auto' ? exportAutoDarkMode : exportTextTheme === 'dark'
+  const exportUsesTransparentBackground = exportFormat === 'png' && exportTransparentBackground
   const effectiveMarkmapOptions = useMemo<Partial<IMarkmapOptions>>(() => deriveOptions({
     ...documentRenderConfig.jsonOptions,
     colorFreezeLevel: effectiveColorFreezeLevel,
@@ -1497,7 +1514,7 @@ export default function MarkmapHooks() {
     window.setTimeout(() => mmRef.current?.fit(), 250)
   }
 
-  const createExportSvg = () => {
+  const createExportSvg = (backgroundColor: string, darkMode: boolean, transparentBackground: boolean) => {
     const svg = svgRef.current
     const mm = mmRef.current
     if (!svg || !mm) throw new Error('思维导图尚未准备好')
@@ -1509,19 +1526,28 @@ export default function MarkmapHooks() {
     const tablePadding = clone.querySelectorAll('foreignObject table').length * 20
     const outputHeight = height + tablePadding
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    clone.style.setProperty('--markmap-text-color', darkMode ? '#f4f6f9' : '#30333a')
+    clone.style.setProperty('--markmap-code-bg', darkMode ? '#2a303a' : '#eef0f4')
+    clone.style.setProperty('--markmap-code-color', darkMode ? '#ffffff' : '#444852')
+    clone.style.setProperty('--markmap-circle-open-bg', darkMode ? '#191c22' : '#ffffff')
+    const svgTextColor = darkMode ? '#f4f6f9' : '#30333a'
+    clone.querySelectorAll<SVGTextElement>('text, tspan').forEach((element) => element.style.setProperty('fill', svgTextColor, 'important'))
     const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
     style.textContent = `${katexStyles}
-.markmap-foreign { color: ${dark ? '#f4f6f9' : '#30333a'}; font-family: ${effectiveFontFamily}; font-size: ${effectiveFontSizeCss}; line-height: 1.35; }
+.markmap-foreign { color: ${darkMode ? '#f4f6f9' : '#30333a'} !important; font-family: ${effectiveFontFamily}; font-size: ${effectiveFontSizeCss}; line-height: 1.35; }
+.markmap-foreign, .markmap-foreign * { color: ${darkMode ? '#f4f6f9' : '#30333a'} !important; }
 .markmap-foreign table { border-spacing: 0; font-size: .9em; }
 .markmap-foreign th, .markmap-foreign td { padding: .3em .55em; }
-.markmap-foreign th { background: ${dark ? '#2a303a' : '#eef0f4'}; font-weight: 650; }
+.markmap-foreign th { background: ${darkMode ? '#2a303a' : '#eef0f4'} !important; font-weight: 650; }
 .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
 .markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
+.markmap-foreign pre, .markmap-foreign code { color: ${darkMode ? '#f4f6f9' : '#30333a'} !important; background: ${darkMode ? '#2a303a' : '#eef0f4'} !important; }
 .markmap-foreign .markmap-task-box { display: inline-block; width: 1em; height: 1em; margin: 0 .35em -.15em 0; border: 1.5px solid currentColor; border-radius: .25em; vertical-align: baseline; }
-.markmap-foreign .markmap-task-box[data-checked='true'] { color: #fff; background: #7056e8; border-color: #7056e8; }
+.markmap-foreign .markmap-task-box[data-checked='true'] { color: #fff !important; background: #7056e8 !important; border-color: #7056e8 !important; }
 .markmap-foreign .markmap-task-box[data-checked='true']::after { content: '✓'; display: block; font-size: .75em; line-height: 1.25em; text-align: center; }
 .markmap-collapse-control, .markmap-collapse-hit { cursor: pointer; pointer-events: all; }
-${documentRenderConfig.style}`
+${documentRenderConfig.style}
+.markmap-node text { fill: ${darkMode ? '#f4f6f9' : '#30333a'} !important; }`
     clone.prepend(style)
     clone.setAttribute('viewBox', `${x1 - padding} ${y1 - padding} ${width} ${outputHeight}`)
     clone.setAttribute('width', String(width * exportScale))
@@ -1546,13 +1572,13 @@ ${documentRenderConfig.style}`
     const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
     background.setAttribute('x', String(x1 - padding)); background.setAttribute('y', String(y1 - padding))
     background.setAttribute('width', String(width)); background.setAttribute('height', String(outputHeight))
-    background.setAttribute('fill', dark ? '#15181d' : '#fafafa')
+    background.setAttribute('fill', transparentBackground ? 'none' : backgroundColor)
     const firstGroup = clone.querySelector('g')
     if (firstGroup) clone.insertBefore(background, firstGroup)
     return { source: new XMLSerializer().serializeToString(clone), width, height: outputHeight }
   }
 
-  const prepareExportSvg = async (source: string) => {
+  const prepareExportSvg = async (source: string, darkMode: boolean) => {
     const liveForeignObjects = Array.from(svgRef.current?.querySelectorAll<SVGForeignObjectElement>('foreignObject') || [])
     const documentNode = new DOMParser().parseFromString(source, 'image/svg+xml')
     documentNode.querySelectorAll('style').forEach((style) => { style.textContent = removeExternalFontFaces(style.textContent || '') })
@@ -1562,6 +1588,22 @@ ${documentRenderConfig.style}`
       const liveContent = liveForeignObject ? getForeignContentElement(liveForeignObject) : null
       const targetContent = foreignObject.firstElementChild?.firstElementChild
       if (liveContent && targetContent) inlineComputedStyles(liveContent, targetContent)
+    })
+    const textColor = darkMode ? '#f4f6f9' : '#30333a'
+    const codeBackground = darkMode ? '#2a303a' : '#eef0f4'
+    const tableHeaderBackground = darkMode ? '#2a303a' : '#eef0f4'
+    const tableBorderColor = darkMode ? '#c3c8d0' : '#5b6472'
+    const appendInlineStyle = (element: Element, declarations: string) => {
+      const existing = element.getAttribute('style') || ''
+      element.setAttribute('style', `${existing}${existing ? ';' : ''}${declarations}`)
+    }
+    foreignObjects.forEach((foreignObject) => {
+      const content = foreignObject.querySelector('.markmap-foreign') || foreignObject.firstElementChild?.firstElementChild
+      if (!content) return
+      appendInlineStyle(content, `color:${textColor} !important;-webkit-text-fill-color:${textColor} !important`)
+      content.querySelectorAll('pre, code').forEach((element) => appendInlineStyle(element, `color:${textColor} !important;background-color:${codeBackground} !important`))
+      content.querySelectorAll('table, th, td').forEach((element) => appendInlineStyle(element, `border-color:${tableBorderColor} !important`))
+      content.querySelectorAll('th').forEach((element) => appendInlineStyle(element, `color:${textColor} !important;background-color:${tableHeaderBackground} !important`))
     })
     const exportNodes = Array.from(documentNode.querySelectorAll('g.markmap-node[data-path]')).map((element) => {
       const transform = element.getAttribute('transform') || 'translate(0, 0)'
@@ -1617,7 +1659,7 @@ ${documentRenderConfig.style}`
     return new XMLSerializer().serializeToString(documentNode.documentElement)
   }
 
-  const createInteractiveHtml = (source: string, baseName: string) => {
+  const createInteractiveHtml = (source: string, baseName: string, backgroundColor: string, darkMode: boolean) => {
     const safeSource = source.replace(/<\/script/gi, '<\\/script')
   const script = `
 <script>
@@ -1866,7 +1908,8 @@ ${documentRenderConfig.style}`
   applyLayout();
 })();
 </script>`
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${baseName}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${dark ? '#15181d' : '#fafafa'}}body{font-family:system-ui,sans-serif;user-select:none}svg.markmap{display:block;width:100%;height:100%;touch-action:none}svg.markmap .markmap-node,svg.markmap .markmap-link{transition:none}.markmap-foreign,.markmap-foreign *{user-select:text}.markmap-export-toolbar{position:fixed;z-index:2;top:14px;right:14px;display:flex;gap:6px;padding:6px;border:1px solid #dfe2e8;border-radius:10px;background:#ffffffdd;box-shadow:0 8px 22px #10131a1c}.markmap-export-toolbar button{height:30px;min-width:30px;padding:0 9px;border:1px solid #dfe2e8;border-radius:7px;background:#fff;color:#30333a;cursor:pointer;font:12px system-ui,sans-serif;user-select:none}.markmap-export-toolbar button:hover{border-color:#7056e8;color:#7056e8}</style></head><body><div class="markmap-export-toolbar" aria-label="思维导图工具"><button type="button" data-action="zoom-out" aria-label="缩小">−</button><button type="button" data-action="zoom-in" aria-label="放大">＋</button><button type="button" data-action="fit">适应</button></div>${safeSource}${script}</body></html>`
+  const toolbarBackground = darkMode ? '#252a33dd' : '#ffffffdd'; const toolbarColor = darkMode ? '#f4f6f9' : '#30333a'; const toolbarBorder = darkMode ? '#4c5666' : '#dfe2e8';
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${baseName}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${backgroundColor}}body{font-family:system-ui,sans-serif;user-select:none}svg.markmap{display:block;width:100%;height:100%;touch-action:none}svg.markmap .markmap-node,svg.markmap .markmap-link{transition:none}.markmap-foreign,.markmap-foreign *{user-select:text}.markmap-export-toolbar{position:fixed;z-index:2;top:14px;right:14px;display:flex;gap:6px;padding:6px;border:1px solid ${toolbarBorder};border-radius:10px;background:${toolbarBackground};box-shadow:0 8px 22px #10131a1c}.markmap-export-toolbar button{height:30px;min-width:30px;padding:0 9px;border:1px solid ${toolbarBorder};border-radius:7px;background:${darkMode ? '#303743' : '#fff'};color:${toolbarColor};cursor:pointer;font:12px system-ui,sans-serif;user-select:none}.markmap-export-toolbar button:hover{border-color:#7056e8;color:#7056e8}</style></head><body><div class="markmap-export-toolbar" aria-label="思维导图工具"><button type="button" data-action="zoom-out" aria-label="缩小">−</button><button type="button" data-action="zoom-in" aria-label="放大">＋</button><button type="button" data-action="fit">适应</button></div>${safeSource}${script}</body></html>`
   }
 
   const exportDocument = async () => {
@@ -1878,11 +1921,11 @@ ${documentRenderConfig.style}`
         saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), `${baseName}.md`)
       } else {
         await document.fonts.ready
-        const { source, width, height } = createExportSvg()
-        const exportSource = await prepareExportSvg(source)
+        const { source, width, height } = createExportSvg(exportBackgroundColor, exportDarkMode, exportUsesTransparentBackground)
+        const exportSource = await prepareExportSvg(source, exportDarkMode)
         if (exportFormat === 'svg') saveBlob(new Blob([exportSource], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
         else if (exportFormat === 'html') {
-          saveBlob(new Blob([createInteractiveHtml(exportSource, baseName)], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
+          saveBlob(new Blob([createInteractiveHtml(exportSource, baseName, exportBackgroundColor, exportDarkMode)], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
         } else {
           const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(exportSource)}`
           const image = new Image()
@@ -2104,6 +2147,14 @@ ${documentRenderConfig.style}`
             {exportTab === 'file' ? <>
               <div className="format-grid">{(['png', 'jpeg', 'svg', 'html', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MD' : format.toUpperCase()}</strong><small>{format === 'png' ? '无损位图' : format === 'jpeg' ? '体积更小' : format === 'svg' ? '无限清晰' : format === 'html' ? '网页文件' : '源文件'}</small></button>)}</div>
               <label className="field"><span>渲染倍率 <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md'} /><small>{exportFormat === 'svg' ? '倍率设置 SVG 的画布尺寸，矢量内容始终清晰' : exportFormat === 'html' ? 'HTML 将保留可缩放矢量图' : exportFormat === 'md' ? 'Markdown 源文件无需倍率' : `预计输出为当前内容尺寸的 ${exportScale} 倍`}</small></label>
+              <div className="export-appearance-options">
+                <div className="export-section-heading"><strong>背景与文字</strong><small>{exportFormat === 'md' ? 'Markdown 源文件不包含画布样式' : '导出文件会使用以下画布与文字主题'}</small></div>
+                <label className="export-color-field"><span>背景颜色</span><span className="export-color-control"><input type="color" value={exportBackgroundColor} disabled={exportFormat === 'md'} onChange={(event) => setExportBackgroundColor(event.target.value)} /><code>{exportBackgroundColor.toUpperCase()}</code></span></label>
+                <div className="export-color-presets" aria-label="背景颜色预设">{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={exportBackgroundColor === color ? 'active' : ''} title={label} aria-label={`背景色：${label}`} disabled={exportFormat === 'md'} onClick={() => setExportBackgroundColor(color)}><span style={{ background: color }} /></button>)}</div>
+                <label className={`switch-field export-appearance-switch ${exportFormat !== 'png' ? 'code-controlled' : ''}`}><span><strong>透明背景</strong><small>{exportFormat === 'png' ? 'PNG 保留透明通道；文字主题仍按当前颜色判断' : '仅 PNG 支持透明背景'}</small></span><input type="checkbox" checked={exportTransparentBackground} disabled={exportFormat !== 'png'} onChange={(event) => setExportTransparentBackground(event.target.checked)} /></label>
+                <label className="switch-field export-appearance-switch"><span><strong>自动适配文字主题</strong><small>{exportTextTheme === 'auto' ? `当前自动使用${exportAutoDarkMode ? '深色' : '浅色'}主题` : '关闭后可手动指定内容是否使用暗黑模式'}</small></span><input type="checkbox" checked={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'auto' : (exportDarkMode ? 'dark' : 'light'))} /></label>
+                <label className={`switch-field export-appearance-switch ${exportTextTheme === 'auto' ? 'code-controlled' : ''}`}><span><strong>内容暗黑模式</strong><small>{exportTextTheme === 'auto' ? `自动结果：${exportDarkMode ? '开启（浅色文字）' : '关闭（深色文字）'}` : exportDarkMode ? '手动：使用浅色文字和深色内容样式' : '手动：使用深色文字和浅色内容样式'}</small></span><input type="checkbox" checked={exportDarkMode} disabled={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'dark' : 'light')} /></label>
+              </div>
               {exportError && <div className="export-error"><Icon name="warning" />{exportError}</div>}
               <button className="export-submit" disabled={exporting} onClick={() => void exportDocument()}><Icon name="download" />{exporting ? '正在生成…' : `导出 ${exportFormat.toUpperCase()}`}</button>
             </> : repositorySaveMode ? <div className="repository-save-dialog">
