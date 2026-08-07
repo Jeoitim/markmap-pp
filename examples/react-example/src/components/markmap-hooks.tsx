@@ -210,6 +210,77 @@ function cssLength(value: unknown) {
   if (typeof value === 'string' && value.trim()) return /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${value.trim()}px` : value.trim()
 }
 
+function normalizeExportText(value: string) {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function wrapExportText(text: string, maxWidth: number, measure: (value: string) => number) {
+  const normalized = normalizeExportText(text)
+  if (!normalized) return []
+
+  const lines: string[] = []
+  let current = ''
+  for (const character of Array.from(normalized)) {
+    const candidate = current + character
+    if (current && measure(candidate) > maxWidth) {
+      lines.push(current.trimEnd())
+      current = character === ' ' ? '' : character
+    } else {
+      current = candidate
+    }
+  }
+  if (current) lines.push(current.trimEnd())
+  return lines.filter(Boolean)
+}
+
+function getForeignContentElement(foreignObject: SVGForeignObjectElement) {
+  const content = foreignObject.firstElementChild?.firstElementChild
+  return content instanceof HTMLElement ? content : null
+}
+
+function getRenderedTextLines(foreignObject: SVGForeignObjectElement) {
+  const content = getForeignContentElement(foreignObject)
+  if (!content) return []
+
+  const expectedText = normalizeExportText(content.textContent || '')
+  if (!expectedText) return []
+
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
+  const range = document.createRange()
+  const lines: string[] = []
+  let current = ''
+  let currentTop: number | undefined
+  let textNode: Node | null
+
+  while ((textNode = walker.nextNode())) {
+    const value = textNode.nodeValue || ''
+    for (let offset = 0; offset < value.length;) {
+      const codePoint = value.codePointAt(offset) || 0
+      const character = String.fromCodePoint(codePoint)
+      const nextOffset = offset + character.length
+      range.setStart(textNode, offset)
+      range.setEnd(textNode, nextOffset)
+      const rect = range.getClientRects()[0]
+      const top = rect?.top
+
+      if (top !== undefined && currentTop !== undefined && Math.abs(top - currentTop) > Math.max(1, (rect.height || 0) * 0.25)) {
+        if (current.trim()) lines.push(current.trimEnd())
+        current = ''
+        currentTop = top
+      } else if (top !== undefined && currentTop === undefined) {
+        currentTop = top
+      }
+
+      if (!(character === ' ' && !current)) current += character
+      offset = nextOffset
+    }
+  }
+  if (current.trim()) lines.push(current.trimEnd())
+
+  const joined = lines.join('').replace(/\s/g, '')
+  return joined === expectedText.replace(/\s/g, '') ? lines : []
+}
+
 function buildDocumentRenderConfig(markdown: string): DocumentRenderConfig {
   const transformed = transformer.transform(markdown)
   const frontmatter = recordValue(transformed.frontmatter)
@@ -1178,22 +1249,49 @@ export default function MarkmapHooks() {
   }
 
   const createRasterSafeSvg = (source: string) => {
+    const liveForeignObjects = Array.from(svgRef.current?.querySelectorAll<SVGForeignObjectElement>('foreignObject') || [])
+    const fallbackFont = codeFont.shorthand || `${effectiveFontWeightCss} ${effectiveFontSizeCss}/1.35 ${effectiveFontFamily}`
+    const fallbackLineHeight = effectiveFontSize * 1.35
+    const measureCanvas = document.createElement('canvas')
+    const measureContext = measureCanvas.getContext('2d')
+    if (measureContext) measureContext.font = fallbackFont
     const documentNode = new DOMParser().parseFromString(source, 'image/svg+xml')
-    documentNode.querySelectorAll('foreignObject').forEach((foreignObject) => {
+    documentNode.querySelectorAll<SVGForeignObjectElement>('foreignObject').forEach((foreignObject, index) => {
       const text = documentNode.createElementNS('http://www.w3.org/2000/svg', 'text')
       const x = Number(foreignObject.getAttribute('x') || 0) + 6
+      const y = Number(foreignObject.getAttribute('y') || 0)
+      const width = Number(foreignObject.getAttribute('width') || 0)
       const height = Number(foreignObject.getAttribute('height') || effectiveFontSize * 1.5)
+      const liveForeignObject = liveForeignObjects[index]
+      const liveContent = liveForeignObject ? getForeignContentElement(liveForeignObject) : null
+      const computedStyle = liveContent ? getComputedStyle(liveContent) : null
+      const font = computedStyle?.font || fallbackFont
+      if (measureContext) measureContext.font = font
+      const rawText = normalizeExportText(foreignObject.textContent || '')
+      const maxWidth = Math.max(1, Number.isFinite(width) ? width - 12 : effectiveFontSize * 30)
+      const renderedLines = liveForeignObject ? getRenderedTextLines(liveForeignObject) : []
+      const lines = renderedLines.length
+        ? renderedLines
+        : wrapExportText(rawText, maxWidth, (value) => measureContext?.measureText(value).width || value.length * effectiveFontSize)
+      const lineHeight = Number.parseFloat(computedStyle?.lineHeight || '') || fallbackLineHeight
+      const firstLineY = y + height / 2 - ((lines.length - 1) * lineHeight) / 2
       text.setAttribute('x', String(x))
-      text.setAttribute('y', String(height / 2))
+      text.setAttribute('y', String(firstLineY))
       text.setAttribute('dominant-baseline', 'middle')
       text.setAttribute('fill', dark ? '#f4f6f9' : '#30333a')
-      if (codeFont.shorthand) text.setAttribute('style', `font:${codeFont.shorthand}`)
+      if (font) text.setAttribute('style', `font:${font}`)
       else {
         text.setAttribute('font-size', effectiveFontSizeCss)
         text.setAttribute('font-weight', String(effectiveFontWeight))
         text.setAttribute('font-family', effectiveFontFamily)
       }
-      text.textContent = foreignObject.textContent?.replace(/\s+/g, ' ').trim() || ''
+      lines.forEach((line, lineIndex) => {
+        const tspan = documentNode.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+        tspan.setAttribute('x', String(x))
+        tspan.setAttribute('y', String(firstLineY + lineIndex * lineHeight))
+        tspan.textContent = line
+        text.appendChild(tspan)
+      })
       foreignObject.replaceWith(text)
     })
     return new XMLSerializer().serializeToString(documentNode.documentElement)
@@ -1207,6 +1305,7 @@ export default function MarkmapHooks() {
       if (exportFormat === 'md') {
         saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), `${baseName}.md`)
       } else {
+        await document.fonts.ready
         const { source, width, height } = createExportSvg()
         if (exportFormat === 'svg') saveBlob(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
         else if (exportFormat === 'html') {
