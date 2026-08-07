@@ -103,6 +103,19 @@ svg { flex: 0 0 auto; }
 .map-canvas .markmap-foreign th { font-weight: 650; }
 .map-canvas .markmap-foreign pre,
 .map-canvas .markmap-foreign code { color: var(--markmap-code-color); background-color: var(--markmap-code-bg); }
+/* The published markmap-plus stylesheet uses border + padding for hover.
+   Restore the measured node box and draw the frame without changing layout. */
+.map-canvas .markmap-node-hovered > foreignObject > div > div,
+.map-canvas .markmap-selected > foreignObject > div > div {
+  padding: 4px 6px !important;
+  border: 0 !important;
+  border-radius: 14px;
+  outline: 2px solid #d9d9d9;
+  outline-offset: -2px;
+}
+.map-canvas .markmap-selected > foreignObject > div > div {
+  outline-color: #b4b4b4;
+}
 .map-canvas .markmap-foreign a,
 .map-canvas .markmap-foreign a * { color: var(--markmap-a-color, #0097e6); -webkit-text-fill-color: var(--markmap-a-color, #0097e6); }
 .map-canvas .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
