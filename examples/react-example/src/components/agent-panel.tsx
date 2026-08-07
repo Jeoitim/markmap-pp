@@ -23,32 +23,62 @@ function MermaidDiagram({ chart }: { chart: string }) {
   const [zoomOpen, setZoomOpen] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [diagramSize, setDiagramSize] = useState<{ w: number; h: number } | null>(null)
   const id = useId().replace(/:/g, '')
+  const viewportRef = useRef<HTMLDivElement | null>(null)
   const gesture = useRef<{ points: Record<number, { x: number; y: number }>; panStart?: { x: number; y: number; originX: number; originY: number }; pinchStart?: { distance: number; zoom: number } }>({ points: {} })
+  // 跟随应用主题：监听 <html> 的 data-theme 属性变化（浅/深色切换），变化时用新主题重新渲染图表。
+  const [theme, setTheme] = useState<'dark' | 'default'>(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'default')
+  useEffect(() => {
+    const element = document.documentElement
+    const sync = () => setTheme(element.dataset.theme === 'dark' ? 'dark' : 'default')
+    const observer = new MutationObserver(sync)
+    observer.observe(element, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     let active = true
     void import('mermaid').then(({ default: mermaid }) => {
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'default' })
+      // htmlLabels: false 让节点标签渲染为 SVG <text>（纯矢量），放大时保持清晰；否则标签是 foreignObject（HTML 位图），缩放会变糊。
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme })
       return mermaid.render(`agent-mermaid-${id}`, chart)
     }).then((rendered) => { if (active) setResult({ chart, svg: rendered.svg, error: '' }) }).catch(() => { if (active) setResult({ chart, svg: '', error: '图表语法无法渲染，以下保留原始 Mermaid 代码。' }) })
     return () => { active = false }
-  }, [chart, id])
+  }, [chart, id, theme])
+
+  useEffect(() => {
+    if (!zoomOpen) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setZoomOpen(false) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => { document.body.style.overflow = previous; window.removeEventListener('keydown', closeOnEscape) }
+  }, [zoomOpen])
 
   const current = result.chart === chart ? result : { svg: '', error: '' }
+
+  useEffect(() => {
+    if (!zoomOpen || !current.svg) return
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const viewBox = current.svg.match(/viewBox=["']\s*[\d.-]+\s+[\d.-]+\s+([\d.-]+)\s+([\d.-]+)/i)
+    const w = Number(viewBox?.[1]) || 720
+    const h = Number(viewBox?.[2]) || 480
+    setDiagramSize({ w, h }); setPan({ x: 0, y: 0 })
+    setZoom(Math.max(.2, Math.min(8, viewport.clientWidth * .9 / w, viewport.clientHeight * .9 / h)))
+  }, [zoomOpen, current.svg])
+
   const copySource = async () => {
     try { await navigator.clipboard.writeText(chart); setSourceCopied(true); window.setTimeout(() => setSourceCopied(false), 1600) } catch { setSourceCopied(false) }
   }
   const toggleSource = () => { setSourceOpen((value) => !value); setSourceCopied(false) }
-  const openFullscreen = () => {
-    setPan({ x: 0, y: 0 }); setZoomOpen(true)
-    window.requestAnimationFrame(() => {
-      const viewport = document.querySelector<HTMLDivElement>('.agent-mermaid-modal .agent-mermaid-viewport')
-      const viewBox = current.svg.match(/viewBox=["']\s*[\d.-]+\s+[\d.-]+\s+([\d.-]+)\s+([\d.-]+)/i)
-      const width = Number(viewBox?.[1]) || 720
-      const height = Number(viewBox?.[2]) || 480
-      if (viewport) setZoom(Math.max(.35, Math.min(4, viewport.clientWidth * .86 / width, viewport.clientHeight * .86 / height)))
-    })
+  const openFullscreen = () => { setZoomOpen(true); setPan({ x: 0, y: 0 }); setDiagramSize(null) }
+  const zoomBy = (factor: number) => setZoom((value) => Math.min(8, Math.max(.2, value * factor)))
+  const fitToViewport = () => {
+    const viewport = viewportRef.current
+    if (!viewport || !diagramSize) return
+    setZoom(Math.max(.2, Math.min(8, viewport.clientWidth * .9 / diagramSize.w, viewport.clientHeight * .9 / diagramSize.h)))
   }
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
@@ -66,12 +96,12 @@ function MermaidDiagram({ chart }: { chart: string }) {
     const points = Object.values(state.points)
     if (points.length === 2 && state.pinchStart) {
       const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
-      setZoom(Math.min(4, Math.max(.35, state.pinchStart.zoom * distance / Math.max(1, state.pinchStart.distance))))
+      setZoom(Math.min(8, Math.max(.2, state.pinchStart.zoom * distance / Math.max(1, state.pinchStart.distance))))
     } else if (points.length === 1 && state.panStart) setPan({ x: state.panStart.originX + event.clientX - state.panStart.x, y: state.panStart.originY + event.clientY - state.panStart.y })
   }
   const pointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => { delete gesture.current.points[event.pointerId]; gesture.current.panStart = undefined; gesture.current.pinchStart = undefined }
-  const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => { event.preventDefault(); setZoom((value) => Math.min(4, Math.max(.35, value * (event.deltaY < 0 ? 1.1 : .9)))) }
-  return <figure className="agent-mermaid"><figcaption><span>Mermaid 图表</span><span><button type="button" className="agent-icon-button" onClick={toggleSource} title={sourceOpen ? '查看图表' : '查看源代码'} aria-label={sourceOpen ? '查看图表' : '查看源代码'}><AgentGlyph name={sourceOpen ? 'diagram' : 'code'} /></button><button type="button" className="agent-icon-button" onClick={openFullscreen} disabled={!current.svg} title="全屏查看" aria-label="全屏查看"><AgentGlyph name="fullscreen" /></button></span></figcaption>{sourceOpen ? <section className="agent-code-block agent-mermaid-source"><header><span>mermaid</span><button type="button" className="agent-icon-button" onClick={() => void copySource()} title={sourceCopied ? '已复制' : '复制源代码'} aria-label={sourceCopied ? '已复制' : '复制源代码'}><AgentGlyph name="copy" /></button></header><pre><code>{chart}</code></pre></section> : current.svg ? <div dangerouslySetInnerHTML={{ __html: current.svg }} /> : current.error ? <small>{current.error}</small> : <small>正在渲染图表…</small>}{zoomOpen && current.svg && <div className="agent-mermaid-modal" role="dialog" aria-modal="true" aria-label="全屏查看 Mermaid 图表" onMouseDown={(event) => { if (event.target === event.currentTarget) setZoomOpen(false) }}><section><header><strong>Mermaid 图表 <small>{Math.round(zoom * 100)}%</small></strong><button type="button" onClick={() => setZoomOpen(false)} aria-label="退出全屏查看"><AgentGlyph name="close" /></button></header><div className="agent-mermaid-viewport" onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}><div className="agent-mermaid-zoom-layer" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} dangerouslySetInnerHTML={{ __html: current.svg }} /></div></section></div>}</figure>
+  const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => { event.preventDefault(); setZoom((value) => Math.min(8, Math.max(.2, value * (event.deltaY < 0 ? 1.1 : .9)))) }
+  return <figure className="agent-mermaid"><figcaption><span>Mermaid 图表</span><span><button type="button" className="agent-icon-button" onClick={() => void copySource()} title={sourceCopied ? '已复制' : '复制源代码'} aria-label="复制源代码"><AgentGlyph name="copy" /></button><button type="button" className="agent-icon-button" onClick={toggleSource} title={sourceOpen ? '查看图表' : '查看源代码'} aria-label={sourceOpen ? '查看图表' : '查看源代码'}><AgentGlyph name={sourceOpen ? 'diagram' : 'code'} /></button><button type="button" className="agent-icon-button" onClick={openFullscreen} disabled={!current.svg} title="全屏查看" aria-label="全屏查看"><AgentGlyph name="fullscreen" /></button></span></figcaption>{sourceOpen ? <pre className="agent-mermaid-source"><code>{chart}</code></pre> : current.svg ? <div dangerouslySetInnerHTML={{ __html: current.svg }} /> : current.error ? <small>{current.error}</small> : <small>正在渲染图表…</small>}{zoomOpen && <div className="agent-mermaid-modal" role="dialog" aria-modal="true" aria-label="全屏查看 Mermaid 图表"><div className="agent-mermaid-viewport" ref={viewportRef} onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}>{diagramSize && <div className="agent-mermaid-zoom-layer" style={{ '--diagram-w': `${diagramSize.w * zoom}px`, '--diagram-h': `${diagramSize.h * zoom}px`, transform: `translate(${pan.x}px, ${pan.y}px)` } as CSSProperties} dangerouslySetInnerHTML={{ __html: current.svg }} />}</div><div className="agent-mermaid-tools"><button type="button" onClick={() => zoomBy(1 / 1.2)} aria-label="缩小" title="缩小"><AgentGlyph name="minus" /></button><b title="适应窗口" onClick={fitToViewport}>{Math.round(zoom * 100)}%</b><button type="button" onClick={() => zoomBy(1.2)} aria-label="放大" title="放大"><AgentGlyph name="plus" /></button></div><button type="button" className="agent-mermaid-close" onClick={() => setZoomOpen(false)} aria-label="关闭全屏查看"><AgentGlyph name="close" /></button></div>}</figure>
 }
 
 function AgentPre({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
@@ -126,7 +156,7 @@ interface AgentPanelProps {
   fontWeight: number
 }
 
-function AgentGlyph({ name }: { name: 'bot' | 'send' | 'settings' | 'refresh' | 'check' | 'close' | 'history' | 'download' | 'plus' | 'git' | 'shield' | 'alert' | 'brain' | 'chevron' | 'folder' | 'file' | 'copy' | 'code' | 'diagram' | 'fullscreen' | 'edit' | 'arrow-left' | 'arrow-right' }) {
+function AgentGlyph({ name }: { name: 'bot' | 'send' | 'settings' | 'refresh' | 'check' | 'close' | 'history' | 'download' | 'plus' | 'minus' | 'git' | 'shield' | 'alert' | 'brain' | 'chevron' | 'folder' | 'file' | 'copy' | 'code' | 'diagram' | 'fullscreen' | 'edit' | 'arrow-left' | 'arrow-right' }) {
   const paths = {
     bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
     send: <><path d="m21 3-7.5 18-3.8-7.7L2 9.5 21 3Z"/><path d="m9.7 13.3 4.1-4.1"/></>,
@@ -134,7 +164,7 @@ function AgentGlyph({ name }: { name: 'bot' | 'send' | 'settings' | 'refresh' | 
     refresh: <><path d="M20 7v5h-5"/><path d="M18.2 16.5A8 8 0 1 1 19.8 9L20 12"/></>,
     check: <path d="m5 12 4 4L19 6"/>, close: <path d="m6 6 12 12M18 6 6 18"/>,
     history: <><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v4h4"/><path d="M12 7v5l3.5 2"/></>,
-    download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>, plus: <path d="M12 5v14M5 12h14"/>,
+    download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>, plus: <path d="M12 5v14M5 12h14"/>, minus: <path d="M5 12h14"/>,
     git: <><circle cx="6" cy="5" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="8" cy="19" r="2"/><path d="M6 7v5a3 3 0 0 0 3 3h5a4 4 0 0 0 4-4V8M8 17v-2"/></>,
     shield: <><path d="M12 3 20 6v5c0 5-3.5 8.4-8 10-4.5-1.6-8-5-8-10V6l8-3Z"/><path d="m9 12 2 2 4-4"/></>,
     alert: <><path d="M10.3 3.7 2.5 17.2A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.8L13.7 3.7a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/></>,
