@@ -2,7 +2,7 @@ import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { askAgent, testAgentConnection, type AgentMessage, type AgentProposal } from './agent-client'
-import { conversationMarkdown, createConversation, loadAgentConversations, saveAgentConversations, type AgentConversation } from './agent-history'
+import { activeContent, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation } from './agent-history'
 import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
 import type { CachedMarkdownFile } from './github-sync'
 
@@ -14,6 +14,71 @@ function profileOf(config: AgentProviderConfig): AgentProviderProfile {
 
 function withActiveProfile(config: AgentProviderConfig): AgentProviderConfig {
   return { ...config, providerProfiles: { ...config.providerProfiles, [config.provider]: profileOf(config) } }
+}
+
+// 暗色模式下节点背景若是浅色（classDef/style 里写的浅色填充），与浅色文字对比度不足。
+// 处理：保留色相与饱和度，反相明度——纯白变纯黑，浅彩变深彩，文字仍是浅色，对比度达标。
+function adaptDarkMermaidSvg(svg: string): string {
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+  const cache = new Map<string, string>()
+  const parseColor = (raw: string): [number, number, number] | null => {
+    const value = raw.trim()
+    const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+    if (hex) {
+      const full = hex[1].length === 3 ? hex[1].split('').map((c) => c + c).join('') : hex[1]
+      return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)]
+    }
+    const rgb = value.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/)
+    if (rgb) return [Math.min(255, Number(rgb[1])), Math.min(255, Number(rgb[2])), Math.min(255, Number(rgb[3]))]
+    return null
+  }
+  const toHex = (r: number, g: number, b: number) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')
+  const rgbToHsl = (rgb: [number, number, number]): [number, number, number] => {
+    const [r, g, b] = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255]
+    const max = Math.max(r, g, b), min = Math.min(r, g, b)
+    const l = (max + min) / 2
+    if (max === min) return [0, 0, l]
+    const d = max - min
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    let h = 0
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+    else if (max === g) h = ((b - r) / d + 2) / 6
+    else h = ((r - g) / d + 4) / 6
+    return [h, s, l]
+  }
+  const hslToHex = ([h, s, l]: [number, number, number]): string => {
+    if (s === 0) return toHex(l * 255, l * 255, l * 255)
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+    const p = 2 * l - q
+    const channel = (t: number) => {
+      const tt = ((t % 1) + 1) % 1
+      return tt < 1 / 6 ? p + (q - p) * 6 * tt : tt < 1 / 2 ? q : tt < 2 / 3 ? p + (q - p) * (2 / 3 - tt) * 6 : p
+    }
+    return toHex(channel(h + 1 / 3) * 255, channel(h) * 255, channel(h - 1 / 3) * 255)
+  }
+  const transform = (raw: string) => {
+    const rgb = parseColor(raw)
+    if (!rgb) return raw
+    const [h, s, l] = rgbToHsl(rgb)
+    if (l < 0.55) return raw // 本身够深，浅色文字可读
+    return hslToHex([h, s, 1 - l]) // 色相/饱和度不变，明度反相
+  }
+  doc.querySelectorAll('g.node > rect, g.node > circle, g.node > ellipse, g.node > polygon, g.node > path').forEach((shape) => {
+    const style = shape.getAttribute('style') || ''
+    const match = style.match(/fill\s*:\s*([^;!]+)/i)
+    if (!match) return
+    const key = match[1].trim()
+    if (!cache.has(key)) cache.set(key, transform(key))
+    const next = cache.get(key)
+    if (next === key) return
+    shape.setAttribute('style', style.replace(/fill\s*:\s*[^;!]+/i, 'fill:' + next))
+    const label = shape.parentElement?.querySelector(':scope > .label') ?? shape.parentElement?.querySelector('.label')
+    if (label) {
+      const current = label.getAttribute('style') || ''
+      label.setAttribute('style', /fill\s*:/.test(current) ? current.replace(/fill\s*:\s*[^;!]+/i, 'fill:#ccc') : current + (current ? ';' : '') + 'fill:#ccc')
+    }
+  })
+  return new XMLSerializer().serializeToString(doc)
 }
 
 function MermaidDiagram({ chart }: { chart: string }) {
@@ -43,7 +108,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
       // htmlLabels: false 让节点标签渲染为 SVG <text>（纯矢量），放大时保持清晰；否则标签是 foreignObject（HTML 位图），缩放会变糊。
       mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme })
       return mermaid.render(`agent-mermaid-${id}`, chart)
-    }).then((rendered) => { if (active) setResult({ chart, svg: rendered.svg, error: '' }) }).catch(() => { if (active) setResult({ chart, svg: '', error: '图表语法无法渲染，以下保留原始 Mermaid 代码。' }) })
+    }).then((rendered) => { if (active) setResult({ chart, svg: theme === 'dark' ? adaptDarkMermaidSvg(rendered.svg) : rendered.svg, error: '' }) }).catch(() => { if (active) setResult({ chart, svg: '', error: '图表语法无法渲染，以下保留原始 Mermaid 代码。' }) })
     return () => { active = false }
   }, [chart, id, theme])
 
@@ -80,6 +145,16 @@ function MermaidDiagram({ chart }: { chart: string }) {
     if (!viewport || !diagramSize) return
     setZoom(Math.max(.2, Math.min(8, viewport.clientWidth * .9 / diagramSize.w, viewport.clientHeight * .9 / diagramSize.h)))
   }
+  const downloadSvg = () => {
+    if (!current.svg) return
+    const blob = new Blob([current.svg], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `mermaid-${id}.svg`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -101,7 +176,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
   }
   const pointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => { delete gesture.current.points[event.pointerId]; gesture.current.panStart = undefined; gesture.current.pinchStart = undefined }
   const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => { event.preventDefault(); setZoom((value) => Math.min(8, Math.max(.2, value * (event.deltaY < 0 ? 1.1 : .9)))) }
-  return <figure className="agent-mermaid"><figcaption><span>Mermaid 图表</span><span><button type="button" className="agent-icon-button" onClick={() => void copySource()} title={sourceCopied ? '已复制' : '复制源代码'} aria-label="复制源代码"><AgentGlyph name="copy" /></button><button type="button" className="agent-icon-button" onClick={toggleSource} title={sourceOpen ? '查看图表' : '查看源代码'} aria-label={sourceOpen ? '查看图表' : '查看源代码'}><AgentGlyph name={sourceOpen ? 'diagram' : 'code'} /></button><button type="button" className="agent-icon-button" onClick={openFullscreen} disabled={!current.svg} title="全屏查看" aria-label="全屏查看"><AgentGlyph name="fullscreen" /></button></span></figcaption>{sourceOpen ? <pre className="agent-mermaid-source"><code>{chart}</code></pre> : current.svg ? <div dangerouslySetInnerHTML={{ __html: current.svg }} /> : current.error ? <small>{current.error}</small> : <small>正在渲染图表…</small>}{zoomOpen && <div className="agent-mermaid-modal" role="dialog" aria-modal="true" aria-label="全屏查看 Mermaid 图表"><div className="agent-mermaid-viewport" ref={viewportRef} onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}>{diagramSize && <div className="agent-mermaid-zoom-layer" style={{ '--diagram-w': `${diagramSize.w * zoom}px`, '--diagram-h': `${diagramSize.h * zoom}px`, transform: `translate(${pan.x}px, ${pan.y}px)` } as CSSProperties} dangerouslySetInnerHTML={{ __html: current.svg }} />}</div><div className="agent-mermaid-tools"><button type="button" onClick={() => zoomBy(1 / 1.2)} aria-label="缩小" title="缩小"><AgentGlyph name="minus" /></button><b title="适应窗口" onClick={fitToViewport}>{Math.round(zoom * 100)}%</b><button type="button" onClick={() => zoomBy(1.2)} aria-label="放大" title="放大"><AgentGlyph name="plus" /></button></div><button type="button" className="agent-mermaid-close" onClick={() => setZoomOpen(false)} aria-label="关闭全屏查看"><AgentGlyph name="close" /></button></div>}</figure>
+  return <figure className="agent-mermaid"><figcaption><span>Mermaid 图表</span><span><button type="button" className="agent-icon-button" onClick={() => void copySource()} title={sourceCopied ? '已复制' : '复制源代码'} aria-label="复制源代码"><AgentGlyph name="copy" /></button><button type="button" className="agent-icon-button" onClick={toggleSource} title={sourceOpen ? '查看图表' : '查看源代码'} aria-label={sourceOpen ? '查看图表' : '查看源代码'}><AgentGlyph name={sourceOpen ? 'diagram' : 'code'} /></button><button type="button" className="agent-icon-button" onClick={openFullscreen} disabled={!current.svg} title="全屏查看" aria-label="全屏查看"><AgentGlyph name="fullscreen" /></button></span></figcaption>{sourceOpen ? <pre className="agent-mermaid-source"><code>{chart}</code></pre> : current.svg ? <div dangerouslySetInnerHTML={{ __html: current.svg }} /> : current.error ? <small>{current.error}</small> : <small>正在渲染图表…</small>}{zoomOpen && <div className="agent-mermaid-modal" role="dialog" aria-modal="true" aria-label="全屏查看 Mermaid 图表"><div className="agent-mermaid-viewport" ref={viewportRef} onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}>{diagramSize && <div className="agent-mermaid-zoom-layer" style={{ '--diagram-w': `${diagramSize.w * zoom}px`, '--diagram-h': `${diagramSize.h * zoom}px`, transform: `translate(${pan.x}px, ${pan.y}px)` } as CSSProperties} dangerouslySetInnerHTML={{ __html: current.svg }} />}</div><div className="agent-mermaid-tools"><button type="button" onClick={() => zoomBy(1 / 1.2)} aria-label="缩小" title="缩小"><AgentGlyph name="minus" /></button><b title="适应窗口" onClick={fitToViewport}>{Math.round(zoom * 100)}%</b><button type="button" onClick={() => zoomBy(1.2)} aria-label="放大" title="放大"><AgentGlyph name="plus" /></button><i aria-hidden="true" /><button type="button" onClick={downloadSvg} aria-label="下载 SVG" title="下载 SVG"><AgentGlyph name="download" /></button></div><button type="button" className="agent-mermaid-close" onClick={() => setZoomOpen(false)} aria-label="关闭全屏查看"><AgentGlyph name="close" /></button></div>}</figure>
 }
 
 function AgentPre({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
@@ -131,14 +206,14 @@ function AgentMarkdown({ children, streaming = false }: { children: string; stre
   return <div className={`agent-markdown${streaming ? ' agent-streaming-markdown' : ''}`}>{content}{streaming && <b aria-hidden="true" />}</div>
 }
 
-function ConversationMessage({ message, editing, editText, onEdit, onEditText, onCancelEdit, onSubmitEdit, onRegenerate, onSelectVersion }: { message: AgentMessage; editing: boolean; editText: string; onEdit: () => void; onEditText: (value: string) => void; onCancelEdit: () => void; onSubmitEdit: () => void; onRegenerate: () => void; onSelectVersion: (index: number) => void }) {
+function ConversationMessage({ message, path, editing, editText, onEdit, onEditText, onCancelEdit, onSubmitEdit, onRegenerate, onSelectVersion, onSelectQuestionVersion }: { message: AgentMessage; path: number[]; editing: boolean; editText: string; onEdit: (path: number[]) => void; onEditText: (value: string) => void; onCancelEdit: () => void; onSubmitEdit: (path: number[]) => void; onRegenerate: (path: number[]) => void; onSelectVersion: (path: number[], version: number) => void; onSelectQuestionVersion: (path: number[], delta: number) => void }) {
   const [copied, setCopied] = useState(false)
   const version = message.answerVersions?.[message.activeAnswerVersion || 0]
-  const content = version?.content || message.content
+  const content = message.role === 'user' ? activeContent(message) : version?.content || message.content
   const reasoningSummary = version?.reasoningSummary || message.reasoningSummary
   const reasoningDurationSeconds = version?.reasoningDurationSeconds ?? message.reasoningDurationSeconds
   const copy = async () => { try { await navigator.clipboard.writeText(content); setCopied(true); window.setTimeout(() => setCopied(false), 1600) } catch { setCopied(false) } }
-  return <div className={`agent-message ${message.role}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>{message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />已思考（用时 {reasoningDurationSeconds}s）</summary>{reasoningSummary && <span>{reasoningSummary}</span>}</details>}{message.role === 'user' && editing ? <div className="agent-question-editor"><textarea value={editText} onChange={(event) => onEditText(event.target.value)} /><footer><button type="button" onClick={onCancelEdit}>取消</button><button type="button" onClick={onSubmitEdit} disabled={!editText.trim()}>重新提问</button></footer></div> : <AgentMarkdown>{content}</AgentMarkdown>}<footer className="agent-message-actions">{message.role === 'user' ? <button type="button" className="agent-icon-button" onClick={onEdit} title="修改提问" aria-label="修改提问"><AgentGlyph name="edit" /></button> : <><button type="button" className="agent-icon-button" onClick={() => void copy()} title={copied ? '已复制' : '复制回答'} aria-label={copied ? '已复制' : '复制回答'}><AgentGlyph name="copy" /></button><button type="button" className="agent-icon-button" onClick={onRegenerate} title="重新生成" aria-label="重新生成"><AgentGlyph name="refresh" /></button>{(message.answerVersions?.length || 0) > 1 && <span className="agent-answer-switch"><button type="button" onClick={() => onSelectVersion(Math.max(0, (message.activeAnswerVersion || 0) - 1))} disabled={(message.activeAnswerVersion || 0) === 0} aria-label="上一版回答"><AgentGlyph name="arrow-left" /></button><small>{(message.activeAnswerVersion || 0) + 1}/{message.answerVersions!.length}</small><button type="button" onClick={() => onSelectVersion(Math.min(message.answerVersions!.length - 1, (message.activeAnswerVersion || 0) + 1))} disabled={(message.activeAnswerVersion || 0) === message.answerVersions!.length - 1} aria-label="下一版回答"><AgentGlyph name="arrow-right" /></button></span>}</>}</footer></div></div>
+  return <div className={`agent-message ${message.role}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>{message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />已思考（用时 {reasoningDurationSeconds}s）</summary>{reasoningSummary && <span>{reasoningSummary}</span>}</details>}{message.role === 'user' && editing ? <div className="agent-question-editor"><textarea value={editText} onChange={(event) => onEditText(event.target.value)} /><footer><button type="button" onClick={onCancelEdit}>取消</button><button type="button" onClick={() => onSubmitEdit(path)} disabled={!editText.trim()}>重新提问</button></footer></div> : <AgentMarkdown>{content}</AgentMarkdown>}<footer className="agent-message-actions">{message.role === 'user' ? <><button type="button" className="agent-icon-button" onClick={() => onEdit(path)} title="修改提问" aria-label="修改提问"><AgentGlyph name="edit" /></button>{(message.questionVersions?.length || 0) > 1 && <span className="agent-answer-switch"><button type="button" onClick={() => onSelectQuestionVersion(path, -1)} disabled={(message.activeQuestionVersion || 0) === 0} aria-label="上一版问题"><AgentGlyph name="arrow-left" /></button><small>{(message.activeQuestionVersion || 0) + 1}/{message.questionVersions!.length}</small><button type="button" onClick={() => onSelectQuestionVersion(path, 1)} disabled={(message.activeQuestionVersion || 0) === message.questionVersions!.length - 1} aria-label="下一版问题"><AgentGlyph name="arrow-right" /></button></span>}</> : <><button type="button" className="agent-icon-button" onClick={() => void copy()} title={copied ? '已复制' : '复制回答'} aria-label={copied ? '已复制' : '复制回答'}><AgentGlyph name="copy" /></button><button type="button" className="agent-icon-button" onClick={() => onRegenerate(path)} title="重新生成" aria-label="重新生成"><AgentGlyph name="refresh" /></button>{(message.answerVersions?.length || 0) > 1 && <span className="agent-answer-switch"><button type="button" onClick={() => onSelectVersion(path, Math.max(0, (message.activeAnswerVersion || 0) - 1))} disabled={(message.activeAnswerVersion || 0) === 0} aria-label="上一版回答"><AgentGlyph name="arrow-left" /></button><small>{(message.activeAnswerVersion || 0) + 1}/{message.answerVersions!.length}</small><button type="button" onClick={() => onSelectVersion(path, Math.min(message.answerVersions!.length - 1, (message.activeAnswerVersion || 0) + 1))} disabled={(message.activeAnswerVersion || 0) === message.answerVersions!.length - 1} aria-label="下一版回答"><AgentGlyph name="arrow-right" /></button></span>}</>}</footer></div></div>
 }
 
 interface AgentPanelProps {
@@ -368,13 +443,31 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   const send = async (replacement?: { text: string; userIndex?: number }) => {
     const text = (replacement?.text || input).trim()
     if (!text || busy) return
+    const flat = flattenMessages(conversation.messages)
     const revising = replacement?.userIndex !== undefined
     const revisionIndex = replacement?.userIndex ?? -1
-    const sourceMessages = revising ? conversation.messages.map((message, index) => index === revisionIndex ? { ...message, content: text } : message) : conversation.messages
-    const answerIndex = revising ? revisionIndex + 1 : -1
-    const replacingAnswer = revising && sourceMessages[answerIndex]?.role === 'assistant'
-    const nextMessages = revising ? sourceMessages : [...sourceMessages, { role: 'user' as const, content: text }]
-    const requestMessages = revising ? sourceMessages.slice(1, revisionIndex + 1) : [...sourceMessages.filter((_, index) => index > 0), { role: 'user' as const, content: text }]
+    const questionPath = revising ? flat[revisionIndex]?.path ?? null : null
+    // 重新生成：文本与当前激活版本完全一致，只给回答追加新版本；修改提问：新建问题分支，隐藏旧尾巴。
+    const edited = revising && questionPath !== null && text !== activeContent(flat[revisionIndex].message)
+    let nextMessages: AgentMessage[] = conversation.messages
+    let requestMessages: AgentMessage[]
+    let replacingAnswerPath: number[] | null = null
+    if (edited) {
+      const oldTail = flat.slice(revisionIndex + 1).map((entry) => entry.message)
+      nextMessages = truncateAtPath(updateAtPath(conversation.messages, questionPath!, (question) => {
+        const versions = question.questionVersions?.length
+          ? [...question.questionVersions.map((version, vi) => vi === (question.activeQuestionVersion ?? 0) ? { ...version, tail: oldTail } : version), { content: text, tail: [] }]
+          : [{ content: question.content, tail: oldTail }, { content: text, tail: [] }]
+        return { ...question, content: text, questionVersions: versions, activeQuestionVersion: versions.length - 1 }
+      }), questionPath!)
+      requestMessages = flattenMessages(nextMessages).slice(1, revisionIndex + 1).map((entry) => ({ role: entry.message.role, content: activeContent(entry.message) }))
+    } else if (revising) {
+      replacingAnswerPath = flat[revisionIndex + 1]?.message.role === 'assistant' ? flat[revisionIndex + 1].path : null
+      requestMessages = [...flat.slice(1, revisionIndex + 1).map((entry) => ({ role: entry.message.role, content: activeContent(entry.message) })), { role: 'user' as const, content: text }]
+    } else {
+      nextMessages = [...conversation.messages, { role: 'user' as const, content: text }]
+      requestMessages = [...flat.slice(1).map((entry) => ({ role: entry.message.role, content: activeContent(entry.message) })), { role: 'user' as const, content: text }]
+    }
     setLastRequest(revising ? { text, userIndex: revisionIndex } : { text })
     const startedAt = Date.now()
     saveConversation({ ...conversation, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: nextMessages, updatedAt: Date.now() })
@@ -394,11 +487,17 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       })
       const reasoningDurationSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
       const answer: AgentMessage = { role: 'assistant', content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds }
-      const finalMessages = replacingAnswer ? nextMessages.map((message, index) => {
-        if (index !== answerIndex) return message
-        const versions = [...(message.answerVersions || [{ content: message.content, reasoningSummary: message.reasoningSummary, reasoningDurationSeconds: message.reasoningDurationSeconds }]), { content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds }]
-        return { ...answer, answerVersions: versions, activeAnswerVersion: versions.length - 1 }
-      }) : [...nextMessages, answer]
+      const finalMessages = replacingAnswerPath
+        ? updateAtPath(nextMessages, replacingAnswerPath, (message) => {
+            const versions = [...(message.answerVersions || [{ content: message.content, reasoningSummary: message.reasoningSummary, reasoningDurationSeconds: message.reasoningDurationSeconds }]), { content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds }]
+            return { ...message, answerVersions: versions, activeAnswerVersion: versions.length - 1 }
+          })
+        : edited
+          ? updateAtPath(nextMessages, questionPath!, (question) => {
+              const versions = question.questionVersions!.map((version, vi) => vi === question.questionVersions!.length - 1 ? { ...version, tail: [...version.tail, answer] } : version)
+              return { ...question, questionVersions: versions }
+            })
+          : [...nextMessages, answer]
       saveConversation({ ...conversation, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: finalMessages, updatedAt: Date.now() })
       if (result.proposals.length) {
         if (config.permissionMode === 'auto') {
@@ -412,9 +511,16 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     } catch (reason) { setError(reason instanceof Error ? reason.message : '模型请求失败') } finally { setBusy(null); setThinkingStartedAt(null) }
   }
 
-  const selectAnswerVersion = (messageIndex: number, versionIndex: number) => {
-    const messages = conversation.messages.map((message, index) => index === messageIndex ? { ...message, activeAnswerVersion: versionIndex } : message)
-    // eslint-disable-next-line react-hooks/purity -- version switching updates history timing on click.
+  const selectAnswerVersion = (path: number[], versionIndex: number) => {
+    const messages = updateAtPath(conversation.messages, path, (message) => ({ ...message, activeAnswerVersion: versionIndex }))
+    saveConversation({ ...conversation, messages, updatedAt: Date.now() })
+  }
+  const selectQuestionVersion = (path: number[], delta: number) => {
+    const messages = updateAtPath(conversation.messages, path, (message) => {
+      const count = message.questionVersions?.length || 0
+      const active = Math.max(0, Math.min(count - 1, (message.activeQuestionVersion || 0) + delta))
+      return { ...message, activeQuestionVersion: active }
+    })
     saveConversation({ ...conversation, messages, updatedAt: Date.now() })
   }
   const beginQuestionEdit = (index: number, text: string) => { setEditingQuestion(index); setEditedQuestion(text); setError('') }
@@ -433,7 +539,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     {notice && <div className="agent-notice"><AgentGlyph name="check" />{notice}</div>}
     {error && <div className="agent-error"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
     {historyOpen && <section className="agent-history" ref={historyRef}><header><strong>对话历史</strong><button type="button" onClick={startConversation}><AgentGlyph name="plus" />新对话</button></header>{conversations.map((item) => <div className={item.id === conversation.id ? 'active' : ''} key={item.id}><button type="button" onClick={() => { setConversation(item); setProposals([]); setCommitRequested(false); setHistoryOpen(false) }}><strong>{item.title}</strong><small>{new Date(item.updatedAt).toLocaleString('zh-CN')}</small></button><button type="button" onClick={() => exportConversation(item)} title="导出 Markdown"><AgentGlyph name="download" /></button></div>)}</section>}
-    <div className="agent-conversation">{conversation.messages.map((message, index) => <ConversationMessage key={`${message.role}:${index}`} message={message} editing={editingQuestion === index} editText={editedQuestion} onEdit={() => beginQuestionEdit(index, message.content)} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = conversation.messages[index - 1]; if (question?.role === 'user') void send({ text: question.content, userIndex: index - 1 }) }} onSelectVersion={(version) => selectAnswerVersion(index, version)} />)}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div><details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
+    <div className="agent-conversation">{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} />)}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div><details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
     {(proposals.length > 0 || commitRequested) && <section className="agent-proposals"><header><strong>待审核操作</strong><span>{proposals.length + (commitRequested ? 1 : 0)} 项</span></header>{proposals.map((proposal) => {
       const file = files.find((item) => item.path === proposal.path)
       if (!file && proposal.action !== 'create') return null

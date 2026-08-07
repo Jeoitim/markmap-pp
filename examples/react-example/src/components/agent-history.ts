@@ -24,7 +24,50 @@ export function createConversation(): AgentConversation {
   return { id: crypto.randomUUID(), title: '新对话', createdAt: now, updatedAt: now, messages: [{ role: 'assistant', content: '你好，我可以基于已缓存的 Markdown 笔记回答问题，或在 Edit 模式中生成可审核的修改。' }] }
 }
 
+export function activeContent(message: AgentMessage): string {
+  const version = message.questionVersions?.[message.activeQuestionVersion ?? 0]
+  return version?.content ?? message.content
+}
+
+/** The visible conversation: question messages followed by the tail of their active question version. */
+export function flattenMessages(messages: AgentMessage[]): { message: AgentMessage; path: number[] }[] {
+  const out: { message: AgentMessage; path: number[] }[] = []
+  const walk = (list: AgentMessage[], prefix: number[]) => {
+    list.forEach((message, index) => {
+      const path = [...prefix, index]
+      out.push({ message, path })
+      const active = message.activeQuestionVersion ?? 0
+      const tail = message.questionVersions?.[active]?.tail
+      if (tail?.length) walk(tail, [...path, active])
+    })
+  }
+  walk(messages, [])
+  return out
+}
+
+/** Update the message at the given path (nested through question version tails). */
+export function updateAtPath(messages: AgentMessage[], path: number[], updater: (message: AgentMessage) => AgentMessage): AgentMessage[] {
+  if (path.length === 1) return messages.map((message, index) => index === path[0] ? updater(message) : message)
+  const [head, version, ...rest] = path
+  return messages.map((message, index) => {
+    if (index !== head) return message
+    return { ...message, questionVersions: message.questionVersions!.map((item, vi) => vi === version ? { ...item, tail: updateAtPath(item.tail, rest, updater) } : item) }
+  })
+}
+
+/** Keep everything up to and including the message at the given path; drop the rest. */
+export function truncateAtPath(messages: AgentMessage[], path: number[]): AgentMessage[] {
+  if (path.length === 1) return messages.slice(0, path[0] + 1)
+  const [head, version, ...rest] = path
+  return messages.map((message, index) => {
+    if (index < head) return message
+    if (index > head) return null
+    return { ...message, questionVersions: message.questionVersions!.map((item, vi) => vi === version ? { ...item, tail: truncateAtPath(item.tail, rest) } : item) }
+  }).filter((message): message is AgentMessage => message !== null)
+}
+
 export function conversationMarkdown(conversation: AgentConversation) {
   const time = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(conversation.createdAt)
-  return `# ${conversation.title}\n\n创建于：${time}\n\n${conversation.messages.map((message) => `## ${message.role === 'user' ? '用户' : 'AI Agent'}\n\n${message.content}`).join('\n\n')}`
+  const lines = flattenMessages(conversation.messages).map(({ message }) => `## ${message.role === 'user' ? '用户' : 'AI Agent'}\n\n${activeContent(message)}`)
+  return `# ${conversation.title}\n\n创建于：${time}\n\n${lines.join('\n\n')}`
 }

@@ -9,6 +9,11 @@ export interface AgentAnswerVersion {
   reasoningDurationSeconds?: number
 }
 
+export interface AgentQuestionVersion {
+  content: string
+  tail: AgentMessage[]
+}
+
 export interface AgentMessage {
   role: 'user' | 'assistant'
   content: string
@@ -16,6 +21,8 @@ export interface AgentMessage {
   reasoningDurationSeconds?: number
   answerVersions?: AgentAnswerVersion[]
   activeAnswerVersion?: number
+  questionVersions?: AgentQuestionVersion[]
+  activeQuestionVersion?: number
 }
 
 export interface AgentSourceFile {
