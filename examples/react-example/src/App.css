@@ -91,18 +91,24 @@ svg { flex: 0 0 auto; }
 .diagnostics-popover > button strong { font-size: 11px; }
 .diagnostics-popover > button small { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .fit-button { display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; padding: 0; border-radius: 7px; color: var(--muted); }
-.map-canvas { position: relative; min-height: 0; overflow: hidden; background-color: var(--panel-soft); background-image: radial-gradient(circle, color-mix(in srgb,var(--muted) 23%,transparent) 1px, transparent 1px); background-size: 22px 22px; }
+.map-canvas { position: relative; min-height: 0; overflow: hidden; background-color: var(--preview-background, var(--panel-soft)); background-image: radial-gradient(circle, color-mix(in srgb,var(--preview-foreground, var(--muted)) 23%,transparent) 1px, transparent 1px); background-size: 22px 22px; }
 .map-canvas.no-grid { background-image: none; }
 .map-canvas > svg { display: block; width: 100%; height: 100%; }
 .map-canvas .markmap-foreign table { border-spacing: 0; font-size: .9em; }
 .map-canvas .markmap-foreign th,
 .map-canvas .markmap-foreign td { padding: .3em .55em; }
-.map-canvas .markmap-foreign th { background: color-mix(in srgb, var(--panel-soft) 82%, transparent); font-weight: 650; }
+.map-canvas .markmap-foreign table,
+.map-canvas .markmap-foreign th,
+.map-canvas .markmap-foreign td { background: transparent !important; }
+.map-canvas .markmap-foreign th { font-weight: 650; }
+.map-canvas .markmap-foreign pre,
+.map-canvas .markmap-foreign code { color: var(--markmap-code-color); background-color: var(--markmap-code-bg); }
+.map-canvas .markmap-foreign a,
+.map-canvas .markmap-foreign a * { color: var(--markmap-a-color, #0097e6); -webkit-text-fill-color: var(--markmap-a-color, #0097e6); }
 .map-canvas .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
 .map-canvas .markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
 .map-canvas .markmap-foreign .katex-display { margin: .2em 0; }
 .markmap-node-edit-overlay-input { background: var(--panel) !important; color: var(--text) !important; caret-color: var(--text) !important; }
-:root[data-theme='dark'] .map-canvas > svg { --markmap-text-color: #f4f6f9; --markmap-code-bg: #2a303a; --markmap-code-color: #fff; --markmap-circle-open-bg: #181b21; }
 .split-handle { position: relative; z-index: 4; width: 18px; background: transparent; touch-action: none; }
 .split-toggle { position: absolute; z-index: 3; top: 50%; left: 8px; display: flex; align-items: center; justify-content: center; width: 18px; height: 66px; padding: 0; transform: translateY(-50%); border: 1px solid var(--border); border-left: 0; border-radius: 0 9px 9px 0; color: var(--muted); background: var(--panel); box-shadow: 3px 0 8px #1112; cursor: pointer; }
 .split-toggle:hover { color: var(--accent); background: var(--panel-soft); }
@@ -356,6 +362,8 @@ svg { flex: 0 0 auto; }
 .export-section-heading strong { color: var(--text); font-size: 13px; }
 .export-section-heading small { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .export-color-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); font-size: 13px; font-weight: 600; }
+.export-color-field > span:first-child { display: inline-flex; align-items: baseline; gap: 6px; }
+.export-color-field > span:first-child small { color: var(--muted); font-size: 11px; font-weight: 450; }
 .export-color-control { display: inline-flex; align-items: center; gap: 8px; }
 .export-color-control input[type='color'] { width: 42px; height: 30px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); cursor: pointer; }
 .export-color-control input[type='color']:disabled { opacity: .45; cursor: not-allowed; }

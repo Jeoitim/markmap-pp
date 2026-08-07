@@ -158,6 +158,7 @@ interface AppSettings {
   previewWeight: number
   colorFreezeLevel: number
   showGrid: boolean
+  previewBackgroundColor: string
 }
 
 const defaultSettings: AppSettings = {
@@ -168,6 +169,7 @@ const defaultSettings: AppSettings = {
   previewWeight: 400,
   colorFreezeLevel: 2,
   showGrid: true,
+  previewBackgroundColor: '#fafafa',
 }
 
 const previewFonts: Record<PreviewFont, { label: string; family: string }> = {
@@ -448,7 +450,10 @@ function loadSettings(): AppSettings {
     const legacyFonts: Record<string, PreviewFont> = { serif: 'notoSerif' }
     const requestedFont = stored.previewFont ? legacyFonts[stored.previewFont] || stored.previewFont : defaultSettings.previewFont
     const previewFont = requestedFont in previewFonts ? requestedFont as PreviewFont : defaultSettings.previewFont
-    return { ...defaultSettings, ...stored, previewFont }
+    const previewBackgroundColor = typeof stored.previewBackgroundColor === 'string' && /^#[\da-f]{6}$/i.test(stored.previewBackgroundColor)
+      ? stored.previewBackgroundColor
+      : defaultSettings.previewBackgroundColor
+    return { ...defaultSettings, ...stored, previewFont, previewBackgroundColor }
   } catch {
     return defaultSettings
   }
@@ -463,23 +468,134 @@ function saveBlob(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+const previewLightText = '#f4f6f9'
+const previewDarkText = '#30333a'
+const defaultLinkColor = '#0097e6'
+
+function colorChannels(color: string) {
+  const value = color.trim()
+  const hex = value.match(/^#([\da-f]{3}|[\da-f]{6})$/i)
+  if (hex) {
+    const digits = hex[1].length === 3 ? hex[1].split('').map((channel) => `${channel}${channel}`).join('') : hex[1]
+    return [0, 2, 4].map((start) => Number.parseInt(digits.slice(start, start + 2), 16) / 255)
+  }
+  const rgb = value.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
+  if (rgb) return rgb.slice(1, 4).map((channel) => Math.min(255, Number(channel)) / 255)
+  return null
+}
+
 function colorLuminance(color: string) {
-  const match = color.match(/^#([\da-f]{6})$/i)
-  if (!match) return 1
-  const channels = [0, 2, 4].map((start) => Number.parseInt(match[1].slice(start, start + 2), 16) / 255)
-  const linear = channels.map((channel) => channel <= .03928 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
+  const channels = colorChannels(color)
+  if (!channels) return 1
+  const linear = channels.map((channel) => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
   return linear[0] * .2126 + linear[1] * .7152 + linear[2] * .0722
+}
+
+function rgbToHsl(color: string) {
+  const channels = colorChannels(color)
+  if (!channels) return null
+  const [red, green, blue] = channels
+  const max = Math.max(red, green, blue)
+  const min = Math.min(red, green, blue)
+  const lightness = (max + min) / 2
+  const distance = max - min
+  if (!distance) return { hue: 0, saturation: 0, lightness }
+  const saturation = lightness > .5 ? distance / (2 - max - min) : distance / (max + min)
+  let hue = 0
+  if (max === red) hue = ((green - blue) / distance + (green < blue ? 6 : 0)) / 6
+  else if (max === green) hue = ((blue - red) / distance + 2) / 6
+  else hue = ((red - green) / distance + 4) / 6
+  return { hue: hue * 360, saturation, lightness }
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number) {
+  const normalizedHue = ((hue % 360) + 360) % 360 / 360
+  const hueToRgb = (p: number, q: number, t: number) => {
+    let value = t
+    if (value < 0) value += 1
+    if (value > 1) value -= 1
+    if (value < 1 / 6) return p + (q - p) * 6 * value
+    if (value < 1 / 2) return q
+    if (value < 2 / 3) return p + (q - p) * (2 / 3 - value) * 6
+    return p
+  }
+  if (saturation === 0) {
+    const channel = Math.round(lightness * 255).toString(16).padStart(2, '0')
+    return `#${channel}${channel}${channel}`
+  }
+  const q = lightness < .5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation
+  const p = 2 * lightness - q
+  const channels = [hueToRgb(p, q, normalizedHue + 1 / 3), hueToRgb(p, q, normalizedHue), hueToRgb(p, q, normalizedHue - 1 / 3)]
+  return `#${channels.map((channel) => Math.round(channel * 255).toString(16).padStart(2, '0')).join('')}`
+}
+
+function contrastRatio(first: number, second: number) {
+  const lighter = Math.max(first, second)
+  const darker = Math.min(first, second)
+  return (lighter + .05) / (darker + .05)
+}
+
+function shouldUseDarkTheme(backgroundColor: string) {
+  const backgroundLuminance = colorLuminance(backgroundColor)
+  return contrastRatio(backgroundLuminance, colorLuminance(previewLightText)) >= contrastRatio(backgroundLuminance, colorLuminance(previewDarkText))
+}
+
+function accessibleLinkColor(backgroundColor: string, baseColor = defaultLinkColor) {
+  const backgroundLuminance = colorLuminance(backgroundColor)
+  const baseLuminance = colorLuminance(baseColor)
+  if (contrastRatio(backgroundLuminance, baseLuminance) >= 4.5) return baseColor
+  const hsl = rgbToHsl(baseColor)
+  if (!hsl) return baseColor
+  const darken = backgroundLuminance > baseLuminance
+  const lightnessStep = .005
+  const saturationStep = .02
+  for (let saturation = hsl.saturation; saturation >= -.001; saturation -= saturationStep) {
+    for (let index = 1; index <= 200; index += 1) {
+      const lightness = hsl.lightness + (darken ? -index : index) * lightnessStep
+      if (lightness < 0 || lightness > 1) break
+      const candidate = hslToHex(hsl.hue, Math.max(0, saturation), lightness)
+      if (contrastRatio(backgroundLuminance, colorLuminance(candidate)) >= 4.5) return candidate
+    }
+  }
+  return darken ? '#000000' : '#ffffff'
+}
+
+function mixHexColors(first: string, second: string, amount: number) {
+  const firstChannels = colorChannels(first)
+  const secondChannels = colorChannels(second)
+  if (!firstChannels || !secondChannels) return first
+  const channels = [0, 2, 4].map((start) => {
+    const firstChannel = firstChannels[start / 2] * 255
+    const secondChannel = secondChannels[start / 2] * 255
+    return Math.round(firstChannel + (secondChannel - firstChannel) * amount)
+  })
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
+}
+
+function codeBackgroundColor(backgroundColor: string, darkMode: boolean) {
+  return mixHexColors(backgroundColor, darkMode ? '#ffffff' : '#000000', darkMode ? .16 : .06)
+}
+
+function extractCssColor(value: string | undefined) {
+  if (!value) return undefined
+  return value.match(/#[\da-f]{3,8}|rgba?\([^)]*\)|\b(?:transparent|white|black)\b/i)?.[0]
+}
+
+function readUserPreviewBackground(style: string) {
+  const rule = style.match(new RegExp(`[^{}]*#${MARKMAP_PREVIEW_ID}[^{}]*\\{([^{}]*)\\}`, 'i'))?.[1]
+  if (!rule) return undefined
+  return extractCssColor(cssDeclaration(rule, 'background-color') || cssDeclaration(rule, 'background'))
 }
 
 export default function MarkmapHooks() {
   const [markdown, setMarkdown] = useState(loadDocument)
   const [renderedMarkdown, setRenderedMarkdown] = useState(markdown)
   const [fileName, setFileName] = useState('markmap++ 操作指南.md')
-  const [dark, setDark] = useState(false)
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
   const [editorView, setEditorView] = useState<'markdown' | 'repository'>('markdown')
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
   const [settings, setSettings] = useState(loadSettings)
+  const [dark, setDark] = useState(() => shouldUseDarkTheme(loadSettings().previewBackgroundColor))
   const [activePanel, setActivePanel] = useState<Panel>(null)
   const [helpTipIndex, setHelpTipIndex] = useState(0)
   const [editorWidth, setEditorWidth] = useState(38)
@@ -489,7 +605,6 @@ export default function MarkmapHooks() {
   const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
   const [exportScale, setExportScale] = useState(2)
-  const [exportBackgroundColor, setExportBackgroundColor] = useState(() => dark ? '#15181d' : '#fafafa')
   const [exportTransparentBackground, setExportTransparentBackground] = useState(false)
   const [exportTextTheme, setExportTextTheme] = useState<ExportTextTheme>('auto')
   const [exportTab, setExportTab] = useState<'file' | 'repository'>('file')
@@ -592,7 +707,12 @@ export default function MarkmapHooks() {
   const effectiveFontWeightCss = codeFont.weight || String(settings.previewWeight)
   const effectiveColorFreezeLevel = documentRenderConfig.colorFreezeLevel ?? settings.colorFreezeLevel
   const effectiveShowGrid = documentRenderConfig.showGrid ?? settings.showGrid
-  const exportAutoDarkMode = colorLuminance(exportBackgroundColor) < .48
+  const userPreviewBackground = readUserPreviewBackground(documentRenderConfig.style)
+  const previewBackgroundColor = userPreviewBackground || settings.previewBackgroundColor
+  const previewDarkMode = userPreviewBackground ? shouldUseDarkTheme(previewBackgroundColor) : dark
+  const previewCodeBackground = codeBackgroundColor(previewBackgroundColor, previewDarkMode)
+  const previewLinkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(previewBackgroundColor)
+  const exportAutoDarkMode = shouldUseDarkTheme(previewBackgroundColor)
   const exportDarkMode = exportTextTheme === 'auto' ? exportAutoDarkMode : exportTextTheme === 'dark'
   const exportUsesTransparentBackground = exportFormat === 'png' && exportTransparentBackground
   const effectiveMarkmapOptions = useMemo<Partial<IMarkmapOptions>>(() => deriveOptions({
@@ -603,7 +723,14 @@ export default function MarkmapHooks() {
     ? { font: codeFont.shorthand }
     : { fontFamily: effectiveFontFamily, fontSize: effectiveFontSizeCss, fontWeight: effectiveFontWeightCss }
   const updateSettings = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setSettings((current) => ({ ...current, [key]: value }))
-  const resetSettings = () => setSettings({ ...defaultSettings })
+  const updatePreviewBackground = (color: string) => {
+    updateSettings('previewBackgroundColor', color)
+    setDark(shouldUseDarkTheme(color))
+  }
+  const resetSettings = () => {
+    setSettings({ ...defaultSettings })
+    setDark(shouldUseDarkTheme(defaultSettings.previewBackgroundColor))
+  }
   const openHelpPanel = () => { setHelpTipIndex(0); setActivePanel('help') }
   const moveHelpTip = (direction: number) => setHelpTipIndex((current) => (current + direction + HELP_TIP_COUNT) % HELP_TIP_COUNT)
   const startHelpSwipe = (event: React.TouchEvent<HTMLElement>) => {
@@ -1406,16 +1533,17 @@ export default function MarkmapHooks() {
   }, [documentRenderConfig, effectiveMarkmapOptions, viewOptions])
 
   useEffect(() => {
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+    document.documentElement.dataset.theme = previewDarkMode ? 'dark' : 'light'
     const svg = svgRef.current
     if (svg) {
       const codeStyle = documentRenderConfig.style
-      svg.style.setProperty('--markmap-text-color', cssDeclaration(codeStyle, '--markmap-text-color') || (dark ? '#f4f6f9' : '#30333a'))
-      svg.style.setProperty('--markmap-circle-open-bg', cssDeclaration(codeStyle, '--markmap-circle-open-bg') || (dark ? '#191c22' : '#ffffff'))
-      svg.style.setProperty('--markmap-code-bg', cssDeclaration(codeStyle, '--markmap-code-bg') || (dark ? '#2a303a' : '#eef0f4'))
-      svg.style.setProperty('--markmap-code-color', cssDeclaration(codeStyle, '--markmap-code-color') || (dark ? '#ffffff' : '#444852'))
+      svg.style.setProperty('--markmap-text-color', cssDeclaration(codeStyle, '--markmap-text-color') || (previewDarkMode ? previewLightText : previewDarkText))
+      svg.style.setProperty('--markmap-circle-open-bg', cssDeclaration(codeStyle, '--markmap-circle-open-bg') || (previewDarkMode ? '#191c22' : '#ffffff'))
+      svg.style.setProperty('--markmap-code-bg', cssDeclaration(codeStyle, '--markmap-code-bg') || previewCodeBackground)
+      svg.style.setProperty('--markmap-code-color', cssDeclaration(codeStyle, '--markmap-code-color') || (previewDarkMode ? previewLightText : previewDarkText))
+      svg.style.setProperty('--markmap-a-color', previewLinkColor)
     }
-  }, [dark, documentRenderConfig.style])
+  }, [documentRenderConfig.style, previewCodeBackground, previewDarkMode, previewLinkColor])
 
   useEffect(() => {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* storage may be disabled */ }
@@ -1525,29 +1653,34 @@ export default function MarkmapHooks() {
     const clone = svg.cloneNode(true) as SVGSVGElement
     const tablePadding = clone.querySelectorAll('foreignObject table').length * 20
     const outputHeight = height + tablePadding
+    const textColor = darkMode ? previewLightText : previewDarkText
+    const exportCodeBackground = codeBackgroundColor(backgroundColor, darkMode)
+    const linkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(backgroundColor)
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-    clone.style.setProperty('--markmap-text-color', darkMode ? '#f4f6f9' : '#30333a')
-    clone.style.setProperty('--markmap-code-bg', darkMode ? '#2a303a' : '#eef0f4')
-    clone.style.setProperty('--markmap-code-color', darkMode ? '#ffffff' : '#444852')
+    clone.style.setProperty('--markmap-text-color', textColor)
+    clone.style.setProperty('--markmap-code-bg', exportCodeBackground)
+    clone.style.setProperty('--markmap-code-color', textColor)
     clone.style.setProperty('--markmap-circle-open-bg', darkMode ? '#191c22' : '#ffffff')
-    const svgTextColor = darkMode ? '#f4f6f9' : '#30333a'
-    clone.querySelectorAll<SVGTextElement>('text, tspan').forEach((element) => element.style.setProperty('fill', svgTextColor, 'important'))
+    clone.style.setProperty('--markmap-a-color', linkColor)
+    clone.querySelectorAll<SVGTextElement>('text, tspan').forEach((element) => element.style.setProperty('fill', textColor, 'important'))
     const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
     style.textContent = `${katexStyles}
-.markmap-foreign { color: ${darkMode ? '#f4f6f9' : '#30333a'} !important; font-family: ${effectiveFontFamily}; font-size: ${effectiveFontSizeCss}; line-height: 1.35; }
-.markmap-foreign, .markmap-foreign * { color: ${darkMode ? '#f4f6f9' : '#30333a'} !important; }
+.markmap-foreign { color: ${textColor} !important; font-family: ${effectiveFontFamily}; font-size: ${effectiveFontSizeCss}; line-height: 1.35; }
+.markmap-foreign, .markmap-foreign * { color: ${textColor} !important; }
+.markmap-foreign a, .markmap-foreign a * { color: ${linkColor} !important; -webkit-text-fill-color: ${linkColor} !important; }
 .markmap-foreign table { border-spacing: 0; font-size: .9em; }
 .markmap-foreign th, .markmap-foreign td { padding: .3em .55em; }
-.markmap-foreign th { background: ${darkMode ? '#2a303a' : '#eef0f4'} !important; font-weight: 650; }
+.markmap-foreign table, .markmap-foreign th, .markmap-foreign td { background: transparent !important; }
+.markmap-foreign th { font-weight: 650; }
 .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
 .markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
-.markmap-foreign pre, .markmap-foreign code { color: ${darkMode ? '#f4f6f9' : '#30333a'} !important; background: ${darkMode ? '#2a303a' : '#eef0f4'} !important; }
+.markmap-foreign pre, .markmap-foreign code { color: ${textColor} !important; background: ${exportCodeBackground} !important; }
 .markmap-foreign .markmap-task-box { display: inline-block; width: 1em; height: 1em; margin: 0 .35em -.15em 0; border: 1.5px solid currentColor; border-radius: .25em; vertical-align: baseline; }
 .markmap-foreign .markmap-task-box[data-checked='true'] { color: #fff !important; background: #7056e8 !important; border-color: #7056e8 !important; }
 .markmap-foreign .markmap-task-box[data-checked='true']::after { content: '✓'; display: block; font-size: .75em; line-height: 1.25em; text-align: center; }
 .markmap-collapse-control, .markmap-collapse-hit { cursor: pointer; pointer-events: all; }
 ${documentRenderConfig.style}
-.markmap-node text { fill: ${darkMode ? '#f4f6f9' : '#30333a'} !important; }`
+.markmap-node text { fill: ${textColor} !important; }`
     clone.prepend(style)
     clone.setAttribute('viewBox', `${x1 - padding} ${y1 - padding} ${width} ${outputHeight}`)
     clone.setAttribute('width', String(width * exportScale))
@@ -1589,10 +1722,9 @@ ${documentRenderConfig.style}
       const targetContent = foreignObject.firstElementChild?.firstElementChild
       if (liveContent && targetContent) inlineComputedStyles(liveContent, targetContent)
     })
-    const textColor = darkMode ? '#f4f6f9' : '#30333a'
-    const codeBackground = darkMode ? '#2a303a' : '#eef0f4'
-    const tableHeaderBackground = darkMode ? '#2a303a' : '#eef0f4'
-    const tableBorderColor = darkMode ? '#c3c8d0' : '#5b6472'
+    const textColor = darkMode ? previewLightText : previewDarkText
+    const exportCodeBackground = codeBackgroundColor(previewBackgroundColor, darkMode)
+    const linkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(previewBackgroundColor)
     const appendInlineStyle = (element: Element, declarations: string) => {
       const existing = element.getAttribute('style') || ''
       element.setAttribute('style', `${existing}${existing ? ';' : ''}${declarations}`)
@@ -1601,9 +1733,10 @@ ${documentRenderConfig.style}
       const content = foreignObject.querySelector('.markmap-foreign') || foreignObject.firstElementChild?.firstElementChild
       if (!content) return
       appendInlineStyle(content, `color:${textColor} !important;-webkit-text-fill-color:${textColor} !important`)
-      content.querySelectorAll('pre, code').forEach((element) => appendInlineStyle(element, `color:${textColor} !important;background-color:${codeBackground} !important`))
-      content.querySelectorAll('table, th, td').forEach((element) => appendInlineStyle(element, `border-color:${tableBorderColor} !important`))
-      content.querySelectorAll('th').forEach((element) => appendInlineStyle(element, `color:${textColor} !important;background-color:${tableHeaderBackground} !important`))
+      content.querySelectorAll('a, a *').forEach((element) => appendInlineStyle(element, `color:${linkColor} !important;-webkit-text-fill-color:${linkColor} !important`))
+      content.querySelectorAll('pre, code').forEach((element) => appendInlineStyle(element, `color:${textColor} !important;background-color:${exportCodeBackground} !important`))
+      content.querySelectorAll('table, th, td').forEach((element) => appendInlineStyle(element, `background-color:transparent !important`))
+      content.querySelectorAll('th').forEach((element) => appendInlineStyle(element, `color:${textColor} !important`))
     })
     const exportNodes = Array.from(documentNode.querySelectorAll('g.markmap-node[data-path]')).map((element) => {
       const transform = element.getAttribute('transform') || 'translate(0, 0)'
@@ -1921,11 +2054,11 @@ ${documentRenderConfig.style}
         saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), `${baseName}.md`)
       } else {
         await document.fonts.ready
-        const { source, width, height } = createExportSvg(exportBackgroundColor, exportDarkMode, exportUsesTransparentBackground)
+        const { source, width, height } = createExportSvg(previewBackgroundColor, exportDarkMode, exportUsesTransparentBackground)
         const exportSource = await prepareExportSvg(source, exportDarkMode)
         if (exportFormat === 'svg') saveBlob(new Blob([exportSource], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
         else if (exportFormat === 'html') {
-          saveBlob(new Blob([createInteractiveHtml(exportSource, baseName, exportBackgroundColor, exportDarkMode)], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
+          saveBlob(new Blob([createInteractiveHtml(exportSource, baseName, previewBackgroundColor, exportDarkMode)], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
         } else {
           const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(exportSource)}`
           const image = new Image()
@@ -2021,7 +2154,7 @@ ${documentRenderConfig.style}
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
           <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
-          <button type="button" className="icon-button" aria-label={dark ? '切换浅色模式' : '切换深色模式'} title={dark ? '浅色模式' : '深色模式'} onClick={() => setDark((value) => !value)}><Icon name={dark ? 'sun' : 'moon'} /></button>
+          <button type="button" className="icon-button" aria-label={previewDarkMode ? '切换浅色模式' : '切换深色模式'} title={previewDarkMode ? '浅色模式 · 雾白背景' : '深色模式 · 深灰背景'} onClick={() => updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d')}><Icon name={previewDarkMode ? 'sun' : 'moon'} /></button>
           <button type="button" className="icon-button more-action" aria-label="更多操作" title="更多操作" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
           {actionMenuOpen && <div className="action-overflow-menu">
             <button type="button" onClick={() => { setActionMenuOpen(false); fileInputRef.current?.click() }}><Icon name="folder" /><span>打开 Markdown</span></button>
@@ -2088,7 +2221,7 @@ ${documentRenderConfig.style}
         <section className="preview-pane" aria-label="思维导图预览">
           <>
             <div className="pane-header"><div><span className="status-light purple" />思维导图</div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>Markdown</span></button><button type="button" className="fit-button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button className="header-icon" onClick={() => setActivePanel('preview')} title="预览设置"><Icon name="settings" /></button></div>
-            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`}><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
+            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
           </>
         </section>
       </section>
@@ -2136,6 +2269,8 @@ ${documentRenderConfig.style}
             <label className={`field ${codeFont.controlsFamily ? 'code-controlled' : ''}`}><span>字体{codeFont.controlsFamily && <b>由代码控制</b>}</span><select value={settings.previewFont} disabled={codeFont.controlsFamily} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
             <label className={`field ${codeFont.controlsWeight ? 'code-controlled' : ''}`}><span>字重 <b>{codeFont.controlsWeight ? `${effectiveFontWeightCss} · 代码` : settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} disabled={codeFont.controlsWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
             <label className={`field ${documentRenderConfig.colorFreezeLevel !== undefined ? 'code-controlled' : ''}`}><span>颜色层级 <b>{documentRenderConfig.colorFreezeLevel !== undefined ? `${effectiveColorFreezeLevel} · 代码` : effectiveColorFreezeLevel}</b></span><input type="range" min="0" max="6" step="1" value={effectiveColorFreezeLevel} disabled={documentRenderConfig.colorFreezeLevel !== undefined} onChange={(event) => updateSettings('colorFreezeLevel', Number(event.target.value))} /><small>从指定层级开始继承分支颜色，0 表示不锁定</small></label>
+            <label className={`export-color-field preview-background-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span>画布背景 <small>{userPreviewBackground ? '由 Markdown style 控制' : 'WCAG 自动主题'}</small></span><span className="export-color-control"><input type="color" value={settings.previewBackgroundColor} disabled={Boolean(userPreviewBackground)} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{settings.previewBackgroundColor.toUpperCase()}</code></span></label>
+            <div className={`export-color-presets preview-background-presets ${userPreviewBackground ? 'code-controlled' : ''}`} aria-label="预览背景颜色预设">{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={settings.previewBackgroundColor === color ? 'active' : ''} title={label} aria-label={`预览背景色：${label}`} disabled={Boolean(userPreviewBackground)} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
             <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>点阵背景</strong><small>{documentRenderConfig.showGrid !== undefined ? '由 Frontmatter 代码控制' : '辅助观察画布移动与缩放'}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
             <div className="font-samples"><small>字体预览{(codeFont.controlsFamily || codeFont.controlsSize || codeFont.controlsWeight) && ' · 代码配置'}</small><span style={fontPreviewStyle}>思维导图 Mind Map 0123</span></div>
           </div>}
@@ -2149,8 +2284,8 @@ ${documentRenderConfig.style}
               <label className="field"><span>渲染倍率 <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md'} /><small>{exportFormat === 'svg' ? '倍率设置 SVG 的画布尺寸，矢量内容始终清晰' : exportFormat === 'html' ? 'HTML 将保留可缩放矢量图' : exportFormat === 'md' ? 'Markdown 源文件无需倍率' : `预计输出为当前内容尺寸的 ${exportScale} 倍`}</small></label>
               <div className="export-appearance-options">
                 <div className="export-section-heading"><strong>背景与文字</strong><small>{exportFormat === 'md' ? 'Markdown 源文件不包含画布样式' : '导出文件会使用以下画布与文字主题'}</small></div>
-                <label className="export-color-field"><span>背景颜色</span><span className="export-color-control"><input type="color" value={exportBackgroundColor} disabled={exportFormat === 'md'} onChange={(event) => setExportBackgroundColor(event.target.value)} /><code>{exportBackgroundColor.toUpperCase()}</code></span></label>
-                <div className="export-color-presets" aria-label="背景颜色预设">{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={exportBackgroundColor === color ? 'active' : ''} title={label} aria-label={`背景色：${label}`} disabled={exportFormat === 'md'} onClick={() => setExportBackgroundColor(color)}><span style={{ background: color }} /></button>)}</div>
+                <label className={`export-color-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span>背景颜色 <small>{userPreviewBackground ? '由 Markdown style 控制' : '与预览共用'}</small></span><span className="export-color-control"><input type="color" value={settings.previewBackgroundColor} disabled={exportFormat === 'md' || Boolean(userPreviewBackground)} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{settings.previewBackgroundColor.toUpperCase()}</code></span></label>
+                <div className={`export-color-presets ${userPreviewBackground ? 'code-controlled' : ''}`} aria-label="背景颜色预设">{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={settings.previewBackgroundColor === color ? 'active' : ''} title={label} aria-label={`背景色：${label}`} disabled={exportFormat === 'md' || Boolean(userPreviewBackground)} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
                 <label className={`switch-field export-appearance-switch ${exportFormat !== 'png' ? 'code-controlled' : ''}`}><span><strong>透明背景</strong><small>{exportFormat === 'png' ? 'PNG 保留透明通道；文字主题仍按当前颜色判断' : '仅 PNG 支持透明背景'}</small></span><input type="checkbox" checked={exportTransparentBackground} disabled={exportFormat !== 'png'} onChange={(event) => setExportTransparentBackground(event.target.checked)} /></label>
                 <label className="switch-field export-appearance-switch"><span><strong>自动适配文字主题</strong><small>{exportTextTheme === 'auto' ? `当前自动使用${exportAutoDarkMode ? '深色' : '浅色'}主题` : '关闭后可手动指定内容是否使用暗黑模式'}</small></span><input type="checkbox" checked={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'auto' : (exportDarkMode ? 'dark' : 'light'))} /></label>
                 <label className={`switch-field export-appearance-switch ${exportTextTheme === 'auto' ? 'code-controlled' : ''}`}><span><strong>内容暗黑模式</strong><small>{exportTextTheme === 'auto' ? `自动结果：${exportDarkMode ? '开启（浅色文字）' : '关闭（深色文字）'}` : exportDarkMode ? '手动：使用浅色文字和深色内容样式' : '手动：使用深色文字和浅色内容样式'}</small></span><input type="checkbox" checked={exportDarkMode} disabled={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'dark' : 'light')} /></label>
