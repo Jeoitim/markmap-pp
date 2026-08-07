@@ -10,6 +10,7 @@ import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme } from './markdown-editor'
+import AgentPanel from './agent-panel'
 import { inspectMarkdown } from './markdown-lint'
 import {
   downloadMarkdown,
@@ -20,6 +21,7 @@ import {
   listRepositoryBranches,
   listRepositoryCommits,
   loadGitHubConfig,
+  loadStoredGitHubConfig,
   pushCachedChanges,
   putCachedFile,
   removeCachedFile,
@@ -408,9 +410,10 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'more' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
+type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'more' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
+  bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
   branch: <><path d="M6 4v12a4 4 0 0 0 4 4h8"/><path d="M18 8V4m0 0-3 3m3-3 3 3"/><circle cx="6" cy="4" r="2"/><circle cx="18" cy="20" r="2"/></>,
   check: <path d="m5 12 4 4L19 6"/>,
   'chevron-down': <path d="m6 9 6 6 6-6"/>,
@@ -592,7 +595,7 @@ export default function MarkmapHooks() {
   const [renderedMarkdown, setRenderedMarkdown] = useState(markdown)
   const [fileName, setFileName] = useState('markmap++ 操作指南.md')
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
-  const [editorView, setEditorView] = useState<'markdown' | 'repository'>('markdown')
+  const [editorView, setEditorView] = useState<'markdown' | 'repository' | 'agent'>('markdown')
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
   const [settings, setSettings] = useState(loadSettings)
   const [dark, setDark] = useState(() => shouldUseDarkTheme(loadSettings().previewBackgroundColor))
@@ -675,6 +678,18 @@ export default function MarkmapHooks() {
     if (!gesture) return
     window.clearTimeout(gesture.timer)
     gesture.element.draggable = gesture.originalDraggable
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    void loadStoredGitHubConfig().then((config) => {
+      if (disposed || !config) return
+      setGithubConfig(config)
+      setRepositoryInput(`${config.owner}/${config.repo}`)
+      setBranchInput(config.branch)
+      setTokenInput(config.token)
+    }).catch(() => { if (!disposed) setGithubError('无法读取本地 GitHub 配置') })
+    return () => { disposed = true }
   }, [])
 
   useEffect(() => {
@@ -761,6 +776,31 @@ export default function MarkmapHooks() {
     setSaveState('saving')
     setMarkdown(value)
   }, [])
+
+  const applyAgentChange = useCallback((path: string, content: string) => {
+    setCachedFiles((current) => {
+      const file = current.find((item) => item.path === path)
+      if (!file) return current
+      const next = {
+        ...file,
+        content,
+        status: (file.status === 'added' ? 'added' : file.originalPath !== file.path ? 'renamed' : content === file.baseContent ? 'clean' : 'modified') as CachedMarkdownFile['status'],
+        updatedAt: Date.now(),
+      }
+      void putCachedFile(next).catch(() => setGithubError('本地缓存写入失败'))
+      return current.map((item) => item.id === next.id ? next : item)
+    })
+    if (activeRepoPath === path) updateMarkdown(content, 'agent')
+  }, [activeRepoPath, updateMarkdown])
+
+  const createAgentFile = useCallback((path: string, content: string) => {
+    if (!githubConfig || !remoteHead) { setGithubError('请先绑定并刷新 GitHub 仓库'); return }
+    const occupied = cachedFiles.some((file) => file.path === path) || remoteFiles.some((file) => file.path === path)
+    if (!validRepositoryPath(path) || !/\.md$/i.test(path) || occupied) { setGithubError(occupied ? '该笔记文件已存在' : 'AI 提议的文件路径无效'); return }
+    const file: CachedMarkdownFile = { id: `${repoKeyOf(githubConfig)}:${path}`, repoKey: repoKeyOf(githubConfig), path, originalPath: path, content, baseContent: '', baseSha: '', baseCommit: remoteHead, status: 'added', updatedAt: Date.now() }
+    void putCachedFile(file).catch(() => setGithubError('本地缓存写入失败'))
+    setCachedFiles((current) => [...current, file].sort((first, second) => first.path.localeCompare(second.path)))
+  }, [cachedFiles, githubConfig, remoteFiles, remoteHead])
   const syncFromMap = useCallback(() => {
     const data = mmRef.current?.getData(true)
     if (data) updateMarkdown(toMarkdown(data), 'map')
@@ -833,6 +873,45 @@ export default function MarkmapHooks() {
     await refreshCachedFiles(config)
     return result
   }, [refreshCachedFiles])
+
+  const loadAllRepositoryNotes = useCallback(async () => {
+    if (!githubConfig) { setGithubError('请先绑定 GitHub 仓库'); return }
+    const existing = new Map(cachedFiles.map((file) => [file.path, file]))
+    const pending = remoteFiles.filter((remote) => {
+      const file = existing.get(remote.path)
+      return !file || (file.status === 'clean' && file.baseSha !== remote.sha)
+    })
+    if (!pending.length) return
+    setGithubBusyAction('load-repository'); setGithubError('')
+    try {
+      const downloaded: CachedMarkdownFile[] = []
+      for (const remote of pending) {
+        const file = await downloadMarkdown(githubConfig, remote, remoteHead)
+        await putCachedFile(file)
+        downloaded.push(file)
+      }
+      setCachedFiles((current) => [...current.filter((file) => !downloaded.some((item) => item.id === file.id)), ...downloaded].sort((a, b) => a.path.localeCompare(b.path)))
+      setGithubNotice(`已读取 ${downloaded.length} 个 Markdown 文件，AI 现在可编辑整个仓库。`)
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '读取仓库笔记失败')
+    } finally { setGithubBusyAction(null) }
+  }, [cachedFiles, githubConfig, remoteFiles, remoteHead])
+
+  const getAgentGitContext = useCallback(async (paths: string[]) => {
+    if (!githubConfig) return ''
+    try {
+      const [commits, fileCommits] = await Promise.all([
+        listRepositoryCommits(githubConfig),
+        paths[0] ? listFileCommits(githubConfig, paths[0]) : Promise.resolve([]),
+      ])
+      const repositoryHistory = commits.slice(0, 12).map((commit) => `${commit.sha.slice(0, 7)} | ${commit.author} | ${formatCommitDate(commit.date)} | ${commit.message.split('\n')[0]}`).join('\n')
+      const fileHistory = fileCommits.slice(0, 12).map((commit) => `${commit.sha.slice(0, 7)} | ${commit.author} | ${formatCommitDate(commit.date)} | ${commit.message.split('\n')[0]}`).join('\n')
+      return `当前分支最近提交：\n${repositoryHistory || '无'}${paths[0] ? `\n\n文件 ${paths[0]} 的提交：\n${fileHistory || '无'}` : ''}`
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '读取 Git 历史失败')
+      return ''
+    }
+  }, [githubConfig])
 
   const bindRepository = async () => {
     const [owner, repo, extra] = repositoryInput.trim().replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '').split('/').filter(Boolean)
@@ -2165,14 +2244,14 @@ ${documentRenderConfig.style}
       </header>
 
       <section ref={workspaceRef} className={`workspace mobile-${mobilePane}`} style={{ gridTemplateColumns: gridColumns }}>
-        <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' ? 'repository-view' : ''}`} aria-label="Markdown 编辑器">
+        <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' || editorView === 'agent' ? 'repository-view' : ''}`} aria-label="Markdown 编辑器">
           {!editorCollapsed && <>
-            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button><button className="header-icon" onClick={() => setActivePanel(editorView === 'repository' ? 'github' : 'editor')} title={editorView === 'repository' ? '仓库设置' : '编辑器设置'}><Icon name="settings" /></button></div>
+            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="AI Agent"><Icon name="bot" />AI Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button>{editorView !== 'agent' && <button className="header-icon" onClick={() => setActivePanel(editorView === 'repository' ? 'github' : 'editor')} title={editorView === 'repository' ? '仓库设置' : '编辑器设置'}><Icon name="settings" /></button>}</div>
             {editorView === 'markdown' ? <>
               <MarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} scheme={settings.highlightScheme} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span><span>Markdown</span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
-            </> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
+            </> : editorView === 'agent' ? <AgentPanel files={cachedFiles.filter((file) => file.status !== 'deleted')} activePath={activeRepoPath} onApplyChange={applyAgentChange} onCreateFile={createAgentFile} onCommit={pushRepositoryChanges} getGitContext={getAgentGitContext} remoteFileCount={remoteFiles.length} onLoadAllFiles={loadAllRepositoryNotes} loadingFiles={githubBusyAction === 'load-repository'} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {!githubConfig ? <div className="repository-unbound"><Icon name="github" /><strong>尚未绑定 GitHub 仓库</strong><span>绑定后可浏览 Markdown 文件并在本地暂存修改。</span><button onClick={() => setActivePanel('github')}>绑定仓库</button></div> : <>
                 <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{repositoryCommitRef ? `commit ${repositoryCommitRef.slice(0, 7)}` : githubConfig.branch}</small></div><button className="discard-button" title={repositoryCommitRef ? '查看 commit 阶段时不能放弃当前分支修改' : '放弃所有本地修改'} onClick={() => void discardRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !hasRepositoryDrafts}><Icon name="undo" className={repositoryDiscardLoading ? 'loading-icon' : undefined} /><span>放弃</span></button><button className="repository-icon-button" title="刷新当前分支" aria-label="刷新当前分支" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" className={repositoryRefreshLoading ? 'loading-icon' : undefined} /></i></button><button className="repository-icon-button sync-button" title={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !changedFiles.length}><i><Icon name="sync" className={repositorySyncLoading ? 'loading-icon' : undefined} /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}

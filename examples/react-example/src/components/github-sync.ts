@@ -55,6 +55,8 @@ export interface GitHubRepositoryCommit {
 const CONFIG_KEY = 'markmap-plus-plus:github-config'
 const DB_NAME = 'markmap-plus-plus-cache'
 const STORE_NAME = 'markdown-files'
+const SETTINGS_STORE_NAME = 'app-settings'
+const DB_VERSION = 2
 
 export function repoKeyOf(config: GitHubConfig) {
   return `${config.owner}/${config.repo}@${config.branch}`
@@ -70,30 +72,101 @@ export function loadGitHubConfig(): GitHubConfig | null {
 }
 
 export function saveGitHubConfig(config: GitHubConfig | null) {
-  try {
-    if (config) localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
-    else localStorage.removeItem(CONFIG_KEY)
-  } catch { /* storage may be disabled */ }
+  void saveLocalSetting('github-config', config).then(() => {
+    try { localStorage.removeItem(CONFIG_KEY) } catch { /* storage may be disabled */ }
+  })
 }
 
 function openCacheDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1)
+    const request = indexedDB.open(DB_NAME, DB_VERSION)
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME, { keyPath: 'id' })
+      if (!request.result.objectStoreNames.contains(SETTINGS_STORE_NAME)) request.result.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'id' })
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error || new Error('无法打开本地缓存'))
   })
 }
 
+interface LocalSetting<T = unknown> {
+  id: string
+  value: T
+}
+
+async function localSettingTransaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason?: unknown) => void) => void) {
+  const db = await openCacheDb()
+  return new Promise<T>((resolve, reject) => {
+    const transaction = db.transaction(SETTINGS_STORE_NAME, mode)
+    let result!: T
+    let settled = false
+    const fail = (reason?: unknown) => {
+      if (settled) return
+      settled = true
+      db.close()
+      reject(reason || transaction.error || new Error('本地设置操作失败'))
+    }
+    run(transaction.objectStore(SETTINGS_STORE_NAME), (value) => { result = value }, fail)
+    transaction.oncomplete = () => {
+      if (settled) return
+      settled = true
+      db.close()
+      resolve(result)
+    }
+    transaction.onerror = () => fail(transaction.error || new Error('本地设置操作失败'))
+    transaction.onabort = () => fail(transaction.error || new Error('本地设置操作已取消'))
+  })
+}
+
+export async function loadLocalSetting<T>(id: string): Promise<T | null> {
+  return localSettingTransaction<T | null>('readonly', (store, resolve, reject) => {
+    const request = store.get(id)
+    request.onsuccess = () => resolve((request.result as LocalSetting<T> | undefined)?.value ?? null)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+export async function saveLocalSetting<T>(id: string, value: T | null) {
+  await localSettingTransaction<void>('readwrite', (store, resolve, reject) => {
+    const request = value === null ? store.delete(id) : store.put({ id, value } satisfies LocalSetting<T>)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error)
+  })
+  void navigator.storage?.persist?.()
+}
+
+/** Reads the IndexedDB value and migrates the legacy localStorage token once. */
+export async function loadStoredGitHubConfig(): Promise<GitHubConfig | null> {
+  const stored = await loadLocalSetting<GitHubConfig>('github-config')
+  if (stored?.owner && stored.repo && stored.branch && stored.token) return stored
+  const legacy = loadGitHubConfig()
+  if (!legacy) return null
+  await saveLocalSetting('github-config', legacy)
+  try { localStorage.removeItem(CONFIG_KEY) } catch { /* storage may be disabled */ }
+  return legacy
+}
+
 async function cacheTransaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason?: unknown) => void) => void) {
   const db = await openCacheDb()
   return new Promise<T>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, mode)
-    run(transaction.objectStore(STORE_NAME), resolve, reject)
-    transaction.oncomplete = () => db.close()
-    transaction.onerror = () => reject(transaction.error || new Error('本地缓存操作失败'))
+    let result!: T
+    let settled = false
+    const fail = (reason?: unknown) => {
+      if (settled) return
+      settled = true
+      db.close()
+      reject(reason || transaction.error || new Error('本地缓存操作失败'))
+    }
+    run(transaction.objectStore(STORE_NAME), (value) => { result = value }, fail)
+    transaction.oncomplete = () => {
+      if (settled) return
+      settled = true
+      db.close()
+      resolve(result)
+    }
+    transaction.onerror = () => fail(transaction.error || new Error('本地缓存操作失败'))
+    transaction.onabort = () => fail(transaction.error || new Error('本地缓存操作已取消'))
   })
 }
 
