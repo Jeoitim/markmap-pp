@@ -166,7 +166,8 @@ export async function getHead(config: GitHubConfig) {
 
 export async function listRemoteMarkdown(config: GitHubConfig, ref = config.branch) {
   const head = /^[0-9a-f]{40}$/i.test(ref) ? ref : await getHead({ ...config, branch: ref })
-  const result = await githubRequest<{ tree: Array<{ path: string; type: string; sha: string; size?: number }>; truncated: boolean }>(config, `${repoPath(config)}/git/trees/${head}?recursive=1`)
+  const commit = await githubRequest<{ tree: { sha: string } }>(config, `${repoPath(config)}/git/commits/${encodeURIComponent(head)}`)
+  const result = await githubRequest<{ tree: Array<{ path: string; type: string; sha: string; size?: number }>; truncated: boolean }>(config, `${repoPath(config)}/git/trees/${encodeURIComponent(commit.tree.sha)}?recursive=1`)
   if (result.truncated) throw new Error('仓库文件列表过大，GitHub 返回了不完整结果')
   const files = result.tree
     .filter((item) => item.type === 'blob' && /\.md$/i.test(item.path))

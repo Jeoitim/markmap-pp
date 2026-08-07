@@ -1243,17 +1243,19 @@ export default function MarkmapHooks() {
   const openRepositoryCommit = async (commit: GitHubRepositoryCommit) => {
     if (!githubConfig) return
     setGithubBusy(true); setGithubError(''); setGithubNotice('')
+    setRepositoryCommitRef(commit.sha)
+    setRemoteHead('')
+    setRemoteFiles([])
+    setActiveRepoPath(null)
+    setRepositoryMenu(null)
+    setRepositoryHistory(null)
+    setDraggedRepositoryTarget(null)
+    setRepositoryDropFolder(null)
+    setRepositoryGraph(null)
     try {
       const result = await listRemoteMarkdown(githubConfig, commit.sha)
       setRemoteHead(result.head)
       setRemoteFiles(result.files)
-      setRepositoryCommitRef(commit.sha)
-      setActiveRepoPath(null)
-      setRepositoryMenu(null)
-      setRepositoryHistory(null)
-      setDraggedRepositoryTarget(null)
-      setRepositoryDropFolder(null)
-      setRepositoryGraph(null)
       setGithubNotice(`正在查看 commit ${commit.sha.slice(0, 7)} 的文件状态`)
     } catch (error) {
       setGithubError(error instanceof Error ? error.message : '切换到 commit 失败')
