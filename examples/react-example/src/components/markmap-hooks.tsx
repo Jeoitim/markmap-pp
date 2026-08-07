@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import katex from 'katex'
 import { defaultOptions, deriveOptions, Markmap, toMarkdown, Transformer } from 'markmap-plus'
 import type { IMarkmapJSONOptions, IMarkmapOptions } from 'markmap-plus'
+import katexStyles from 'katex/dist/katex.min.css?inline'
 import 'katex/dist/katex.min.css'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
@@ -218,75 +219,50 @@ function cssLength(value: unknown) {
   if (typeof value === 'string' && value.trim()) return /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${value.trim()}px` : value.trim()
 }
 
-function normalizeExportText(value: string) {
-  return value.replace(/\s+/g, ' ').trim()
-}
-
-function wrapExportText(text: string, maxWidth: number, measure: (value: string) => number) {
-  const normalized = normalizeExportText(text)
-  if (!normalized) return []
-
-  const lines: string[] = []
-  let current = ''
-  for (const character of Array.from(normalized)) {
-    const candidate = current + character
-    if (current && measure(candidate) > maxWidth) {
-      lines.push(current.trimEnd())
-      current = character === ' ' ? '' : character
-    } else {
-      current = candidate
-    }
-  }
-  if (current) lines.push(current.trimEnd())
-  return lines.filter(Boolean)
-}
-
 function getForeignContentElement(foreignObject: SVGForeignObjectElement) {
   const content = foreignObject.firstElementChild?.firstElementChild
   return content instanceof HTMLElement ? content : null
 }
 
-function getRenderedTextLines(foreignObject: SVGForeignObjectElement) {
-  const content = getForeignContentElement(foreignObject)
-  if (!content) return []
-
-  const expectedText = normalizeExportText(content.textContent || '')
-  if (!expectedText) return []
-
-  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
-  const range = document.createRange()
-  const lines: string[] = []
-  let current = ''
-  let currentTop: number | undefined
-  let textNode: Node | null
-
-  while ((textNode = walker.nextNode())) {
-    const value = textNode.nodeValue || ''
-    for (let offset = 0; offset < value.length;) {
-      const codePoint = value.codePointAt(offset) || 0
-      const character = String.fromCodePoint(codePoint)
-      const nextOffset = offset + character.length
-      range.setStart(textNode, offset)
-      range.setEnd(textNode, nextOffset)
-      const rect = range.getClientRects()[0]
-      const top = rect?.top
-
-      if (top !== undefined && currentTop !== undefined && Math.abs(top - currentTop) > Math.max(1, (rect.height || 0) * 0.25)) {
-        if (current.trim()) lines.push(current.trimEnd())
-        current = ''
-        currentTop = top
-      } else if (top !== undefined && currentTop === undefined) {
-        currentTop = top
-      }
-
-      if (!(character === ' ' && !current)) current += character
-      offset = nextOffset
-    }
+function inlineComputedStyles(source: Element, target: Element) {
+  const computed = getComputedStyle(source)
+  const declarations: string[] = []
+  for (let index = 0; index < computed.length; index += 1) {
+    const property = computed.item(index)
+    const value = computed.getPropertyValue(property)
+    if (value) declarations.push(`${property}:${value}`)
   }
-  if (current.trim()) lines.push(current.trimEnd())
+  target.setAttribute('style', declarations.join(';'))
+  const sourceChildren = Array.from(source.children)
+  const targetChildren = Array.from(target.children)
+  sourceChildren.forEach((child, index) => {
+    const targetChild = targetChildren[index]
+    if (targetChild && child.tagName === targetChild.tagName) inlineComputedStyles(child, targetChild)
+  })
+}
 
-  const joined = lines.join('').replace(/\s/g, '')
-  return joined === expectedText.replace(/\s/g, '') ? lines : []
+function readBlobAsDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('无法读取图片资源'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+function removeExternalFontFaces(css: string) {
+  return css.replace(/@font-face\s*\{[^{}]*\}/g, '')
+}
+
+async function resolveExportImageSource(source: string) {
+  if (!source || source.startsWith('data:')) return source
+  try {
+    const response = await fetch(new URL(source, window.location.href), { mode: 'cors' })
+    if (!response.ok) return source
+    return await readBlobAsDataUrl(await response.blob())
+  } catch {
+    return source
+  }
 }
 
 function buildDocumentRenderConfig(markdown: string): DocumentRenderConfig {
@@ -599,9 +575,7 @@ export default function MarkmapHooks() {
   const selectedFontFamily = previewFonts[settings.previewFont].family
   const effectiveFontFamily = resolveFontFamily(codeFont.family, selectedFontFamily)
   const effectiveFontSizeCss = codeFont.size || `${settings.previewFontSize}px`
-  const effectiveFontSize = Number.parseFloat(effectiveFontSizeCss) || settings.previewFontSize
   const effectiveFontWeightCss = codeFont.weight || String(settings.previewWeight)
-  const effectiveFontWeight = Number.parseFloat(effectiveFontWeightCss) || settings.previewWeight
   const effectiveColorFreezeLevel = documentRenderConfig.colorFreezeLevel ?? settings.colorFreezeLevel
   const effectiveShowGrid = documentRenderConfig.showGrid ?? settings.showGrid
   const effectiveMarkmapOptions = useMemo<Partial<IMarkmapOptions>>(() => deriveOptions({
@@ -1532,72 +1506,367 @@ export default function MarkmapHooks() {
     const width = Math.max(1, Math.ceil(x2 - x1 + padding * 2))
     const height = Math.max(1, Math.ceil(y2 - y1 + padding * 2))
     const clone = svg.cloneNode(true) as SVGSVGElement
+    const tablePadding = clone.querySelectorAll('foreignObject table').length * 20
+    const outputHeight = height + tablePadding
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-    if (documentRenderConfig.style) {
-      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
-      style.textContent = documentRenderConfig.style
-      clone.prepend(style)
-    }
-    clone.setAttribute('viewBox', `${x1 - padding} ${y1 - padding} ${width} ${height}`)
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+    style.textContent = `${katexStyles}
+.markmap-foreign { color: ${dark ? '#f4f6f9' : '#30333a'}; font-family: ${effectiveFontFamily}; font-size: ${effectiveFontSizeCss}; line-height: 1.35; }
+.markmap-foreign table { border-spacing: 0; font-size: .9em; }
+.markmap-foreign th, .markmap-foreign td { padding: .3em .55em; }
+.markmap-foreign th { background: ${dark ? '#2a303a' : '#eef0f4'}; font-weight: 650; }
+.markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
+.markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
+.markmap-foreign .markmap-task-box { display: inline-block; width: 1em; height: 1em; margin: 0 .35em -.15em 0; border: 1.5px solid currentColor; border-radius: .25em; vertical-align: baseline; }
+.markmap-foreign .markmap-task-box[data-checked='true'] { color: #fff; background: #7056e8; border-color: #7056e8; }
+.markmap-foreign .markmap-task-box[data-checked='true']::after { content: '✓'; display: block; font-size: .75em; line-height: 1.25em; text-align: center; }
+.markmap-collapse-control, .markmap-collapse-hit { cursor: pointer; pointer-events: all; }
+${documentRenderConfig.style}`
+    clone.prepend(style)
+    clone.setAttribute('viewBox', `${x1 - padding} ${y1 - padding} ${width} ${outputHeight}`)
     clone.setAttribute('width', String(width * exportScale))
-    clone.setAttribute('height', String(height * exportScale))
+    clone.setAttribute('height', String(outputHeight * exportScale))
+    clone.querySelectorAll('g.markmap-node[data-path]').forEach((node) => {
+      const circle = node.querySelector(':scope > circle')
+      if (!circle) return
+      circle.classList.add('markmap-collapse-control')
+      circle.setAttribute('pointer-events', 'all')
+      node.append(circle)
+      const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+      hitArea.setAttribute('class', 'markmap-collapse-hit')
+      hitArea.setAttribute('cx', circle.getAttribute('cx') || '0')
+      hitArea.setAttribute('cy', circle.getAttribute('cy') || '0')
+      hitArea.setAttribute('r', '12')
+      hitArea.setAttribute('fill', 'transparent')
+      hitArea.setAttribute('stroke', 'none')
+      hitArea.setAttribute('pointer-events', 'all')
+      node.append(hitArea)
+    })
     clone.querySelector('g')?.removeAttribute('transform')
     const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
     background.setAttribute('x', String(x1 - padding)); background.setAttribute('y', String(y1 - padding))
-    background.setAttribute('width', String(width)); background.setAttribute('height', String(height))
+    background.setAttribute('width', String(width)); background.setAttribute('height', String(outputHeight))
     background.setAttribute('fill', dark ? '#15181d' : '#fafafa')
     const firstGroup = clone.querySelector('g')
     if (firstGroup) clone.insertBefore(background, firstGroup)
-    return { source: new XMLSerializer().serializeToString(clone), width, height }
+    return { source: new XMLSerializer().serializeToString(clone), width, height: outputHeight }
   }
 
-  const createRasterSafeSvg = (source: string) => {
+  const prepareExportSvg = async (source: string) => {
     const liveForeignObjects = Array.from(svgRef.current?.querySelectorAll<SVGForeignObjectElement>('foreignObject') || [])
-    const fallbackFont = codeFont.shorthand || `${effectiveFontWeightCss} ${effectiveFontSizeCss}/1.35 ${effectiveFontFamily}`
-    const fallbackLineHeight = effectiveFontSize * 1.35
-    const measureCanvas = document.createElement('canvas')
-    const measureContext = measureCanvas.getContext('2d')
-    if (measureContext) measureContext.font = fallbackFont
     const documentNode = new DOMParser().parseFromString(source, 'image/svg+xml')
-    documentNode.querySelectorAll<SVGForeignObjectElement>('foreignObject').forEach((foreignObject, index) => {
-      const text = documentNode.createElementNS('http://www.w3.org/2000/svg', 'text')
-      const x = Number(foreignObject.getAttribute('x') || 0) + 6
-      const y = Number(foreignObject.getAttribute('y') || 0)
-      const width = Number(foreignObject.getAttribute('width') || 0)
-      const height = Number(foreignObject.getAttribute('height') || effectiveFontSize * 1.5)
+    documentNode.querySelectorAll('style').forEach((style) => { style.textContent = removeExternalFontFaces(style.textContent || '') })
+    const foreignObjects = Array.from(documentNode.querySelectorAll('foreignObject'))
+    foreignObjects.forEach((foreignObject, index) => {
       const liveForeignObject = liveForeignObjects[index]
       const liveContent = liveForeignObject ? getForeignContentElement(liveForeignObject) : null
-      const computedStyle = liveContent ? getComputedStyle(liveContent) : null
-      const font = computedStyle?.font || fallbackFont
-      if (measureContext) measureContext.font = font
-      const rawText = normalizeExportText(foreignObject.textContent || '')
-      const maxWidth = Math.max(1, Number.isFinite(width) ? width - 12 : effectiveFontSize * 30)
-      const renderedLines = liveForeignObject ? getRenderedTextLines(liveForeignObject) : []
-      const lines = renderedLines.length
-        ? renderedLines
-        : wrapExportText(rawText, maxWidth, (value) => measureContext?.measureText(value).width || value.length * effectiveFontSize)
-      const lineHeight = Number.parseFloat(computedStyle?.lineHeight || '') || fallbackLineHeight
-      const firstLineY = y + height / 2 - ((lines.length - 1) * lineHeight) / 2
-      text.setAttribute('x', String(x))
-      text.setAttribute('y', String(firstLineY))
-      text.setAttribute('dominant-baseline', 'middle')
-      text.setAttribute('fill', dark ? '#f4f6f9' : '#30333a')
-      if (font) text.setAttribute('style', `font:${font}`)
-      else {
-        text.setAttribute('font-size', effectiveFontSizeCss)
-        text.setAttribute('font-weight', String(effectiveFontWeight))
-        text.setAttribute('font-family', effectiveFontFamily)
-      }
-      lines.forEach((line, lineIndex) => {
-        const tspan = documentNode.createElementNS('http://www.w3.org/2000/svg', 'tspan')
-        tspan.setAttribute('x', String(x))
-        tspan.setAttribute('y', String(firstLineY + lineIndex * lineHeight))
-        tspan.textContent = line
-        text.appendChild(tspan)
-      })
-      foreignObject.replaceWith(text)
+      const targetContent = foreignObject.firstElementChild?.firstElementChild
+      if (liveContent && targetContent) inlineComputedStyles(liveContent, targetContent)
     })
+    const exportNodes = Array.from(documentNode.querySelectorAll('g.markmap-node[data-path]')).map((element) => {
+      const transform = element.getAttribute('transform') || 'translate(0, 0)'
+      const match = transform.match(/translate\(\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/)
+      const foreignObject = element.querySelector(':scope > foreignObject')
+      const extraHeight = foreignObject?.querySelector('table') ? 20 : 0
+      const height = Number(foreignObject?.getAttribute('height') || 30) + extraHeight
+      if (foreignObject && extraHeight) foreignObject.setAttribute('height', String(height))
+      const line = element.querySelector(':scope > line')
+      if (line && extraHeight) {
+        line.setAttribute('y1', String(height + .6875))
+        line.setAttribute('y2', String(height + .6875))
+      }
+      return { element, path: element.getAttribute('data-path') || '', x: match ? Number(match[1]) : 0, baseY: match ? Number(match[2]) : 0, height, extraHeight }
+    })
+    const exportNodeByPath = new Map(exportNodes.map((node) => [node.path, node]))
+    const exportPositions = new Map<string, number>()
+    let exportVerticalOffset = 0
+    exportNodes.slice().sort((a, b) => a.baseY - b.baseY).forEach((node) => {
+      const nextY = node.baseY + exportVerticalOffset
+      exportPositions.set(node.path, nextY)
+      node.element.setAttribute('transform', `translate(${node.x}, ${nextY})`)
+      exportVerticalOffset += node.extraHeight
+    })
+    documentNode.querySelectorAll<SVGPathElement>('.markmap-link[data-path]').forEach((link) => {
+      const path = link.getAttribute('data-path') || ''
+      const node = exportNodeByPath.get(path)
+      const parent = exportNodeByPath.get(path.split('.').slice(0, -1).join('.'))
+      const numbers = link.getAttribute('d')?.match(/-?[\d.]+/g)?.map(Number) || []
+      if (!node || !parent || numbers.length < 8) return
+      const startY = (exportPositions.get(parent.path) || parent.baseY) + parent.height + .6875
+      const endY = (exportPositions.get(node.path) || node.baseY) + node.height + .6875
+      link.setAttribute('d', `M${numbers[0]},${startY}C${numbers[2]},${startY},${numbers[4]},${endY},${numbers[6]},${endY}`)
+    })
+    const liveInputs = Array.from(svgRef.current?.querySelectorAll<HTMLInputElement>('foreignObject input[type="checkbox"]') || [])
+    const inputs = Array.from(documentNode.querySelectorAll('foreignObject input[type="checkbox"]'))
+    inputs.forEach((input, index) => {
+      const liveInput = liveInputs[index]
+      const checked = liveInput?.checked ?? input.hasAttribute('checked')
+      const box = documentNode.createElementNS('http://www.w3.org/1999/xhtml', 'span')
+      box.setAttribute('class', 'markmap-task-box')
+      box.setAttribute('data-checked', String(checked))
+      input.replaceWith(box)
+    })
+    const liveImages = Array.from(svgRef.current?.querySelectorAll<HTMLImageElement>('foreignObject img') || [])
+    const images = Array.from(documentNode.querySelectorAll('foreignObject img'))
+    await Promise.all(images.map(async (image, index) => {
+      const liveImage = liveImages[index]
+      const sourceUrl = liveImage?.currentSrc || liveImage?.getAttribute('src') || image.getAttribute('src') || ''
+      const resolvedSource = await resolveExportImageSource(sourceUrl)
+      if (resolvedSource && resolvedSource !== sourceUrl) image.setAttribute('src', resolvedSource)
+    }))
     return new XMLSerializer().serializeToString(documentNode.documentElement)
+  }
+
+  const createInteractiveHtml = (source: string, baseName: string) => {
+    const safeSource = source.replace(/<\/script/gi, '<\\/script')
+  const script = `
+<script>
+(() => {
+  const svg = document.querySelector('svg.markmap');
+  if (!svg) return;
+  const view = (svg.getAttribute('viewBox') || '0 0 100 100').split(/\\s+/).map(Number);
+  const state = { x: view[0], y: view[1], width: view[2], height: view[3], base: view.slice() };
+  const nodes = Array.from(svg.querySelectorAll('g.markmap-node[data-path]')).map((element) => {
+    const transform = element.getAttribute('transform') || 'translate(0, 0)';
+    const match = transform.match(/translate\\(\\s*(-?[\\d.]+)[,\\s]+(-?[\\d.]+)/);
+    const foreignObject = element.querySelector('foreignObject');
+    return {
+      element,
+      path: element.getAttribute('data-path'),
+      x: match ? Number(match[1]) : 0,
+      baseY: match ? Number(match[2]) : 0,
+      height: Number(foreignObject?.getAttribute('height') || 30),
+      parent: null,
+      children: [],
+    };
+  });
+  const nodeByPath = new Map(nodes.map((node) => [node.path, node]));
+  nodes.forEach((node) => {
+    const parentPath = node.path?.split('.').slice(0, -1).join('.') || '';
+    const parent = parentPath ? nodeByPath.get(parentPath) : null;
+    if (parent) {
+      node.parent = parent;
+      parent.children.push(node);
+    }
+  });
+  nodes.forEach((node) => node.children.sort((a, b) => a.baseY - b.baseY));
+  const root = nodeByPath.get('1') || nodes.find((node) => !node.parent) || null;
+  const links = Array.from(svg.querySelectorAll('.markmap-link[data-path]')).map((element) => ({
+    element,
+    path: element.getAttribute('data-path'),
+    numbers: (element.getAttribute('d') || '').match(/-?[\\d.]+/g)?.map(Number) || [],
+  }));
+  const render = () => svg.setAttribute('viewBox', state.x + ' ' + state.y + ' ' + state.width + ' ' + state.height);
+  const zoom = (factor, clientX, clientY) => {
+    const rect = svg.getBoundingClientRect();
+    const px = clientX == null ? .5 : (clientX - rect.left) / rect.width;
+    const py = clientY == null ? .5 : (clientY - rect.top) / rect.height;
+    const worldX = state.x + state.width * px;
+    const worldY = state.y + state.height * py;
+    state.width = Math.max(state.base[2] * .08, Math.min(state.base[2] * 20, state.width * factor));
+    state.height = Math.max(state.base[3] * .08, Math.min(state.base[3] * 20, state.height * factor));
+    state.x = worldX - state.width * px;
+    state.y = worldY - state.height * py;
+    render();
+  };
+  const fit = () => { state.x = state.base[0]; state.y = state.base[1]; state.width = state.base[2]; state.height = state.base[3]; render(); };
+  const isCollapsed = (node) => node?.element.getAttribute('data-collapsed') === 'true';
+  const isHidden = (node) => {
+    let current = node?.parent;
+    while (current) {
+      if (isCollapsed(current)) return true;
+      current = current.parent;
+    }
+    return false;
+  };
+  const visibleChildren = (node) => (isCollapsed(node) ? [] : node.children);
+  const calculateLayout = () => {
+    const positions = new Map();
+    const leaves = [];
+    const cursor = { value: 0 };
+    const place = (node) => {
+      const children = visibleChildren(node);
+      if (!children.length) {
+        positions.set(node.path, cursor.value);
+        leaves.push(node);
+        cursor.value += node.height + 6;
+        return;
+      }
+      children.forEach(place);
+      const first = children[0];
+      const last = children[children.length - 1];
+      const firstCenter = positions.get(first.path) + first.height / 2;
+      const lastCenter = positions.get(last.path) + last.height / 2;
+      positions.set(node.path, (firstCenter + lastCenter) / 2 - node.height / 2);
+    };
+    if (root) {
+      if (!isCollapsed(root)) root.children.forEach(place);
+      positions.set(root.path, root.baseY);
+    } else {
+      nodes.filter((node) => !node.parent).forEach(place);
+    }
+    if (root && leaves.length) {
+      const contentTop = Math.min(...leaves.map((node) => positions.get(node.path)));
+      const contentBottom = Math.max(...leaves.map((node) => positions.get(node.path) + node.height));
+      const offset = root.baseY + root.height / 2 - (contentTop + contentBottom) / 2;
+      positions.forEach((value, path) => { if (path !== root.path) positions.set(path, value + offset); });
+    }
+    return positions;
+  };
+  const visibleAnchor = (node, positions) => {
+    let current = node;
+    while (current) {
+      const y = positions.get(current.path);
+      if (Number.isFinite(y) && !isHidden(current)) return { node: current, y };
+      current = current.parent;
+    }
+    return null;
+  };
+  const transitionDuration = 240;
+  let animationFrame = 0;
+  const easeCubic = (value) => 1 - Math.pow(1 - value, 3);
+  const readTransform = (element, fallbackX, fallbackY) => {
+    const match = (element.getAttribute('transform') || '').match(/translate\\(\\s*(-?[\\d.]+)[,\\s]+(-?[\\d.]+)/);
+    return { x: match ? Number(match[1]) : fallbackX, y: match ? Number(match[2]) : fallbackY };
+  };
+  const readOpacity = (element) => {
+    const value = Number.parseFloat(element.style.opacity);
+    return Number.isFinite(value) ? value : 1;
+  };
+  const pathForLink = (link, positions) => {
+    const node = nodeByPath.get(link.path);
+    const parent = node?.parent;
+    if (!node || !parent) return null;
+    const parentY = positions.get(parent.path);
+    const nodeY = positions.get(node.path);
+    if (!Number.isFinite(parentY) || !Number.isFinite(nodeY)) return null;
+    const startY = parentY + parent.height + .6875;
+    const endY = nodeY + node.height + .6875;
+    const numbers = link.numbers;
+    return [numbers[0], startY, numbers[2], startY, numbers[4], endY, numbers[6], endY];
+  };
+  const pathString = (numbers) => 'M' + numbers[0] + ',' + numbers[1] + 'C' + numbers[2] + ',' + numbers[3] + ',' + numbers[4] + ',' + numbers[5] + ',' + numbers[6] + ',' + numbers[7];
+  const collapsePathForLink = (link, positions) => {
+    const node = nodeByPath.get(link.path);
+    const anchor = visibleAnchor(node?.parent, positions);
+    const numbers = link.numbers;
+    if (!anchor || numbers.length < 8) return null;
+    const x = numbers[0];
+    const y = anchor.y + anchor.node.height + .6875;
+    return [x, y, x, y, x, y, x, y];
+  };
+  const applyLayout = (animate = false) => {
+    const positions = calculateLayout();
+    const nodeAnimations = nodes.map((node) => {
+      const hidden = isHidden(node) || !Number.isFinite(positions.get(node.path));
+      const current = readTransform(node.element, node.x, node.baseY);
+      const anchor = visibleAnchor(node.parent, positions);
+      const targetY = hidden
+        ? (anchor ? anchor.y : node.baseY)
+        : positions.get(node.path);
+      return { node, hidden, from: { ...current, opacity: readOpacity(node.element) }, to: { x: node.x, y: targetY, opacity: hidden ? 0 : 1 } };
+    });
+    const linkAnimations = links.map((link) => {
+      const node = nodeByPath.get(link.path);
+      const parent = node?.parent;
+      const target = pathForLink(link, positions);
+      const hidden = !node || !parent || isHidden(node) || isHidden(parent) || !target;
+      const current = link.element.getAttribute('d')?.match(/-?[\\d.]+/g)?.map(Number) || [];
+      const source = current.length >= 8 ? current.slice(0, 8) : (target || [0, 0, 0, 0, 0, 0, 0, 0]);
+      const collapseTarget = collapsePathForLink(link, positions) || source;
+      return { link, hidden, from: source, to: hidden ? collapseTarget : target, fromOpacity: readOpacity(link.element), toOpacity: hidden ? 0 : 1 };
+    });
+    if (!animate) {
+      nodeAnimations.forEach(({ node, hidden, to }) => {
+        node.element.setAttribute('transform', 'translate(' + to.x + ', ' + to.y + ')');
+        node.element.style.opacity = String(to.opacity);
+        node.element.style.pointerEvents = hidden ? 'none' : '';
+        node.element.setAttribute('visibility', hidden ? 'hidden' : 'visible');
+      });
+      linkAnimations.forEach(({ link, hidden, from, to, toOpacity }) => {
+        link.element.setAttribute('d', pathString(to || from));
+        link.element.style.opacity = String(toOpacity);
+        link.element.setAttribute('visibility', hidden ? 'hidden' : 'visible');
+      });
+      return;
+    }
+    cancelAnimationFrame(animationFrame);
+    nodeAnimations.forEach(({ node, hidden }) => {
+      node.element.style.pointerEvents = hidden ? 'none' : '';
+      node.element.setAttribute('visibility', 'visible');
+    });
+    linkAnimations.forEach(({ link }) => link.element.setAttribute('visibility', 'visible'));
+    const startedAt = performance.now();
+    const tick = (now) => {
+      const progress = Math.min(1, (now - startedAt) / transitionDuration);
+      const eased = easeCubic(progress);
+      nodeAnimations.forEach(({ node, from, to }) => {
+        const x = from.x + (to.x - from.x) * eased;
+        const y = from.y + (to.y - from.y) * eased;
+        node.element.setAttribute('transform', 'translate(' + x + ', ' + y + ')');
+        node.element.style.opacity = String(from.opacity + (to.opacity - from.opacity) * eased);
+      });
+      linkAnimations.forEach(({ link, from, to, fromOpacity, toOpacity }) => {
+        const numbers = from.map((value, index) => value + (to[index] - value) * eased);
+        link.element.setAttribute('d', pathString(numbers));
+        link.element.style.opacity = String(fromOpacity + (toOpacity - fromOpacity) * eased);
+      });
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(tick);
+        return;
+      }
+      nodeAnimations.forEach(({ node, hidden, to }) => {
+        node.element.setAttribute('transform', 'translate(' + to.x + ', ' + to.y + ')');
+        node.element.style.opacity = String(to.opacity);
+        node.element.style.pointerEvents = hidden ? 'none' : '';
+        node.element.setAttribute('visibility', hidden ? 'hidden' : 'visible');
+      });
+      linkAnimations.forEach(({ link, hidden, to, toOpacity }) => {
+        link.element.setAttribute('d', pathString(to));
+        link.element.style.opacity = String(toOpacity);
+        link.element.setAttribute('visibility', hidden ? 'hidden' : 'visible');
+      });
+    };
+    animationFrame = requestAnimationFrame(tick);
+  };
+  svg.addEventListener('wheel', (event) => { event.preventDefault(); zoom(event.deltaY > 0 ? 1.1 : .9, event.clientX, event.clientY); }, { passive: false });
+  const toggleNode = (node) => {
+    const collapsed = node.getAttribute('data-collapsed') !== 'true';
+    node.setAttribute('data-collapsed', String(collapsed));
+    applyLayout(true);
+  };
+  svg.querySelectorAll('circle.markmap-collapse-control, circle.markmap-collapse-hit').forEach((control) => {
+    control.addEventListener('pointerup', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const node = control.closest('g.markmap-node[data-path]');
+      if (node) toggleNode(node);
+    });
+  });
+  let drag = null;
+  svg.addEventListener('pointerdown', (event) => {
+    if (event.target.closest && event.target.closest('foreignObject, g.markmap-node')) return;
+    event.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    drag = { x: event.clientX, y: event.clientY, viewX: state.x, viewY: state.y };
+    svg.setPointerCapture(event.pointerId);
+  });
+  svg.addEventListener('pointermove', (event) => {
+    if (!drag) return;
+    const rect = svg.getBoundingClientRect();
+    state.x = drag.viewX - (event.clientX - drag.x) * state.width / rect.width;
+    state.y = drag.viewY - (event.clientY - drag.y) * state.height / rect.height;
+    render();
+  });
+  svg.addEventListener('pointerup', () => { drag = null; });
+  document.querySelector('[data-action="fit"]').addEventListener('click', fit);
+  document.querySelector('[data-action="zoom-in"]').addEventListener('click', () => zoom(.8));
+  document.querySelector('[data-action="zoom-out"]').addEventListener('click', () => zoom(1.25));
+  applyLayout();
+})();
+</script>`
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${baseName}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${dark ? '#15181d' : '#fafafa'}}body{font-family:system-ui,sans-serif;user-select:none}svg.markmap{display:block;width:100%;height:100%;touch-action:none}svg.markmap .markmap-node,svg.markmap .markmap-link{transition:none}.markmap-foreign,.markmap-foreign *{user-select:text}.markmap-export-toolbar{position:fixed;z-index:2;top:14px;right:14px;display:flex;gap:6px;padding:6px;border:1px solid #dfe2e8;border-radius:10px;background:#ffffffdd;box-shadow:0 8px 22px #10131a1c}.markmap-export-toolbar button{height:30px;min-width:30px;padding:0 9px;border:1px solid #dfe2e8;border-radius:7px;background:#fff;color:#30333a;cursor:pointer;font:12px system-ui,sans-serif;user-select:none}.markmap-export-toolbar button:hover{border-color:#7056e8;color:#7056e8}</style></head><body><div class="markmap-export-toolbar" aria-label="思维导图工具"><button type="button" data-action="zoom-out" aria-label="缩小">−</button><button type="button" data-action="zoom-in" aria-label="放大">＋</button><button type="button" data-action="fit">适应</button></div>${safeSource}${script}</body></html>`
   }
 
   const exportDocument = async () => {
@@ -1610,13 +1879,12 @@ export default function MarkmapHooks() {
       } else {
         await document.fonts.ready
         const { source, width, height } = createExportSvg()
-        if (exportFormat === 'svg') saveBlob(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
+        const exportSource = await prepareExportSvg(source)
+        if (exportFormat === 'svg') saveBlob(new Blob([exportSource], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
         else if (exportFormat === 'html') {
-          const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${baseName}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${dark ? '#15181d' : '#fafafa'}}svg{display:block;width:100%;height:100%}</style></head><body>${source}</body></html>`
-          saveBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
+          saveBlob(new Blob([createInteractiveHtml(exportSource, baseName)], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
         } else {
-          const rasterSource = createRasterSafeSvg(source)
-          const svgUrl = URL.createObjectURL(new Blob([rasterSource], { type: 'image/svg+xml;charset=utf-8' }))
+          const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(exportSource)}`
           const image = new Image()
           await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error('图像渲染失败')); image.src = svgUrl })
           const canvas = document.createElement('canvas')
@@ -1624,7 +1892,6 @@ export default function MarkmapHooks() {
           const context = canvas.getContext('2d')
           if (!context) throw new Error('浏览器不支持画布导出')
           context.drawImage(image, 0, 0, canvas.width, canvas.height)
-          URL.revokeObjectURL(svgUrl)
           const mime = exportFormat === 'png' ? 'image/png' : 'image/jpeg'
           const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, 0.94))
           if (!blob) throw new Error('导出文件生成失败')
