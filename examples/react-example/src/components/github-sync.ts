@@ -38,6 +38,20 @@ export interface GitHubFileCommit {
   date: string
 }
 
+export interface GitHubBranch {
+  name: string
+  sha: string
+  protected: boolean
+}
+
+export interface GitHubRepositoryCommit {
+  sha: string
+  message: string
+  author: string
+  date: string
+  parents: string[]
+}
+
 const CONFIG_KEY = 'markmap-plus-plus:github-config'
 const DB_NAME = 'markmap-plus-plus-cache'
 const STORE_NAME = 'markdown-files'
@@ -150,8 +164,8 @@ export async function getHead(config: GitHubConfig) {
   return result.object.sha
 }
 
-export async function listRemoteMarkdown(config: GitHubConfig) {
-  const head = await getHead(config)
+export async function listRemoteMarkdown(config: GitHubConfig, ref = config.branch) {
+  const head = /^[0-9a-f]{40}$/i.test(ref) ? ref : await getHead({ ...config, branch: ref })
   const result = await githubRequest<{ tree: Array<{ path: string; type: string; sha: string; size?: number }>; truncated: boolean }>(config, `${repoPath(config)}/git/trees/${head}?recursive=1`)
   if (result.truncated) throw new Error('仓库文件列表过大，GitHub 返回了不完整结果')
   const files = result.tree
@@ -159,6 +173,33 @@ export async function listRemoteMarkdown(config: GitHubConfig) {
     .map((item) => ({ path: item.path, sha: item.sha, size: item.size || 0 }))
     .sort((a, b) => a.path.localeCompare(b.path))
   return { head, files }
+}
+
+export async function listRepositoryBranches(config: GitHubConfig) {
+  const result = await githubRequest<Array<{ name: string; commit: { sha: string }; protected: boolean }>>(config, `${repoPath(config)}/branches?per_page=100`)
+  return result
+    .map((branch) => ({ name: branch.name, sha: branch.commit.sha, protected: branch.protected }))
+    .sort((a, b) => a.name.localeCompare(b.name)) satisfies GitHubBranch[]
+}
+
+export async function listRepositoryCommits(config: GitHubConfig, branch = config.branch) {
+  const result = await githubRequest<Array<{
+    sha: string
+    commit: {
+      message: string
+      author?: { name?: string; date?: string } | null
+      committer?: { name?: string; date?: string } | null
+    }
+    author?: { login?: string } | null
+    parents?: Array<{ sha: string }>
+  }>>(config, `${repoPath(config)}/commits?sha=${encodeURIComponent(branch)}&per_page=80`)
+  return result.map((item) => ({
+    sha: item.sha,
+    message: item.commit.message,
+    author: item.author?.login || item.commit.author?.name || item.commit.committer?.name || '未知作者',
+    date: item.commit.author?.date || item.commit.committer?.date || '',
+    parents: item.parents?.map((parent) => parent.sha) || [],
+  })) satisfies GitHubRepositoryCommit[]
 }
 
 export async function listFileCommits(config: GitHubConfig, path: string) {

@@ -16,6 +16,8 @@ import {
   listCachedFiles,
   listFileCommits,
   listRemoteMarkdown,
+  listRepositoryBranches,
+  listRepositoryCommits,
   loadGitHubConfig,
   pushCachedChanges,
   putCachedFile,
@@ -24,7 +26,9 @@ import {
   saveGitHubConfig,
   verifyRepository,
   type CachedMarkdownFile,
+  type GitHubBranch,
   type GitHubFileCommit,
+  type GitHubRepositoryCommit,
   type GitHubConfig,
   type RemoteMarkdownFile,
 } from './github-sync'
@@ -339,6 +343,12 @@ type RepositoryHistoryState = {
   loading: boolean
   error: string
 }
+type RepositoryGraphState = {
+  branches: GitHubBranch[]
+  commits: GitHubRepositoryCommit[]
+  loading: boolean
+  error: string
+}
 
 function parentPath(path: string) {
   return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
@@ -415,9 +425,10 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'more' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
+type IconName = 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'more' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
+  branch: <><path d="M6 4v12a4 4 0 0 0 4 4h8"/><path d="M18 8V4m0 0-3 3m3-3 3 3"/><circle cx="6" cy="4" r="2"/><circle cx="18" cy="20" r="2"/></>,
   check: <path d="m5 12 4 4L19 6"/>,
   'chevron-down': <path d="m6 9 6 6 6-6"/>,
   'chevron-left': <path d="m15 18-6-6 6-6"/>,
@@ -499,6 +510,9 @@ export default function MarkmapHooks() {
   const [remoteFiles, setRemoteFiles] = useState<RemoteMarkdownFile[]>([])
   const [cachedFiles, setCachedFiles] = useState<CachedMarkdownFile[]>([])
   const [remoteHead, setRemoteHead] = useState('')
+  const [repositoryCommitRef, setRepositoryCommitRef] = useState<string | null>(null)
+  const [repositoryGraph, setRepositoryGraph] = useState<RepositoryGraphState | null>(null)
+  const [repositoryGraphBranchesOpen, setRepositoryGraphBranchesOpen] = useState(false)
   const [activeRepoPath, setActiveRepoPath] = useState<string | null>(null)
   const [githubBusy, setGithubBusy] = useState(false)
   const [githubError, setGithubError] = useState('')
@@ -973,6 +987,7 @@ export default function MarkmapHooks() {
   }
 
   const dropRepositoryTarget = async (folder: string) => {
+    if (repositoryCommitRef) return
     const target = draggedRepositoryTarget
     setDraggedRepositoryTarget(null)
     setRepositoryDropFolder(null)
@@ -987,7 +1002,7 @@ export default function MarkmapHooks() {
 
   const openRepositoryMenu = (event: React.MouseEvent, target: RepositoryTarget) => {
     event.preventDefault(); event.stopPropagation()
-    if (repositoryTouchGestureRef.current) return
+    if (repositoryCommitRef || repositoryTouchGestureRef.current) return
     showRepositoryMenu(event.clientX, event.clientY, target)
   }
 
@@ -1001,7 +1016,7 @@ export default function MarkmapHooks() {
   }
 
   const startRepositoryTouch = (event: React.TouchEvent<HTMLElement>, target: RepositoryTarget) => {
-    if (event.touches.length !== 1 || (event.target as HTMLElement).closest('input')) return
+    if (repositoryCommitRef || event.touches.length !== 1 || (event.target as HTMLElement).closest('input')) return
     event.stopPropagation()
     cancelRepositoryTouchGesture()
     suppressRepositoryClickRef.current = false
@@ -1130,6 +1145,8 @@ export default function MarkmapHooks() {
     setGithubBusy(true); setGithubError(''); setGithubNotice('')
     try {
       await refreshRepository(githubConfig)
+      setRepositoryCommitRef(null)
+      setActiveRepoPath(null)
       setGithubNotice('仓库文件列表已刷新')
     } catch (error) {
       setGithubError(error instanceof Error ? error.message : '刷新仓库失败')
@@ -1137,7 +1154,7 @@ export default function MarkmapHooks() {
   }
 
   const openRepositoryRow = (row: RepositoryRow) => {
-    if (row.remote) void openRepositoryFile(row.remote)
+    if (row.remote) void (repositoryCommitRef ? openRepositoryRevisionFile(row.remote, repositoryCommitRef) : openRepositoryFile(row.remote))
     else if (row.cached) activateCachedFile(row.cached)
   }
 
@@ -1172,6 +1189,75 @@ export default function MarkmapHooks() {
     } catch (error) {
       setRepositoryHistory((current) => current ? { ...current, loading: false, error: error instanceof Error ? error.message : '打开历史版本失败' } : current)
     }
+  }
+
+  const openRepositoryRevisionFile = async (remote: RemoteMarkdownFile, commitSha: string) => {
+    if (!githubConfig) return
+    setGithubBusy(true); setGithubError(''); setGithubNotice('')
+    try {
+      const content = await downloadMarkdownAtCommit(githubConfig, remote.path, commitSha)
+      activateHistoricalFile(content, remote.path, commitSha)
+      setEditorView('markdown'); setActivePanel(null)
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '下载历史文件失败')
+    } finally { setGithubBusy(false) }
+  }
+
+  const openRepositoryGraph = async () => {
+    if (!githubConfig) return
+    setRepositoryGraph((current) => ({ branches: current?.branches || [], commits: current?.commits || [], loading: true, error: '' }))
+    setRepositoryGraphBranchesOpen(false)
+    try {
+      const [branches, commits] = await Promise.all([listRepositoryBranches(githubConfig), listRepositoryCommits(githubConfig, githubConfig.branch)])
+      setRepositoryGraph({ branches, commits, loading: false, error: '' })
+    } catch (error) {
+      setRepositoryGraph((current) => ({ branches: current?.branches || [], commits: current?.commits || [], loading: false, error: error instanceof Error ? error.message : '读取仓库提交历史失败' }))
+    }
+  }
+
+  const switchRepositoryBranch = async (branch: GitHubBranch) => {
+    if (!githubConfig || (branch.name === githubConfig.branch && !repositoryCommitRef)) {
+      setRepositoryGraphBranchesOpen(false)
+      return
+    }
+    const nextConfig = { ...githubConfig, branch: branch.name }
+    setRepositoryGraphBranchesOpen(false)
+    setGithubBusy(true); setGithubError(''); setGithubNotice('')
+    setRepositoryGraph((current) => current ? { ...current, commits: [], loading: true, error: '' } : current)
+    try {
+      const [refreshed, commits] = await Promise.all([refreshRepository(nextConfig), listRepositoryCommits(nextConfig, branch.name)])
+      setRepositoryCommitRef(null)
+      setActiveRepoPath(null)
+      saveGitHubConfig(nextConfig)
+      setGithubConfig(nextConfig)
+      setBranchInput(branch.name)
+      setRepositoryGraph((current) => current ? { ...current, commits, loading: false, error: '' } : current)
+      setGithubNotice(`已切换到分支 ${branch.name}`)
+      setRemoteHead(refreshed.head)
+    } catch (error) {
+      setRepositoryGraph((current) => current ? { ...current, loading: false, error: error instanceof Error ? error.message : '切换分支失败' } : current)
+      setGithubError(error instanceof Error ? error.message : '切换分支失败')
+    } finally { setGithubBusy(false) }
+  }
+
+  const openRepositoryCommit = async (commit: GitHubRepositoryCommit) => {
+    if (!githubConfig) return
+    setGithubBusy(true); setGithubError(''); setGithubNotice('')
+    try {
+      const result = await listRemoteMarkdown(githubConfig, commit.sha)
+      setRemoteHead(result.head)
+      setRemoteFiles(result.files)
+      setRepositoryCommitRef(commit.sha)
+      setActiveRepoPath(null)
+      setRepositoryMenu(null)
+      setRepositoryHistory(null)
+      setDraggedRepositoryTarget(null)
+      setRepositoryDropFolder(null)
+      setRepositoryGraph(null)
+      setGithubNotice(`正在查看 commit ${commit.sha.slice(0, 7)} 的文件状态`)
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '切换到 commit 失败')
+    } finally { setGithubBusy(false) }
   }
 
   useEffect(() => {
@@ -1514,7 +1600,9 @@ export default function MarkmapHooks() {
   const activeCachedFile = activeRepoPath ? cachedFiles.find((file) => file.path === activeRepoPath) : undefined
   const changedFiles = cachedFiles.filter((file) => file.status !== 'clean')
   const hasRepositoryDrafts = changedFiles.length > 0 || virtualFolders.length > 0
-  const repositoryRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, collapsedFolders)
+  const repositoryDisplayCachedFiles = repositoryCommitRef ? [] : cachedFiles
+  const repositoryDisplayVirtualFolders = repositoryCommitRef ? [] : virtualFolders
+  const repositoryRows = buildRepositoryRows(remoteFiles, repositoryDisplayCachedFiles, repositoryDisplayVirtualFolders, collapsedFolders)
   const repositorySaveRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, repositorySaveCollapsedFolders)
   const repositoryMenuFile = repositoryMenu?.target.type === 'file' ? repositoryRows.find((row) => row.type === 'file' && row.path === repositoryMenu.target.path) : undefined
   const titleSyncState = activeCachedFile ? githubBusy ? 'syncing' : activeCachedFile.status === 'clean' ? 'synced' : 'dirty' : saveState
@@ -1553,7 +1641,7 @@ export default function MarkmapHooks() {
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
             </> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {!githubConfig ? <div className="repository-unbound"><Icon name="github" /><strong>尚未绑定 GitHub 仓库</strong><span>绑定后可浏览 Markdown 文件并在本地暂存修改。</span><button onClick={() => setActivePanel('github')}>绑定仓库</button></div> : <>
-                <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{githubConfig.branch}</small></div><button className="discard-button" title="放弃所有本地修改" onClick={() => void discardRepositoryChanges()} disabled={githubBusy || !hasRepositoryDrafts}><Icon name="undo" /><span>放弃</span></button><button className="repository-icon-button" title="刷新仓库" aria-label="刷新仓库" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" /></i></button><button className="repository-icon-button sync-button" title={changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || !changedFiles.length}><i><Icon name="sync" /></i></button></div>
+                <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{repositoryCommitRef ? `commit ${repositoryCommitRef.slice(0, 7)}` : githubConfig.branch}</small></div><button className="discard-button" title={repositoryCommitRef ? '查看 commit 阶段时不能放弃当前分支修改' : '放弃所有本地修改'} onClick={() => void discardRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !hasRepositoryDrafts}><Icon name="undo" /><span>放弃</span></button><button className="repository-icon-button" title="刷新当前分支" aria-label="刷新当前分支" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" /></i></button><button className="repository-icon-button sync-button" title={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !changedFiles.length}><i><Icon name="sync" /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}
                 {githubNotice && <div className="repository-notice"><Icon name="check" />{githubNotice}</div>}
                 <div className={`repository-tree ${(repositoryTouchDrag ? repositoryTouchDrag.dropFolder : repositoryDropFolder) === '' ? 'drop-root' : ''} ${repositoryTouchDrag?.dragging ? 'touch-dragging' : ''}`} role="tree" aria-label="GitHub Markdown 文件树" data-repository-type="root" data-repository-path="" onContextMenu={(event) => openRepositoryMenu(event, { type: 'root', path: '', name: '仓库根目录' })} onTouchStart={(event) => startRepositoryTouch(event, { type: 'root', path: '', name: '仓库根目录' })} onTouchMove={moveRepositoryTouch} onTouchEnd={endRepositoryTouch} onTouchCancel={cancelRepositoryTouchGesture} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; const target = draggedRepositoryTarget; setRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, '') : null) }} onDrop={(event) => { event.preventDefault(); void dropRepositoryTarget('') }}>
@@ -1562,12 +1650,19 @@ export default function MarkmapHooks() {
                     const activeDropFolder = repositoryTouchDrag ? repositoryTouchDrag.dropFolder : repositoryDropFolder
                     const isDropZone = activeDropFolder !== null && activeDropFolder !== '' && (row.path === activeDropFolder || row.path.startsWith(`${activeDropFolder}/`))
                     const isTouchSource = repositoryTouchDrag?.target.path === row.path
-                    if (row.type === 'folder') return <div className={`tree-folder ${isDropZone ? 'drop-zone' : ''} ${isTouchSource ? 'touch-source' : ''}`} role="treeitem" aria-expanded={!collapsedFolders.has(row.path)} data-repository-type="folder" data-repository-path={row.path} draggable={!isRenaming} key={`folder:${row.path}`} style={{ paddingLeft: 8 + row.depth * 16 }} onTouchStart={(event) => startRepositoryTouch(event, row)} onTouchMove={moveRepositoryTouch} onTouchEnd={endRepositoryTouch} onTouchCancel={cancelRepositoryTouchGesture} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row); setRepositoryDropFolder(null) }} onDragEnd={() => { setDraggedRepositoryTarget(null); setRepositoryDropFolder(null) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; const target = draggedRepositoryTarget; setRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, row.path) : null) }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(row.path) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-inline-edit"><Icon name="folder" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button onClick={() => { if (consumeRepositoryLongPressClick()) return; setCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next }) }}><Icon name={collapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button>}</div>
+                    if (row.type === 'folder') return <div className={`tree-folder ${isDropZone ? 'drop-zone' : ''} ${isTouchSource ? 'touch-source' : ''}`} role="treeitem" aria-expanded={!collapsedFolders.has(row.path)} data-repository-type="folder" data-repository-path={row.path} draggable={!repositoryCommitRef && !isRenaming} key={`folder:${row.path}`} style={{ paddingLeft: 8 + row.depth * 16 }} onTouchStart={(event) => startRepositoryTouch(event, row)} onTouchMove={moveRepositoryTouch} onTouchEnd={endRepositoryTouch} onTouchCancel={cancelRepositoryTouchGesture} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row); setRepositoryDropFolder(null) }} onDragEnd={() => { setDraggedRepositoryTarget(null); setRepositoryDropFolder(null) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; const target = draggedRepositoryTarget; setRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, row.path) : null) }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(row.path) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-inline-edit"><Icon name="folder" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button onClick={() => { if (consumeRepositoryLongPressClick()) return; setCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next }) }}><Icon name={collapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button>}</div>
                     const destination = parentPath(row.path)
-                    return <div className={`tree-file ${activeRepoPath === row.path ? 'active' : ''} ${row.cached?.status === 'deleted' ? 'deleted' : ''} ${isDropZone ? 'drop-zone' : ''} ${isTouchSource ? 'touch-source' : ''}`} role="treeitem" data-repository-type="file" data-repository-path={row.path} draggable={!isRenaming && row.cached?.status !== 'deleted'} key={`file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }} onTouchStart={(event) => startRepositoryTouch(event, row)} onTouchMove={moveRepositoryTouch} onTouchEnd={endRepositoryTouch} onTouchCancel={cancelRepositoryTouchGesture} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row); setRepositoryDropFolder(null) }} onDragEnd={() => { setDraggedRepositoryTarget(null); setRepositoryDropFolder(null) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; const target = draggedRepositoryTarget; setRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, destination) : null) }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(destination) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-open tree-inline-edit"><Icon name="map" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button className="tree-open" disabled={row.cached?.status === 'deleted'} onClick={() => { if (!consumeRepositoryLongPressClick()) openRepositoryRow(row) }}><Icon name="map" /><span>{row.name}</span></button>}{row.cached ? row.cached.status !== 'clean' ? <b>{row.cached.status === 'renamed' ? 'R' : row.cached.status === 'added' ? 'A' : row.cached.status === 'deleted' ? 'D' : 'M'}</b> : <i className="cached" title="已拉取并同步" /> : <i className="remote" title="尚未拉取" />}</div>
+                    return <div className={`tree-file ${activeRepoPath === row.path ? 'active' : ''} ${row.cached?.status === 'deleted' ? 'deleted' : ''} ${isDropZone ? 'drop-zone' : ''} ${isTouchSource ? 'touch-source' : ''}`} role="treeitem" data-repository-type="file" data-repository-path={row.path} draggable={!repositoryCommitRef && !isRenaming && row.cached?.status !== 'deleted'} key={`file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }} onTouchStart={(event) => startRepositoryTouch(event, row)} onTouchMove={moveRepositoryTouch} onTouchEnd={endRepositoryTouch} onTouchCancel={cancelRepositoryTouchGesture} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; setDraggedRepositoryTarget(row); setRepositoryDropFolder(null) }} onDragEnd={() => { setDraggedRepositoryTarget(null); setRepositoryDropFolder(null) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; const target = draggedRepositoryTarget; setRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, destination) : null) }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropRepositoryTarget(destination) }} onContextMenu={(event) => openRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-open tree-inline-edit"><Icon name="map" /><input autoFocus value={repositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRepositoryRenameValue(event.target.value)} onBlur={finishRepositoryRename} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') finishRepositoryRename(); if (event.key === 'Escape') setRenamingRepositoryTarget(null) }} /></div> : <button className="tree-open" disabled={row.cached?.status === 'deleted'} onClick={() => { if (!consumeRepositoryLongPressClick()) openRepositoryRow(row) }}><Icon name="map" /><span>{repositoryCommitRef ? historicalFileName(row.name, repositoryCommitRef) : row.name}</span></button>}{row.cached ? row.cached.status !== 'clean' ? <b>{row.cached.status === 'renamed' ? 'R' : row.cached.status === 'added' ? 'A' : row.cached.status === 'deleted' ? 'D' : 'M'}</b> : <i className="cached" title="已拉取并同步" /> : <i className="remote" title="尚未拉取" />}</div>
                   }) : <div className="github-empty">{githubBusy ? '正在读取仓库…' : '仓库中没有 Markdown 文件'}</div>}
                 </div>
-                <footer className="repository-status"><span className={changedFiles.length ? 'dirty' : 'clean'} />{changedFiles.length ? `${changedFiles.length} 个文件已暂存但未推送` : '所有缓存文件均已同步'}<button className="repository-branch-button" title="仓库设置" onClick={() => setActivePanel('github')}><Icon name="github" /><span>{githubConfig.branch}</span></button></footer>
+                <footer className="repository-status"><span className={changedFiles.length && !repositoryCommitRef ? 'dirty' : 'clean'} /><span className="repository-status-label">{repositoryCommitRef ? `查看 commit ${repositoryCommitRef.slice(0, 7)} · 文件打开后为独立缓存` : changedFiles.length ? `${changedFiles.length} 个文件已暂存但未推送` : '所有缓存文件均已同步'}</span><button className="repository-branch-button" title="查看仓库 Git Graph 与切换分支" aria-label="查看仓库 Git Graph 与切换分支" aria-expanded={Boolean(repositoryGraph)} onClick={() => { if (repositoryGraph) setRepositoryGraph(null); else void openRepositoryGraph() }}><Icon name="branch" /><span>{githubConfig.branch}</span></button></footer>
+                {repositoryGraph && <div className="repository-graph-popover" onMouseDown={(event) => event.stopPropagation()}>
+                  <header><div><strong>仓库提交历史</strong><small>{githubConfig.owner}/{githubConfig.repo} · {githubConfig.branch}</small></div><button className="header-icon" aria-label="关闭仓库提交历史" onClick={() => setRepositoryGraph(null)}><Icon name="x" /></button></header>
+                  {repositoryGraph.error && <div className="repository-graph-error"><Icon name="warning" /><span>{repositoryGraph.error}</span></div>}
+                  <button className="repository-graph-branch-toggle" aria-expanded={repositoryGraphBranchesOpen} onClick={() => setRepositoryGraphBranchesOpen((value) => !value)}><Icon name="branch" /><span>分支</span><strong>{githubConfig.branch}</strong><Icon name={repositoryGraphBranchesOpen ? 'chevron-down' : 'chevron-right'} /></button>
+                  {repositoryGraphBranchesOpen && <div className="repository-graph-branches">{repositoryGraph.branches.length ? repositoryGraph.branches.map((branch) => <button className={branch.name === githubConfig.branch ? 'active' : ''} key={branch.name} disabled={githubBusy || repositoryGraph.loading} onClick={() => void switchRepositoryBranch(branch)}><Icon name="branch" /><span>{branch.name}</span><small>{branch.sha.slice(0, 7)}</small></button>) : <span>没有可用分支</span>}</div>}
+                  {repositoryGraph.loading && !repositoryGraph.commits.length ? <div className="repository-graph-state"><Icon name="refresh" /><span>正在读取仓库提交历史…</span></div> : repositoryGraph.commits.length ? <div className="repository-graph-list">{repositoryGraph.commits.map((commit) => <button className={`repository-graph-commit ${repositoryCommitRef === commit.sha ? 'active' : ''}`} key={commit.sha} disabled={repositoryGraph.loading || githubBusy} onClick={() => void openRepositoryCommit(commit)}><span className="repository-graph-rail"><i /></span><span className="repository-graph-commit-info"><strong title={commit.message}>{commit.message.split('\n')[0]}</strong><small><code title={commit.sha}>{commit.sha.slice(0, 7)}</code><em> · {githubConfig.branch} · {commit.author} · {formatCommitDate(commit.date)}</em></small></span><Icon name="chevron-right" /></button>)}</div> : <div className="repository-graph-state"><Icon name="clock" /><span>没有找到仓库提交记录</span></div>}
+                </div>}
                 {repositoryMenu && <div className="repository-context-menu" style={{ left: repositoryMenu.x, top: repositoryMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
                   <strong>{repositoryMenu.target.name}</strong>
                   {repositoryMenu.target.type !== 'root' && <><button onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); startRepositoryRename(target) }}>重命名</button><button onClick={() => { setRepositoryClipboard({ mode: 'copy', target: repositoryMenu.target }); setRepositoryMenu(null) }}>复制</button><button onClick={() => { setRepositoryClipboard({ mode: 'cut', target: repositoryMenu.target }); setRepositoryMenu(null) }}>剪切</button></>}

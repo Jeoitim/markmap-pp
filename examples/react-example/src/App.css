@@ -220,11 +220,12 @@ svg { flex: 0 0 auto; }
 .tree-folder .tree-inline-edit > svg { color: #c69538; }
 .tree-inline-edit input { min-width: 0; width: 100%; height: 23px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 4px; outline: none; color: var(--text); background: var(--panel); font-size: inherit; box-shadow: 0 0 0 2px color-mix(in srgb,var(--accent) 12%,transparent); }
 .repository-status { flex: 0 0 34px; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 13px; border-top: 1px solid var(--border); color: var(--muted); background: var(--panel-soft); font-size: max(11px, .82em); white-space: nowrap; }
-.repository-status > span { width: 7px; height: 7px; border-radius: 50%; }
+.repository-status > span:not(.repository-status-label) { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; }
 .repository-status > span.clean { background: #39ad72; }
 .repository-status > span.dirty { background: #d8872d; }
+.repository-status-label { min-width: 0; overflow: hidden; flex: 1 1 auto; text-overflow: ellipsis; white-space: nowrap; }
 .repository-status button { margin-left: auto; }
-.repository-status .repository-branch-button { height: 27px; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 0 3px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font-size: inherit; line-height: 1; }
+.repository-status .repository-branch-button { flex: 0 0 auto; max-width: 118px; height: 27px; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 0 3px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font-size: inherit; line-height: 1; }
 .repository-branch-button:hover { color: var(--text); background: color-mix(in srgb,var(--accent) 7%,transparent); }
 .repository-branch-button svg { display: block; width: 14px; height: 14px; margin: 0; }
 .repository-branch-button span { max-width: 100px; overflow: hidden; font: inherit; font-family: "JetBrains Mono Variable",monospace; text-overflow: ellipsis; white-space: nowrap; }
@@ -257,6 +258,43 @@ svg { flex: 0 0 auto; }
 .repository-history-state { justify-content: center; }
 .repository-history-state svg, .repository-history-error svg { width: 16px; flex: 0 0 auto; }
 .repository-history-error { color: #d15454; background: #d1545412; }
+.repository-graph-popover { position: absolute; z-index: 155; right: 10px; bottom: 42px; width: min(520px, calc(100% - 20px)); max-width: calc(100% - 20px); max-height: min(620px, calc(100% - 52px)); min-height: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: 0 18px 50px #080a1038; }
+.repository-graph-popover > header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 10px 12px 14px; border-bottom: 1px solid var(--border); }
+.repository-graph-popover > header > div { min-width: 0; display: grid; gap: 3px; }
+.repository-graph-popover > header strong { font-size: 14px; }
+.repository-graph-popover > header small { overflow: hidden; color: var(--muted); font: 10px "JetBrains Mono Variable",monospace; text-overflow: ellipsis; white-space: nowrap; }
+.repository-graph-popover > header .header-icon { flex: 0 0 auto; width: 28px; height: 28px; }
+.repository-graph-branch-toggle { width: calc(100% - 14px); min-width: 0; height: 38px; display: grid; grid-template-columns: 17px auto minmax(0,1fr) 15px; align-items: center; gap: 8px; margin: 7px; padding: 0 9px; border: 1px solid var(--border); border-radius: 8px; text-align: left; color: var(--text); background: var(--panel-soft); cursor: pointer; }
+.repository-graph-branch-toggle:hover { border-color: var(--accent); background: color-mix(in srgb,var(--accent) 6%,var(--panel-soft)); }
+.repository-graph-branch-toggle > svg { width: 15px; height: 15px; color: var(--accent); }
+.repository-graph-branch-toggle > span { color: var(--muted); font-size: 12px; }
+.repository-graph-branch-toggle > strong { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.repository-graph-branches { max-height: min(220px, calc(100dvh - 200px)); display: grid; gap: 2px; margin: -2px 7px 7px; padding: 5px; overflow-x: hidden; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--editor-bg); overscroll-behavior: contain; scrollbar-gutter: stable; }
+.repository-graph-branches button { min-width: 0; height: 32px; display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 7px; padding: 0 8px; border: 0; border-radius: 6px; text-align: left; color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; }
+.repository-graph-branches button:hover, .repository-graph-branches button.active { color: var(--text); background: color-mix(in srgb,var(--accent) 9%,transparent); }
+.repository-graph-branches button:disabled { opacity: .5; cursor: wait; }
+.repository-graph-branches svg { width: 14px; height: 14px; color: var(--accent); }
+.repository-graph-branches span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repository-graph-branches small { color: var(--muted); font: 10px "JetBrains Mono Variable",monospace; }
+.repository-graph-list { min-width: 0; min-height: 0; flex: 1 1 auto; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 5px 7px 9px; }
+.repository-graph-commit { position: relative; width: 100%; min-width: 0; min-height: 58px; display: grid; grid-template-columns: 24px minmax(0,1fr) 15px; align-items: start; gap: 8px; padding: 9px 8px; border: 0; border-radius: 8px; text-align: left; color: var(--text); background: transparent; cursor: pointer; }
+.repository-graph-commit:hover, .repository-graph-commit.active { background: color-mix(in srgb,var(--accent) 9%,transparent); }
+.repository-graph-commit:disabled { opacity: .58; cursor: wait; }
+.repository-graph-rail { position: relative; width: 18px; height: 100%; display: flex; justify-content: center; }
+.repository-graph-rail::before { content: ''; position: absolute; top: -9px; bottom: -9px; width: 2px; border-radius: 2px; background: color-mix(in srgb,var(--accent) 35%,var(--border)); }
+.repository-graph-commit:first-child .repository-graph-rail::before { top: 9px; }
+.repository-graph-commit:last-child .repository-graph-rail::before { bottom: calc(100% - 22px); }
+.repository-graph-rail i { position: relative; z-index: 1; width: 10px; height: 10px; margin-top: 5px; border: 2px solid var(--accent); border-radius: 50%; background: var(--panel); }
+.repository-graph-commit.active .repository-graph-rail i { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent); }
+.repository-graph-commit-info { min-width: 0; display: grid; gap: 5px; }
+.repository-graph-commit-info strong { overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.repository-graph-commit-info small { min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.repository-graph-commit-info code { color: var(--accent); font: 10px "JetBrains Mono Variable",monospace; }
+.repository-graph-commit-info em { font-style: normal; }
+.repository-graph-commit > svg { width: 14px; height: 14px; margin-top: 5px; color: var(--muted); }
+.repository-graph-state, .repository-graph-error { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.repository-graph-state svg, .repository-graph-error svg { width: 16px; flex: 0 0 auto; }
+.repository-graph-error { color: #d15454; background: #d1545412; }
 .repository-touch-drag-ghost { position: fixed; z-index: 170; width: 176px; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid color-mix(in srgb,var(--accent) 62%,var(--border)); border-radius: 7px; color: var(--text); background: color-mix(in srgb,var(--panel) 94%,transparent); font-size: max(12px,.86em); box-shadow: 0 10px 26px #090b1238; pointer-events: none; opacity: .94; backdrop-filter: blur(9px); }
 .repository-touch-drag-ghost.invalid { border-color: color-mix(in srgb,#d15454 62%,var(--border)); opacity: .66; }
 .repository-touch-drag-ghost svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--accent); }
