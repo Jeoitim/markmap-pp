@@ -12,7 +12,9 @@ import MarkdownEditor, { type HighlightScheme } from './markdown-editor'
 import { inspectMarkdown } from './markdown-lint'
 import {
   downloadMarkdown,
+  downloadMarkdownAtCommit,
   listCachedFiles,
+  listFileCommits,
   listRemoteMarkdown,
   loadGitHubConfig,
   pushCachedChanges,
@@ -22,6 +24,7 @@ import {
   saveGitHubConfig,
   verifyRepository,
   type CachedMarkdownFile,
+  type GitHubFileCommit,
   type GitHubConfig,
   type RemoteMarkdownFile,
 } from './github-sync'
@@ -328,6 +331,14 @@ interface RepositoryRow {
 
 type RepositoryTarget = Pick<RepositoryRow, 'type' | 'path' | 'name'> | { type: 'root'; path: ''; name: '仓库根目录' }
 type RepositoryClipboard = { mode: 'copy' | 'cut'; target: RepositoryTarget }
+type RepositoryHistoryState = {
+  target: RepositoryTarget
+  x: number
+  y: number
+  commits: GitHubFileCommit[]
+  loading: boolean
+  error: string
+}
 
 function parentPath(path: string) {
   return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
@@ -335,6 +346,19 @@ function parentPath(path: string) {
 
 function baseName(path: string) {
   return path.slice(path.lastIndexOf('/') + 1)
+}
+
+function historicalFileName(path: string, commitSha: string) {
+  const name = baseName(path)
+  const match = name.match(/^(.*?)(\.(?:md|markdown))$/i)
+  return `${match?.[1] || name} [${commitSha.slice(0, 7)}]${match?.[2] || '.md'}`
+}
+
+function formatCommitDate(value: string) {
+  if (!value) return '时间未知'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '时间未知'
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
 function joinPath(folder: string, name: string) {
@@ -391,13 +415,14 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'more' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
+type IconName = 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'map' | 'moon' | 'more' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   check: <path d="m5 12 4 4L19 6"/>,
   'chevron-down': <path d="m6 9 6 6 6-6"/>,
   'chevron-left': <path d="m15 18-6-6 6-6"/>,
   'chevron-right': <path d="m9 18 6-6-6-6"/>,
+  clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
   collapse: <><path d="M4 14h6v6M20 10h-6V4"/><path d="M14 20v-6h6M10 4v6H4"/></>,
   download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>,
   expand: <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>,
@@ -483,6 +508,7 @@ export default function MarkmapHooks() {
   const [repositorySaveCollapsedFolders, setRepositorySaveCollapsedFolders] = useState<Set<string>>(() => new Set())
   const [repositoryClipboard, setRepositoryClipboard] = useState<RepositoryClipboard | null>(null)
   const [repositoryMenu, setRepositoryMenu] = useState<{ x: number; y: number; target: RepositoryTarget } | null>(null)
+  const [repositoryHistory, setRepositoryHistory] = useState<RepositoryHistoryState | null>(null)
   const [repositorySaveMode, setRepositorySaveMode] = useState(false)
   const [repositorySaveFolder, setRepositorySaveFolder] = useState('')
   const [repositorySaveName, setRepositorySaveName] = useState('')
@@ -621,6 +647,20 @@ export default function MarkmapHooks() {
     setRenderedMarkdown(file.content)
     setFileName(file.path)
     setActiveRepoPath(file.path)
+    setEditorView('markdown')
+    setSaveState('saved')
+    window.setTimeout(() => mmRef.current?.fit(), 80)
+  }, [])
+
+  const activateHistoricalFile = useCallback((content: string, path: string, commitSha: string) => {
+    historyRef.current = []
+    lastEditRef.current = { source: '', time: 0 }
+    markdownRef.current = content
+    setCanUndo(false)
+    setMarkdown(content)
+    setRenderedMarkdown(content)
+    setFileName(historicalFileName(path, commitSha))
+    setActiveRepoPath(null)
     setEditorView('markdown')
     setSaveState('saved')
     window.setTimeout(() => mmRef.current?.fit(), 80)
@@ -941,6 +981,7 @@ export default function MarkmapHooks() {
   }
 
   const showRepositoryMenu = (x: number, y: number, target: RepositoryTarget) => {
+    setRepositoryHistory(null)
     setRepositoryMenu({ x: Math.max(8, Math.min(x, window.innerWidth - 190)), y: Math.max(8, Math.min(y, window.innerHeight - 290)), target })
   }
 
@@ -1100,6 +1141,39 @@ export default function MarkmapHooks() {
     else if (row.cached) activateCachedFile(row.cached)
   }
 
+  const openRepositoryHistory = async (target: RepositoryTarget, x: number, y: number) => {
+    if (!githubConfig || target.type !== 'file') return
+    const state: RepositoryHistoryState = {
+      target,
+      x: Math.max(8, Math.min(x, window.innerWidth - 428)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 568)),
+      commits: [],
+      loading: true,
+      error: '',
+    }
+    setRepositoryMenu(null)
+    setRepositoryHistory(state)
+    try {
+      const commits = await listFileCommits(githubConfig, target.path)
+      setRepositoryHistory((current) => current?.target.path === target.path ? { ...current, commits, loading: false } : current)
+    } catch (error) {
+      setRepositoryHistory((current) => current?.target.path === target.path ? { ...current, loading: false, error: error instanceof Error ? error.message : '读取提交历史失败' } : current)
+    }
+  }
+
+  const openRepositoryHistoryVersion = async (commit: GitHubFileCommit) => {
+    const history = repositoryHistory
+    if (!githubConfig || !history || history.target.type !== 'file') return
+    setRepositoryHistory((current) => current ? { ...current, loading: true, error: '' } : current)
+    try {
+      const content = await downloadMarkdownAtCommit(githubConfig, history.target.path, commit.sha)
+      activateHistoricalFile(content, history.target.path, commit.sha)
+      setRepositoryHistory(null)
+    } catch (error) {
+      setRepositoryHistory((current) => current ? { ...current, loading: false, error: error instanceof Error ? error.message : '打开历史版本失败' } : current)
+    }
+  }
+
   useEffect(() => {
     if (!svgRef.current) return
     const initialConfig = buildDocumentRenderConfig(initialMarkdownRef.current)
@@ -1148,13 +1222,13 @@ export default function MarkmapHooks() {
   }, [githubConfig])
 
   useEffect(() => {
-    if (!repositoryMenu) return
-    const closeMenu = () => setRepositoryMenu(null)
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeMenu() }
-    window.addEventListener('pointerdown', closeMenu)
+    if (!repositoryMenu && !repositoryHistory) return
+    const closePopovers = () => { setRepositoryMenu(null); setRepositoryHistory(null) }
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closePopovers() }
+    window.addEventListener('pointerdown', closePopovers)
     window.addEventListener('keydown', closeOnEscape)
-    return () => { window.removeEventListener('pointerdown', closeMenu); window.removeEventListener('keydown', closeOnEscape) }
-  }, [repositoryMenu])
+    return () => { window.removeEventListener('pointerdown', closePopovers); window.removeEventListener('keydown', closeOnEscape) }
+  }, [repositoryMenu, repositoryHistory])
 
   useEffect(() => {
     if (!activeRepoPath) return
@@ -1442,6 +1516,7 @@ export default function MarkmapHooks() {
   const hasRepositoryDrafts = changedFiles.length > 0 || virtualFolders.length > 0
   const repositoryRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, collapsedFolders)
   const repositorySaveRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, repositorySaveCollapsedFolders)
+  const repositoryMenuFile = repositoryMenu?.target.type === 'file' ? repositoryRows.find((row) => row.type === 'file' && row.path === repositoryMenu.target.path) : undefined
   const titleSyncState = activeCachedFile ? githubBusy ? 'syncing' : activeCachedFile.status === 'clean' ? 'synced' : 'dirty' : saveState
   const titleSyncText = activeCachedFile ? githubBusy ? '同步中' : activeCachedFile.status === 'clean' ? '已同步' : '已暂存但未推送' : saveState === 'saved' ? '当前内容已更新' : '正在更新预览…'
 
@@ -1496,8 +1571,14 @@ export default function MarkmapHooks() {
                 {repositoryMenu && <div className="repository-context-menu" style={{ left: repositoryMenu.x, top: repositoryMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
                   <strong>{repositoryMenu.target.name}</strong>
                   {repositoryMenu.target.type !== 'root' && <><button onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); startRepositoryRename(target) }}>重命名</button><button onClick={() => { setRepositoryClipboard({ mode: 'copy', target: repositoryMenu.target }); setRepositoryMenu(null) }}>复制</button><button onClick={() => { setRepositoryClipboard({ mode: 'cut', target: repositoryMenu.target }); setRepositoryMenu(null) }}>剪切</button></>}
+                  {repositoryMenu.target.type === 'file' && <button disabled={!repositoryMenuFile?.remote} title={repositoryMenuFile?.remote ? '查看该文件的历史提交' : '本地新增文件还没有远程提交记录'} onClick={() => { const menu = repositoryMenu; if (menu) void openRepositoryHistory(menu.target, menu.x, menu.y) }}>查看历史提交</button>}
                   {(repositoryMenu.target.type === 'folder' || repositoryMenu.target.type === 'root') && <><hr/><button disabled={!repositoryClipboard} onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void pasteRepositoryClipboard(folder) }}>粘贴{repositoryClipboard ? `“${repositoryClipboard.target.name}”` : ''}</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void createRepositoryFile(folder) }}>新建 Markdown</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); createRepositoryFolder(folder) }}>新建文件夹</button></>}
                   {repositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); void deleteRepositoryTarget(target) }}>删除</button></>}
+                </div>}
+                {repositoryHistory && <div className="repository-history-popover" style={{ left: repositoryHistory.x, top: repositoryHistory.y }} onPointerDown={(event) => event.stopPropagation()}>
+                  <header><div><strong>文件历史</strong><small title={repositoryHistory.target.path}>{repositoryHistory.target.path}</small></div><button className="header-icon" aria-label="关闭历史记录" onClick={() => setRepositoryHistory(null)}><Icon name="x" /></button></header>
+                  {repositoryHistory.error && <div className="repository-history-error"><Icon name="warning" /><span>{repositoryHistory.error}</span></div>}
+                  {repositoryHistory.loading && !repositoryHistory.commits.length ? <div className="repository-history-state"><Icon name="refresh" /><span>正在读取提交历史…</span></div> : repositoryHistory.commits.length ? <div className="repository-history-list" role="list">{repositoryHistory.commits.map((commit) => <button className="repository-history-item" key={commit.sha} disabled={repositoryHistory.loading} onClick={() => void openRepositoryHistoryVersion(commit)}><Icon name="clock" /><span><strong>{formatCommitDate(commit.date)}</strong><small><code title={commit.sha}>{commit.sha.slice(0, 7)}</code><em> · {githubConfig?.branch || '当前分支'} · {commit.author}</em></small><b title={commit.message}>{commit.message.split('\n')[0]}</b></span><Icon name="chevron-right" /></button>)}</div> : <div className="repository-history-state"><Icon name="clock" /><span>没有找到该文件的提交记录</span></div>}
                 </div>}
                 {repositoryTouchDrag?.dragging && <div className={`repository-touch-drag-ghost ${repositoryTouchDrag.dropFolder === null ? 'invalid' : ''}`} style={{ left: Math.min(repositoryTouchDrag.x + 14, window.innerWidth - 190), top: Math.min(repositoryTouchDrag.y + 14, window.innerHeight - 48) }}><Icon name={repositoryTouchDrag.target.type === 'folder' ? 'folder' : 'map'} /><span>{repositoryTouchDrag.target.name}</span></div>}
                 {repositoryTouchDrag && <div className="repository-touch-drag-indicator"><Icon name={repositoryTouchDrag.dragging ? 'folder' : 'more'} /><span>{repositoryTouchDrag.dragging ? repositoryTouchDrag.dropFolder !== null ? `移动到 ${repositoryTouchDrag.dropFolder || '仓库根目录'}` : '这里不能放置' : '松开打开菜单，移动手指可拖拽'}</span></div>}

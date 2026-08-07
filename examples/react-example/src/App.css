@@ -235,6 +235,28 @@ svg { flex: 0 0 auto; }
 .repository-context-menu button:disabled { opacity: .4; cursor: default; }
 .repository-context-menu button.danger { color: #d15454; }
 .repository-context-menu hr { width: 100%; margin: 5px 0; border: 0; border-top: 1px solid var(--border); }
+.repository-history-popover { position: fixed; z-index: 170; width: min(420px, calc(100vw - 16px)); max-width: calc(100vw - 16px); max-height: min(560px, calc(100dvh - 16px)); min-height: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); box-shadow: 0 16px 45px #080a1038; }
+.repository-history-popover > header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 10px 11px 13px; border-bottom: 1px solid var(--border); }
+.repository-history-popover > header > div { min-width: 0; display: grid; gap: 3px; }
+.repository-history-popover > header strong { font-size: 14px; }
+.repository-history-popover > header small { overflow: hidden; color: var(--muted); font: 11px "JetBrains Mono Variable",monospace; text-overflow: ellipsis; white-space: nowrap; }
+.repository-history-popover > header .header-icon { flex: 0 0 auto; width: 28px; height: 28px; }
+.repository-history-list { min-width: 0; min-height: 0; flex: 1 1 auto; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 7px; }
+.repository-history-item { width: 100%; min-width: 0; display: grid; grid-template-columns: 18px minmax(0,1fr) 14px; align-items: start; gap: 8px; padding: 10px 8px; border: 0; border-radius: 8px; text-align: left; color: var(--text); background: transparent; cursor: pointer; }
+.repository-history-item:hover { background: color-mix(in srgb,var(--accent) 8%,transparent); }
+.repository-history-item:disabled { opacity: .58; cursor: wait; }
+.repository-history-item > svg:first-child { width: 16px; height: 16px; margin-top: 2px; color: var(--accent); }
+.repository-history-item > svg:last-child { width: 14px; height: 14px; margin-top: 2px; color: var(--muted); }
+.repository-history-item > span { min-width: 0; display: grid; gap: 4px; }
+.repository-history-item strong { font-size: 13px; }
+.repository-history-item small { min-width: 0; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.repository-history-item code { overflow: hidden; color: var(--accent); font: 11px "JetBrains Mono Variable",monospace; text-overflow: ellipsis; }
+.repository-history-item em { font-style: normal; }
+.repository-history-item b { overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 450; text-overflow: ellipsis; white-space: nowrap; }
+.repository-history-state, .repository-history-error { display: flex; align-items: center; gap: 8px; padding: 22px 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.repository-history-state { justify-content: center; }
+.repository-history-state svg, .repository-history-error svg { width: 16px; flex: 0 0 auto; }
+.repository-history-error { color: #d15454; background: #d1545412; }
 .repository-touch-drag-ghost { position: fixed; z-index: 170; width: 176px; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid color-mix(in srgb,var(--accent) 62%,var(--border)); border-radius: 7px; color: var(--text); background: color-mix(in srgb,var(--panel) 94%,transparent); font-size: max(12px,.86em); box-shadow: 0 10px 26px #090b1238; pointer-events: none; opacity: .94; backdrop-filter: blur(9px); }
 .repository-touch-drag-ghost.invalid { border-color: color-mix(in srgb,#d15454 62%,var(--border)); opacity: .66; }
 .repository-touch-drag-ghost svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--accent); }

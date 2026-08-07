@@ -31,6 +31,13 @@ export interface PushResult {
   message: string
 }
 
+export interface GitHubFileCommit {
+  sha: string
+  message: string
+  author: string
+  date: string
+}
+
 const CONFIG_KEY = 'markmap-plus-plus:github-config'
 const DB_NAME = 'markmap-plus-plus-cache'
 const STORE_NAME = 'markdown-files'
@@ -154,6 +161,24 @@ export async function listRemoteMarkdown(config: GitHubConfig) {
   return { head, files }
 }
 
+export async function listFileCommits(config: GitHubConfig, path: string) {
+  const result = await githubRequest<Array<{
+    sha: string
+    commit: {
+      message: string
+      author?: { name?: string; date?: string } | null
+      committer?: { name?: string; date?: string } | null
+    }
+    author?: { login?: string } | null
+  }>>(config, `${repoPath(config)}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(config.branch)}&per_page=50`)
+  return result.map((item) => ({
+    sha: item.sha,
+    message: item.commit.message,
+    author: item.author?.login || item.commit.author?.name || item.commit.committer?.name || '未知作者',
+    date: item.commit.author?.date || item.commit.committer?.date || '',
+  })) satisfies GitHubFileCommit[]
+}
+
 function decodeBase64(value: string) {
   const binary = atob(value.replace(/\s/g, ''))
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
@@ -177,6 +202,12 @@ export async function downloadMarkdown(config: GitHubConfig, remote: RemoteMarkd
     status: 'clean',
     updatedAt: Date.now(),
   }
+}
+
+export async function downloadMarkdownAtCommit(config: GitHubConfig, path: string, commitSha: string) {
+  const result = await githubRequest<{ content: string; encoding: string }>(config, `${repoPath(config)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(commitSha)}`)
+  if (result.encoding !== 'base64') throw new Error('该历史版本暂不支持直接打开')
+  return decodeBase64(result.content)
 }
 
 export function generateCommitMessage(files: CachedMarkdownFile[]) {
