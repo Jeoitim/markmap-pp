@@ -70,6 +70,6 @@ export function truncateAtPath(messages: AgentMessage[], path: number[]): AgentM
 
 export function conversationMarkdown(conversation: AgentConversation) {
   const time = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(conversation.createdAt)
-  const lines = flattenMessages(conversation.messages).map(({ message }) => `## ${message.role === 'user' ? '用户' : 'AI Agent'}\n\n${activeContent(message)}`)
+  const lines = flattenMessages(conversation.messages).map(({ message }) => `## ${message.role === 'user' ? '用户' : 'Agent'}\n\n${activeContent(message)}`)
   return `# ${conversation.title}\n\n创建于：${time}\n\n${lines.join('\n\n')}`
 }
