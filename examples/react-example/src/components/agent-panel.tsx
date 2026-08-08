@@ -243,7 +243,7 @@ function ConversationMessage({ message, path, editing, editText, files, busy, on
   const reasoningSummary = version?.reasoningSummary || message.reasoningSummary
   const reasoningDurationSeconds = version?.reasoningDurationSeconds ?? message.reasoningDurationSeconds
   const copy = async () => { try { await navigator.clipboard.writeText(content); setCopied(true); window.setTimeout(() => setCopied(false), 1600) } catch { setCopied(false) } }
-  return <div className={`agent-message ${message.role}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>{message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />已思考（用时 {reasoningDurationSeconds}s）</summary>{reasoningSummary && <span>{reasoningSummary}</span>}</details>}{message.role === 'user' && editing ? <div className="agent-question-editor"><textarea value={editText} onChange={(event) => onEditText(event.target.value)} /><div className="agent-question-actions"><button type="button" title="取消修改" aria-label="取消修改" onClick={onCancelEdit}><AgentGlyph name="close" /></button><button type="button" title="重新提问" aria-label="重新提问" onClick={() => onSubmitEdit(path)} disabled={!editText.trim()}><AgentGlyph name="send" /></button></div></div> : <AgentMarkdown>{content}</AgentMarkdown>}{message.role === 'assistant' && (message.proposals?.length || message.appliedFiles?.length || message.commitRequested || message.commitDone) && <div className="agent-bubble-reviews">{message.proposals?.map((proposal) => {
+  return <div className={`agent-message ${message.role}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>{message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />已思考（用时 {reasoningDurationSeconds}s）</summary>{reasoningSummary && <span>{reasoningSummary}</span>}</details>}{message.role === 'assistant' && Boolean(message.operations?.length) && <details className="agent-reasoning"><summary><AgentGlyph name="code" />已完成 {message.operations!.length} 项仓库操作</summary><span>{message.operations!.map((operation) => operation.summary).join('\n')}</span></details>}{message.role === 'user' && editing ? <div className="agent-question-editor"><textarea value={editText} onChange={(event) => onEditText(event.target.value)} /><div className="agent-question-actions"><button type="button" title="取消修改" aria-label="取消修改" onClick={onCancelEdit}><AgentGlyph name="close" /></button><button type="button" title="重新提问" aria-label="重新提问" onClick={() => onSubmitEdit(path)} disabled={!editText.trim()}><AgentGlyph name="send" /></button></div></div> : <AgentMarkdown>{content}</AgentMarkdown>}{message.role === 'assistant' && (message.proposals?.length || message.appliedFiles?.length || message.commitRequested || message.commitDone) && <div className="agent-bubble-reviews">{message.proposals?.map((proposal) => {
     const file = files.find((item) => item.path === proposal.path)
     const applied = message.appliedFiles?.some((item) => item.path === proposal.path) || false
     return <ProposalDiff key={proposal.id} proposal={proposal} file={file} applied={applied} onAccept={() => onAcceptProposal(path, proposal.id)} onReject={() => onRejectProposal(path, proposal.id)} />
@@ -258,6 +258,7 @@ interface AgentPanelProps {
   onCommit: () => Promise<void>
   getGitContext: (paths: string[]) => Promise<string>
   remoteFileCount: number
+  remotePaths: string[]
   onLoadAllFiles: () => Promise<void>
   loadingFiles: boolean
   fontSize: number
@@ -317,7 +318,7 @@ function ProposalDiff({ proposal, file, applied, onAccept, onReject }: { proposa
   </article>
 }
 
-export default function AgentPanel({ files, activePath, onApplyChange, onCreateFile, onCommit, getGitContext, remoteFileCount, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
+export default function AgentPanel({ files, activePath, onApplyChange, onCreateFile, onCommit, getGitContext, remoteFileCount, remotePaths, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
   const [mode, setMode] = useState<AgentMode>('chat')
   const [config, setConfig] = useState<AgentProviderConfig>(defaultAgentProviderConfig)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -524,7 +525,16 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     const withAnswer = (messages: AgentMessage[], answer: AgentMessage, reply: string, reasoningSummary: string | undefined, duration: number) => replacingAnswerPath
       ? updateAtPath(messages, replacingAnswerPath, (message) => {
           const versions = [...(message.answerVersions || [{ content: message.content, reasoningSummary: message.reasoningSummary, reasoningDurationSeconds: message.reasoningDurationSeconds }]), { content: reply, reasoningSummary, reasoningDurationSeconds: duration }]
-          return { ...message, answerVersions: versions, activeAnswerVersion: versions.length - 1 }
+          return {
+            ...message,
+            answerVersions: versions,
+            activeAnswerVersion: versions.length - 1,
+            operations: answer.operations,
+            proposals: answer.proposals,
+            commitRequested: answer.commitRequested,
+            appliedFiles: [...(message.appliedFiles || []), ...(answer.appliedFiles || [])],
+            commitDone: message.commitDone || answer.commitDone,
+          }
         })
       : edited
         ? updateAtPath(messages, questionPath!, (question) => {
@@ -533,12 +543,19 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
           })
         : [...messages, answer]
     try {
-      const sources = selectedFiles.map((file) => ({ path: file.path, content: file.content }))
-      const gitContext = await getGitContext(sources.map((file) => file.path))
+      const sources = selectedFiles.map((file) => ({ path: file.path, content: file.content, status: file.status }))
       // 把本对话已批准应用过的修改（含行级 diff）带给模型，让它知道自己改了什么。
       const appliedChanges: AgentAppliedChange[] = flattenMessages(nextMessages).flatMap((entry) => (entry.message.appliedFiles || []).flatMap((file) => file.diff ? [{ path: file.path, action: file.action, diff: file.diff }] : []))
-      const result = await askAgent(config, mode, requestMessages, sources, gitContext, {
+      const operationMemory = flattenMessages(nextMessages).flatMap((entry) => [
+        ...(entry.message.operations || []),
+        ...(entry.message.commitDone ? [{ tool: 'git_commit', summary: '已完成 Git 提交并推送', at: Date.now() }] : []),
+      ])
+      const result = await askAgent(config, mode, requestMessages, sources, '', {
         appliedChanges,
+        operationMemory,
+        activePath,
+        repositoryPaths: [...new Set([...remotePaths, ...files.map((file) => file.path)])],
+        getGitContext,
         signal: abortRef.current?.signal,
         onDelta: (delta) => {
           // 关闭思考时不累积推理内容；推理模型仍可能返回 reasoning，但界面不再显示。
@@ -554,7 +571,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       const reasoningDurationSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
       // 关闭思考时落盘也不带思考字段，历史里不再出现"已思考"气泡。
       const keepReasoning = config.reasoningEnabled
-      const answer: AgentMessage = { role: 'assistant', content: result.reply, ...(keepReasoning ? { reasoningSummary: result.reasoningSummary, reasoningDurationSeconds } : {}), ...(mode === 'edit' && config.permissionMode !== 'auto' && result.proposals.length ? { proposals: result.proposals } : {}), ...(mode === 'edit' && config.permissionMode !== 'auto' && result.commitRequested ? { commitRequested: true } : {}), ...(mode === 'edit' && config.permissionMode === 'auto' && result.proposals.length ? { appliedFiles: result.proposals.map((proposal) => { const file = sources.find((source) => source.path === proposal.path); return { path: proposal.path, action: proposal.action, diff: file ? fileDiff(file.content, proposal.content) : { start: 0, removed: [], added: [] } } }) } : {}) }
+      const answer: AgentMessage = { role: 'assistant', content: result.reply, operations: result.operations, ...(keepReasoning ? { reasoningSummary: result.reasoningSummary, reasoningDurationSeconds } : {}), ...(mode === 'edit' && config.permissionMode !== 'auto' && result.proposals.length ? { proposals: result.proposals } : {}), ...(mode === 'edit' && config.permissionMode !== 'auto' && result.commitRequested ? { commitRequested: true } : {}), ...(mode === 'edit' && config.permissionMode === 'auto' && result.proposals.length ? { appliedFiles: result.proposals.map((proposal) => { const file = sources.find((source) => source.path === proposal.path); return { path: proposal.path, action: proposal.action, diff: file ? fileDiff(file.content, proposal.content) : { start: 0, removed: [], added: [] } } }) } : {}) }
       const finalMessages = withAnswer(nextMessages, answer, result.reply, keepReasoning ? result.reasoningSummary : undefined, reasoningDurationSeconds)
       saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: finalMessages, updatedAt: Date.now() })
       if (result.proposals.length) {
@@ -563,7 +580,18 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
           setNotice(`已按自动执行许可暂存 ${result.proposals.length} 个文件修改。`)
         } else setNotice(`已生成 ${result.proposals.length} 个待审核文件修改，请在回答气泡里确认。`)
       }
-      if (result.commitRequested && config.permissionMode === 'auto') { setBusy('commit'); await onCommit(); setNotice('已按自动执行许可提交 Git 修改。') }
+      if (result.commitRequested && config.permissionMode === 'auto') {
+        // 让 React 完成上面的文件状态更新；父级提交函数通过实时 ref 读取这一帧的新内容。
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+        setBusy('commit')
+        await onCommit()
+        const answerPath = replacingAnswerPath || flattenMessages(finalMessages).at(-1)?.path
+        if (answerPath) {
+          const committedMessages = updateAtPath(finalMessages, answerPath, (message) => ({ ...message, commitDone: true }))
+          saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: committedMessages, updatedAt: Date.now() })
+        }
+        setNotice('已按自动执行许可提交 Git 修改。')
+      }
     } catch (reason) {
       if (reason instanceof Error && reason.name === 'AbortError') {
         // 手动停止：等缓冲里的部分回答吐完，把它落盘保留下来；不做版本化，简单追加。

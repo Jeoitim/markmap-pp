@@ -37,7 +37,7 @@ export const providerDefinitions: ProviderDefinition[] = [
   { id: 'anthropic', label: 'Anthropic', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514' },
   { id: 'gemini', label: 'Google Gemini', protocol: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', model: 'gemini-2.5-flash' },
   { id: 'azure', label: 'Azure OpenAI', protocol: 'openai-compatible', baseUrl: '', model: '' },
-  { id: 'deepseek', label: 'DeepSeek', protocol: 'openai-compatible', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { id: 'deepseek', label: 'DeepSeek', protocol: 'openai-compatible', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
   { id: 'groq', label: 'Groq', protocol: 'openai-compatible', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
   { id: 'mistral', label: 'Mistral AI', protocol: 'openai-compatible', baseUrl: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
   { id: 'moonshot', label: 'Moonshot / Kimi', protocol: 'openai-compatible', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
@@ -52,7 +52,7 @@ export const providerDefinitions: ProviderDefinition[] = [
 const STORAGE_KEY = 'agent-provider-config'
 
 export const defaultAgentProviderConfig: AgentProviderConfig = {
-  provider: 'deepseek', apiKey: '', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', availableModels: [], providerProfiles: {}, maxTokens: 8000, temperature: 0.3, permissionMode: 'confirm', reasoningEnabled: false, reasoningEffort: 'medium',
+  provider: 'deepseek', apiKey: '', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash', availableModels: [], providerProfiles: {}, maxTokens: 16000, temperature: 0.3, permissionMode: 'confirm', reasoningEnabled: false, reasoningEffort: 'medium',
 }
 
 export function providerDefinition(id: AgentProviderId) {
