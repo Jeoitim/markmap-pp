@@ -23,6 +23,14 @@ export interface AgentMessage {
   activeAnswerVersion?: number
   questionVersions?: AgentQuestionVersion[]
   activeQuestionVersion?: number
+  /** Edit 模式：待用户审核的文件修改方案，内嵌在回答气泡里。 */
+  proposals?: AgentProposal[]
+  /** Edit 模式：该回答附带 Git 提交请求，等待确认。 */
+  commitRequested?: boolean
+  /** 已被用户批准应用过的文件修改记录，气泡内显示"✎ 已修改 xxx"小字。 */
+  appliedFiles?: { path: string; action: 'update' | 'create' }[]
+  /** Git 提交请求已确认执行。 */
+  commitDone?: boolean
 }
 
 export interface AgentSourceFile {
