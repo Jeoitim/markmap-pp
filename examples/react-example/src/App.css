@@ -658,3 +658,61 @@ svg { flex: 0 0 auto; }
 
 .agent-message-actions { display: flex; align-items: center; gap: 4px; min-height: 25px; margin-top: 4px; }.agent-message.user .agent-message-actions { justify-content: flex-end; }.agent-message-actions .agent-icon-button, .agent-answer-switch button { display: inline-flex; align-items: center; justify-content: center; width: 25px; height: 24px; padding: 0; border: 0; border-radius: 5px; color: var(--muted); background: transparent; cursor: pointer; }.agent-message-actions .agent-icon-button:hover, .agent-answer-switch button:hover:not(:disabled) { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }.agent-message-actions svg { display: block; width: 14px; height: 14px; }.agent-answer-switch { display: inline-flex; align-items: center; gap: 1px; margin-left: 2px; padding-left: 3px; border-left: 1px solid var(--border); }.agent-answer-switch small { min-width: 32px; color: var(--muted); text-align: center; font-size: 12px; font-weight: 600; }.agent-answer-switch button:disabled { opacity: .35; cursor: default; }.agent-question-editor { position: relative; min-width: min(390px, 72vw); overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); transition: border-color .15s, box-shadow .15s; }.agent-question-editor:focus-within { border-color: #a99af3; box-shadow: 0 0 0 3px rgb(169 154 243 / .15); }.agent-question-editor textarea { display: block; width: 100%; min-height: 70px; padding: 9px 10px 40px; border: 0; outline: 0; resize: vertical; color: var(--text); background: transparent; font-family: var(--agent-font-family); font-size: var(--agent-font-size); font-weight: var(--agent-font-weight); line-height: 1.55; }.agent-question-actions { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 4px; }.agent-question-actions button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 50%; color: var(--muted); background: var(--panel-soft); cursor: pointer; }.agent-question-actions button svg { width: 13px; height: 13px; }.agent-question-actions button:hover:not(:disabled) { color: var(--accent); border-color: #bdb3ef; background: #f3f0ff; }.agent-question-actions button:last-child { color: #fff; border-color: var(--accent); background: var(--accent); }.agent-question-actions button:last-child:hover:not(:disabled) { color: #fff; border-color: var(--accent-hover); background: var(--accent-hover); }.agent-question-actions button:disabled { opacity: .45; cursor: default; }:root[data-theme='dark'] .agent-question-actions button:hover:not(:disabled):not(:last-child) { border-color: #7666c4; background: #262333; }
 .agent-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.agent-error span { min-width: 0; }.agent-error button { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; height: 26px; padding: 0 8px; border: 1px solid currentColor; border-radius: 6px; color: inherit; background: transparent; font-size: 11px; cursor: pointer; }.agent-error button svg { width: 13px; height: 13px; }
+
+/* Agent 工作区：把当前文件、分支和本地修改数持续呈现给用户。 */
+.agent-context-bar { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 13px; border-bottom: 1px solid var(--border); color: var(--muted); background: color-mix(in srgb, var(--panel-soft) 78%, transparent); font-size: 10px; }
+.agent-context-bar > span { min-width: 0; display: flex; align-items: center; gap: 5px; }
+.agent-context-bar strong { overflow: hidden; color: var(--text); font: 10px "JetBrains Mono Variable", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.agent-context-bar small { flex: 0 0 auto; font-size: 10px; white-space: nowrap; }
+.agent-context-bar svg { flex: 0 0 auto; width: 13px; height: 13px; color: var(--accent); }
+.agent-starters { align-self: center; width: min(100%, 540px); display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; padding: 2px 4px 8px; }
+.agent-starters button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); background: var(--panel); font-size: 10px; cursor: pointer; }
+.agent-starters button:hover { color: var(--accent); border-color: #bdb3ef; background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+
+/* Diff 保留完整行号与多段修改，接受/拒绝后仍作为对话中的操作记录。 */
+.agent-proposal.pending { border-color: color-mix(in srgb, var(--accent) 36%, var(--border)); }
+.agent-proposal.failed { border-color: color-mix(in srgb, #c75050 58%, var(--border)); }
+.agent-proposal.rejected { opacity: .78; }
+.agent-proposal-status { flex: 0 0 auto; margin-left: 8px; padding: 3px 7px; border-radius: 999px; color: var(--muted); background: var(--panel-soft); font-size: calc(var(--agent-font-size) * .68); white-space: nowrap; }
+.agent-proposal-status.pending { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.agent-proposal-status.applying { color: #9c6b1e; background: #d89b3218; }
+.agent-proposal-status.applied { color: #347a54; background: #39865c16; }
+.agent-proposal-status.failed { color: #b74646; background: #c7505014; }
+.agent-diff-toggle { width: 100%; height: 31px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border: 0; border-bottom: 1px solid var(--border); color: var(--muted); background: var(--panel-soft); font-size: calc(var(--agent-font-size) * .72); cursor: pointer; }
+.agent-diff-toggle b { color: #28794f; }.agent-diff-toggle i { color: #b94d4d; font-style: normal; }
+.agent-diff { max-height: min(42dvh, 420px); overflow: auto; padding: 6px 0; background: var(--editor-bg); }
+.agent-diff code { min-width: max-content; display: grid; grid-template-columns: 38px 38px 18px minmax(260px,1fr); align-items: stretch; min-height: 20px; padding: 0; color: var(--muted); background: transparent; font: var(--agent-font-weight) var(--agent-font-size)/1.55 var(--agent-font-family); white-space: pre; }
+.agent-diff code > span { padding: 2px 7px 2px 2px; color: color-mix(in srgb, var(--muted) 72%, transparent); border-right: 1px solid color-mix(in srgb, var(--border) 65%, transparent); text-align: right; user-select: none; }
+.agent-diff code > b { padding: 2px 4px; text-align: center; user-select: none; }
+.agent-diff code > em { padding: 2px 10px 2px 3px; color: var(--text); font-style: normal; }
+.agent-diff code.removed { background: #e85f5f16; }.agent-diff code.removed > b, .agent-diff code.removed > em { color: #ad4040; }
+.agent-diff code.added { background: #4aaa7317; }.agent-diff code.added > b, .agent-diff code.added > em { color: #28794f; }
+.agent-diff-gap, .agent-diff-context { display: block; min-width: max-content; padding: 5px 12px 5px 94px; color: var(--muted); background: color-mix(in srgb, var(--panel-soft) 75%, transparent); font-size: calc(var(--agent-font-size) * .72); font-style: italic; }
+.agent-proposal-error { margin: 0 !important; padding: 7px 10px !important; border: 0 !important; border-radius: 0 !important; color: #b74646 !important; background: #c7505010 !important; font-size: calc(var(--agent-font-size) * .75) !important; }
+.agent-proposal-muted { margin-right: auto; color: var(--muted); font-size: calc(var(--agent-font-size) * .72); }
+.agent-operation-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid color-mix(in srgb, currentColor 28%, transparent); border-top-color: currentColor; border-radius: 50%; animation: repository-icon-spin .8s linear infinite; }
+
+.agent-live-operations { display: grid; gap: 5px; margin-top: 7px; padding: 8px 9px; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
+.agent-live-operations > span { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: calc(var(--agent-font-size) * .78); line-height: 1.4; }
+.agent-live-operations > span > i { display: grid; place-items: center; flex: 0 0 15px; width: 15px; height: 15px; color: #39865c; font-style: normal; }
+.agent-live-operations > span.running > i { color: var(--accent); }.agent-live-operations > span.failed > i { color: #c75050; }
+
+/* 设置面板使用可用高度，避免中小屏只显示一半表单。 */
+.agent-settings { max-height: calc(100% - 72px); }
+
+@media (max-width: 520px) {
+  .agent-settings { left: 8px; right: 8px; max-height: calc(100% - 70px); padding: 14px; }
+  .agent-field-grid { grid-template-columns: minmax(0,1fr); }
+  .agent-model-input { align-items: stretch; flex-direction: column; }
+  .agent-model-input button { width: 100%; }
+  .agent-context-bar { align-items: start; flex-direction: column; gap: 3px; padding: 7px 10px; }
+  .agent-context-bar small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .agent-conversation { padding: 11px 9px; }
+  .agent-message { max-width: 100%; }
+  .agent-starters { align-items: stretch; flex-direction: column; }
+  .agent-starters button { border-radius: 8px; text-align: left; }
+  .agent-proposal > header { gap: 6px; }
+  .agent-proposal-status { margin-left: 0; }
+  .agent-diff { max-height: min(36dvh, 300px); }
+  .agent-composer textarea { max-height: 74px; }
+}

@@ -2,11 +2,15 @@ import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessage, type AgentProposal } from './agent-client'
+import { buildAgentDiff } from './agent-diff'
 import { activeContent, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation } from './agent-history'
 import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
 import type { CachedMarkdownFile } from './github-sync'
 
 type AgentMode = 'chat' | 'edit'
+
+export type AgentMutationResult = { ok: true } | { ok: false; error: string }
+export type AgentCommitResult = { ok: true; commitSha: string; message: string } | { ok: false; error: string }
 
 function profileOf(config: AgentProviderConfig): AgentProviderProfile {
   return { apiKey: config.apiKey, baseUrl: config.baseUrl, model: config.model, availableModels: config.availableModels }
@@ -236,29 +240,62 @@ function AgentMarkdown({ children, streaming = false }: { children: string; stre
   return <div className={`agent-markdown${streaming ? ' agent-streaming-markdown' : ''}`}>{content}{streaming && <b aria-hidden="true" />}</div>
 }
 
-function ConversationMessage({ message, path, editing, editText, files, busy, onEdit, onEditText, onCancelEdit, onSubmitEdit, onRegenerate, onSelectVersion, onSelectQuestionVersion, onAcceptProposal, onRejectProposal, onCommitFromMessage, onCancelCommitFromMessage }: { message: AgentMessage; path: number[]; editing: boolean; editText: string; files: CachedMarkdownFile[]; busy: string | null; onEdit: (path: number[]) => void; onEditText: (value: string) => void; onCancelEdit: () => void; onSubmitEdit: (path: number[]) => void; onRegenerate: (path: number[]) => void; onSelectVersion: (path: number[], version: number) => void; onSelectQuestionVersion: (path: number[], delta: number) => void; onAcceptProposal: (path: number[], proposalId: string) => void; onRejectProposal: (path: number[], proposalId: string) => void; onCommitFromMessage: (path: number[]) => void; onCancelCommitFromMessage: (path: number[]) => void }) {
+interface ConversationMessageProps {
+  message: AgentMessage
+  path: number[]
+  editing: boolean
+  editText: string
+  files: CachedMarkdownFile[]
+  busy: string | null
+  repositoryBranch?: string
+  changedFileCount: number
+  onEdit: (path: number[]) => void
+  onEditText: (value: string) => void
+  onCancelEdit: () => void
+  onSubmitEdit: (path: number[]) => void
+  onRegenerate: (path: number[]) => void
+  onSelectVersion: (path: number[], version: number) => void
+  onSelectQuestionVersion: (path: number[], delta: number) => void
+  onAcceptProposal: (path: number[], proposalId: string) => void
+  onRejectProposal: (path: number[], proposalId: string) => void
+  onOpenFile: (path: string) => void
+  onCommitFromMessage: (path: number[]) => void
+  onCancelCommitFromMessage: (path: number[]) => void
+}
+
+function ConversationMessage({ message, path, editing, editText, files, busy, repositoryBranch, changedFileCount, onEdit, onEditText, onCancelEdit, onSubmitEdit, onRegenerate, onSelectVersion, onSelectQuestionVersion, onAcceptProposal, onRejectProposal, onOpenFile, onCommitFromMessage, onCancelCommitFromMessage }: ConversationMessageProps) {
   const [copied, setCopied] = useState(false)
   const version = message.answerVersions?.[message.activeAnswerVersion || 0]
   const content = message.role === 'user' ? activeContent(message) : version?.content || message.content
   const reasoningSummary = version?.reasoningSummary || message.reasoningSummary
   const reasoningDurationSeconds = version?.reasoningDurationSeconds ?? message.reasoningDurationSeconds
   const copy = async () => { try { await navigator.clipboard.writeText(content); setCopied(true); window.setTimeout(() => setCopied(false), 1600) } catch { setCopied(false) } }
-  return <div className={`agent-message ${message.role}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>{message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />已思考（用时 {reasoningDurationSeconds}s）</summary>{reasoningSummary && <span>{reasoningSummary}</span>}</details>}{message.role === 'assistant' && Boolean(message.operations?.length) && <details className="agent-reasoning"><summary><AgentGlyph name="code" />已完成 {message.operations!.length} 项仓库操作</summary><span>{message.operations!.map((operation) => operation.summary).join('\n')}</span></details>}{message.role === 'user' && editing ? <div className="agent-question-editor"><textarea value={editText} onChange={(event) => onEditText(event.target.value)} /><div className="agent-question-actions"><button type="button" title="取消修改" aria-label="取消修改" onClick={onCancelEdit}><AgentGlyph name="close" /></button><button type="button" title="重新提问" aria-label="重新提问" onClick={() => onSubmitEdit(path)} disabled={!editText.trim()}><AgentGlyph name="send" /></button></div></div> : <AgentMarkdown>{content}</AgentMarkdown>}{message.role === 'assistant' && (message.proposals?.length || message.appliedFiles?.length || message.commitRequested || message.commitDone) && <div className="agent-bubble-reviews">{message.proposals?.map((proposal) => {
-    const file = files.find((item) => item.path === proposal.path)
-    const applied = message.appliedFiles?.some((item) => item.path === proposal.path) || false
-    return <ProposalDiff key={proposal.id} proposal={proposal} file={file} applied={applied} onAccept={() => onAcceptProposal(path, proposal.id)} onReject={() => onRejectProposal(path, proposal.id)} />
-  })}{message.appliedFiles?.map((item) => <p className="agent-applied" key={item.path}><AgentGlyph name="edit" />已{item.action === 'create' ? '新建' : '修改'} {item.path}</p>)}{message.commitRequested && !message.commitDone && <article className="agent-proposal agent-git-proposal"><header><div><strong><AgentGlyph name="git" />提交 Git 仓库</strong><small>AI 请求将当前已暂存的修改提交并推送到 GitHub。</small></div></header><footer><button type="button" className="agent-apply-button" disabled={busy !== null} onClick={() => onCommitFromMessage(path)}><AgentGlyph name="check" />确认提交</button><button type="button" disabled={busy !== null} onClick={() => onCancelCommitFromMessage(path)}>取消</button></footer></article>}{message.commitDone && <p className="agent-applied"><AgentGlyph name="git" />已提交 Git 修改</p>}</div>}<footer className="agent-message-actions">{message.role === 'user' ? <><button type="button" className="agent-icon-button" onClick={() => onEdit(path)} title="修改提问" aria-label="修改提问"><AgentGlyph name="edit" /></button>{(message.questionVersions?.length || 0) > 1 && <span className="agent-answer-switch"><button type="button" onClick={() => onSelectQuestionVersion(path, -1)} disabled={(message.activeQuestionVersion || 0) === 0} aria-label="上一版问题"><AgentGlyph name="arrow-left" /></button><small>{(message.activeQuestionVersion || 0) + 1}/{message.questionVersions!.length}</small><button type="button" onClick={() => onSelectQuestionVersion(path, 1)} disabled={(message.activeQuestionVersion || 0) === message.questionVersions!.length - 1} aria-label="下一版问题"><AgentGlyph name="arrow-right" /></button></span>}</> : <><button type="button" className="agent-icon-button" onClick={() => void copy()} title={copied ? '已复制' : '复制回答'} aria-label={copied ? '已复制' : '复制回答'}><AgentGlyph name="copy" /></button><button type="button" className="agent-icon-button" onClick={() => onRegenerate(path)} title="重新生成" aria-label="重新生成"><AgentGlyph name="refresh" /></button>{(message.answerVersions?.length || 0) > 1 && <span className="agent-answer-switch"><button type="button" onClick={() => onSelectVersion(path, Math.max(0, (message.activeAnswerVersion || 0) - 1))} disabled={(message.activeAnswerVersion || 0) === 0} aria-label="上一版回答"><AgentGlyph name="arrow-left" /></button><small>{(message.activeAnswerVersion || 0) + 1}/{message.answerVersions!.length}</small><button type="button" onClick={() => onSelectVersion(path, Math.min(message.answerVersions!.length - 1, (message.activeAnswerVersion || 0) + 1))} disabled={(message.activeAnswerVersion || 0) === message.answerVersions!.length - 1} aria-label="下一版回答"><AgentGlyph name="arrow-right" /></button></span>}</>}</footer></div></div>
+  const recordedProposalPaths = new Set(message.proposals?.map((proposal) => proposal.path))
+  return <div className={`agent-message ${message.role}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>
+    {message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />已思考（用时 {reasoningDurationSeconds}s）</summary>{reasoningSummary && <span>{reasoningSummary}</span>}</details>}
+    {message.role === 'assistant' && Boolean(message.operations?.length) && <details className="agent-reasoning"><summary><AgentGlyph name="code" />已完成 {message.operations!.length} 项仓库操作</summary><span>{message.operations!.map((operation) => `${operation.status === 'failed' ? '×' : '✓'} ${operation.summary}`).join('\n')}</span></details>}
+    {message.role === 'user' && editing ? <div className="agent-question-editor"><textarea value={editText} onChange={(event) => onEditText(event.target.value)} /><div className="agent-question-actions"><button type="button" title="取消修改" aria-label="取消修改" onClick={onCancelEdit}><AgentGlyph name="close" /></button><button type="button" title="重新提问" aria-label="重新提问" onClick={() => onSubmitEdit(path)} disabled={!editText.trim()}><AgentGlyph name="send" /></button></div></div> : <AgentMarkdown>{content}</AgentMarkdown>}
+    {message.role === 'assistant' && (message.proposals?.length || message.appliedFiles?.length || message.commitRequested || message.commitDone || message.commitError) && <div className="agent-bubble-reviews">
+      {message.proposals?.map((proposal) => <ProposalDiff key={proposal.id} proposal={proposal.status ? proposal : { ...proposal, status: message.appliedFiles?.some((item) => item.path === proposal.path) ? 'applied' : 'pending' }} file={files.find((item) => item.path === proposal.path)} onAccept={() => onAcceptProposal(path, proposal.id)} onReject={() => onRejectProposal(path, proposal.id)} onOpen={() => onOpenFile(proposal.path)} />)}
+      {message.appliedFiles?.filter((item) => !recordedProposalPaths.has(item.path)).map((item) => <p className="agent-applied" key={item.path}><AgentGlyph name="edit" />已{item.action === 'create' ? '新建' : '修改'} {item.path}</p>)}
+      {message.commitRequested && !message.commitDone && <article className="agent-proposal agent-git-proposal"><header><div><strong><AgentGlyph name="git" />提交 Git 仓库</strong><small>{repositoryBranch || '当前分支'} · {changedFileCount} 个本地修改待提交</small></div></header>{message.commitError && <p className="agent-proposal-error">{message.commitError}</p>}<footer><button type="button" className="agent-apply-button" disabled={busy !== null || changedFileCount === 0} onClick={() => onCommitFromMessage(path)}><AgentGlyph name="check" />确认提交并推送</button><button type="button" disabled={busy !== null} onClick={() => onCancelCommitFromMessage(path)}>稍后处理</button></footer></article>}
+      {message.commitDone && <p className="agent-applied"><AgentGlyph name="git" />已提交 {message.commitSha ? <code>{message.commitSha.slice(0, 7)}</code> : 'Git 修改'}{message.commitMessage ? ` · ${message.commitMessage}` : ''}</p>}
+    </div>}
+    <footer className="agent-message-actions">{message.role === 'user' ? <><button type="button" className="agent-icon-button" onClick={() => onEdit(path)} title="修改提问" aria-label="修改提问"><AgentGlyph name="edit" /></button>{(message.questionVersions?.length || 0) > 1 && <span className="agent-answer-switch"><button type="button" onClick={() => onSelectQuestionVersion(path, -1)} disabled={(message.activeQuestionVersion || 0) === 0} aria-label="上一版问题"><AgentGlyph name="arrow-left" /></button><small>{(message.activeQuestionVersion || 0) + 1}/{message.questionVersions!.length}</small><button type="button" onClick={() => onSelectQuestionVersion(path, 1)} disabled={(message.activeQuestionVersion || 0) === message.questionVersions!.length - 1} aria-label="下一版问题"><AgentGlyph name="arrow-right" /></button></span>}</> : <><button type="button" className="agent-icon-button" onClick={() => void copy()} title={copied ? '已复制' : '复制回答'} aria-label={copied ? '已复制' : '复制回答'}><AgentGlyph name="copy" /></button><button type="button" className="agent-icon-button" onClick={() => onRegenerate(path)} title="重新生成" aria-label="重新生成"><AgentGlyph name="refresh" /></button>{(message.answerVersions?.length || 0) > 1 && <span className="agent-answer-switch"><button type="button" onClick={() => onSelectVersion(path, Math.max(0, (message.activeAnswerVersion || 0) - 1))} disabled={(message.activeAnswerVersion || 0) === 0} aria-label="上一版回答"><AgentGlyph name="arrow-left" /></button><small>{(message.activeAnswerVersion || 0) + 1}/{message.answerVersions!.length}</small><button type="button" onClick={() => onSelectVersion(path, Math.min(message.answerVersions!.length - 1, (message.activeAnswerVersion || 0) + 1))} disabled={(message.activeAnswerVersion || 0) === message.answerVersions!.length - 1} aria-label="下一版回答"><AgentGlyph name="arrow-right" /></button></span>}</>}</footer>
+  </div></div>
 }
 
 interface AgentPanelProps {
   files: CachedMarkdownFile[]
   activePath: string | null
-  onApplyChange: (path: string, content: string) => void
-  onCreateFile: (path: string, content: string) => void
-  onCommit: () => Promise<void>
+  onApplyChange: (path: string, content: string) => Promise<AgentMutationResult>
+  onCreateFile: (path: string, content: string) => Promise<AgentMutationResult>
+  onOpenFile: (path: string) => void
+  onCommit: () => Promise<AgentCommitResult>
   getGitContext: (paths: string[]) => Promise<string>
   remoteFileCount: number
   remotePaths: string[]
+  repositoryBranch?: string
   onLoadAllFiles: () => Promise<void>
   loadingFiles: boolean
   fontSize: number
@@ -294,8 +331,8 @@ function AgentGlyph({ name }: { name: 'bot' | 'send' | 'stop' | 'settings' | 're
 }
 
 function fileDiff(before: string, after: string) {
-  const oldLines = before.split('\n')
-  const newLines = after.split('\n')
+  const oldLines = before ? before.split('\n') : []
+  const newLines = after ? after.split('\n') : []
   let start = 0
   while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) start += 1
   let oldEnd = oldLines.length - 1
@@ -304,21 +341,31 @@ function fileDiff(before: string, after: string) {
   return { start, removed: oldLines.slice(start, oldEnd + 1), added: newLines.slice(start, newEnd + 1) }
 }
 
-function ProposalDiff({ proposal, file, applied, onAccept, onReject }: { proposal: AgentProposal; file?: CachedMarkdownFile; applied: boolean; onAccept: () => void; onReject: () => void }) {
-  const diff = fileDiff(file?.content || '', proposal.content)
-  return <article className={`agent-proposal${applied ? ' applied' : ''}`}>
-    <header><div><strong>{proposal.path}</strong><small>{proposal.action === 'create' ? `新建笔记 · ${proposal.reason}` : proposal.reason}</small></div><button type="button" onClick={onReject} title="丢弃修改" disabled={applied}><AgentGlyph name="close" /></button></header>
-    <div className="agent-diff" aria-label={`${proposal.path} 的修改预览`}>
-      <span className="agent-diff-context">… 第 {diff.start + 1} 行开始</span>
-      {diff.removed.map((line, index) => <code className="removed" key={`r:${index}`}>− {line || ' '}</code>)}
-      {diff.added.map((line, index) => <code className="added" key={`a:${index}`}>+ {line || ' '}</code>)}
-      {!diff.removed.length && !diff.added.length && <span className="agent-diff-context">内容没有变化</span>}
-    </div>
-    <footer>{applied ? <span className="agent-applied-inline"><AgentGlyph name="check" />已应用</span> : <><button type="button" className="agent-apply-button" onClick={onAccept}><AgentGlyph name="check" />接受修改</button><button type="button" onClick={onReject}>拒绝</button></>}</footer>
+function ProposalDiff({ proposal, file, onAccept, onReject, onOpen }: { proposal: AgentProposal; file?: CachedMarkdownFile; onAccept: () => void; onReject: () => void; onOpen: () => void }) {
+  const status = proposal.status || 'pending'
+  const [expanded, setExpanded] = useState(status === 'pending' || status === 'failed')
+  const diff = useMemo(() => buildAgentDiff(proposal.beforeContent ?? file?.content ?? '', proposal.content), [file?.content, proposal.beforeContent, proposal.content])
+  const labels = { pending: '待审核', applying: '正在应用', applied: '已应用到本地', rejected: '已拒绝', failed: '应用失败' }
+  return <article className={`agent-proposal ${status}`}>
+    <header><div><strong>{proposal.path}</strong><small>{proposal.action === 'create' ? '新建笔记' : '修改笔记'} · {proposal.reason}</small></div><span className={`agent-proposal-status ${status}`}>{labels[status]}</span></header>
+    <button type="button" className="agent-diff-toggle" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}><span>Diff <b>+{diff.added}</b> <i>−{diff.removed}</i></span><span>{expanded ? '收起' : '查看修改'}</span></button>
+    {expanded && <div className="agent-diff" aria-label={`${proposal.path} 的修改预览`}>
+      {diff.rows.map((row, index) => row.type === 'gap'
+        ? <span className="agent-diff-gap" key={`gap:${index}`}>折叠 {row.count} 行未修改内容</span>
+        : <code className={row.type} key={`${row.type}:${row.oldLine || 0}:${row.newLine || 0}:${index}`}><span>{row.oldLine || ''}</span><span>{row.newLine || ''}</span><b>{row.type === 'added' ? '+' : row.type === 'removed' ? '−' : ' '}</b><em>{row.content || ' '}</em></code>)}
+      {!diff.added && !diff.removed && <span className="agent-diff-context">内容没有变化</span>}
+    </div>}
+    {proposal.error && <p className="agent-proposal-error" role="alert">{proposal.error}</p>}
+    <footer>
+      {(status === 'pending' || status === 'failed') && <><button type="button" className="agent-apply-button" onClick={onAccept}><AgentGlyph name="check" />{status === 'failed' ? '重试应用' : '接受修改'}</button><button type="button" onClick={onReject}>拒绝</button></>}
+      {status === 'applying' && <span className="agent-applied-inline"><span className="agent-operation-spinner" />正在写入并校验…</span>}
+      {status === 'applied' && <><span className="agent-applied-inline"><AgentGlyph name="check" />已应用到本地</span><button type="button" onClick={onOpen}>打开文件</button></>}
+      {status === 'rejected' && <span className="agent-proposal-muted">已保留修改记录，可展开重新查看</span>}
+    </footer>
   </article>
 }
 
-export default function AgentPanel({ files, activePath, onApplyChange, onCreateFile, onCommit, getGitContext, remoteFileCount, remotePaths, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
+export default function AgentPanel({ files, activePath, onApplyChange, onCreateFile, onOpenFile, onCommit, getGitContext, remoteFileCount, remotePaths, repositoryBranch, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
   const [mode, setMode] = useState<AgentMode>('chat')
   const [config, setConfig] = useState<AgentProviderConfig>(defaultAgentProviderConfig)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -337,6 +384,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   const [error, setError] = useState('')
   const [streamingReply, setStreamingReply] = useState('')
   const [streamingReasoning, setStreamingReasoning] = useState('')
+  const [liveOperations, setLiveOperations] = useState<NonNullable<AgentMessage['operations']>>([])
   const [editingQuestion, setEditingQuestion] = useState<number | null>(null)
   const [editedQuestion, setEditedQuestion] = useState('')
   const [lastRequest, setLastRequest] = useState<{ text: string; userIndex?: number } | null>(null)
@@ -511,16 +559,16 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       requestMessages = flattenMessages(nextMessages).slice(1, revisionIndex + 1).map((entry) => ({ role: entry.message.role, content: activeContent(entry.message) }))
     } else if (revising) {
       replacingAnswerPath = flat[revisionIndex + 1]?.message.role === 'assistant' ? flat[revisionIndex + 1].path : null
-      requestMessages = [...flat.slice(1, revisionIndex + 1).map((entry) => ({ role: entry.message.role, content: activeContent(entry.message) })), { role: 'user' as const, content: text }]
+      requestMessages = [...flat.slice(1, revisionIndex).map((entry) => ({ role: entry.message.role, content: activeContent(entry.message) })), { role: 'user' as const, content: text }]
     } else {
       nextMessages = [...conversation.messages, { role: 'user' as const, content: text }]
       requestMessages = [...flat.slice(1).map((entry) => ({ role: entry.message.role, content: activeContent(entry.message) })), { role: 'user' as const, content: text }]
     }
-    setLastRequest(revising ? { text, userIndex: revisionIndex } : { text })
+    setLastRequest({ text, userIndex: revising ? revisionIndex : flattenMessages(nextMessages).length - 1 })
     const startedAt = Date.now()
     saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: nextMessages, updatedAt: Date.now() })
     if (!revising) setInput('')
-    setEditingQuestion(null); setBusy('send'); setError(''); setStreamingReply(''); setStreamingReasoning(''); setAnswerStarted(false); setThinkingSeconds(0); setThinkingStartedAt(startedAt); replyBufferRef.current = ''; receivedStreamTextRef.current = false; streamedContentRef.current = ''; abortRef.current = new AbortController()
+    setEditingQuestion(null); setBusy('send'); setError(''); setStreamingReply(''); setStreamingReasoning(''); setLiveOperations([]); setAnswerStarted(false); setThinkingSeconds(0); setThinkingStartedAt(startedAt); replyBufferRef.current = ''; receivedStreamTextRef.current = false; streamedContentRef.current = ''; abortRef.current = new AbortController()
     // 把新的回答挂到正确位置：重新生成覆盖旧回答（加新版本），修改提问追加到问题分支尾部，普通发送直接追加。
     const withAnswer = (messages: AgentMessage[], answer: AgentMessage, reply: string, reasoningSummary: string | undefined, duration: number) => replacingAnswerPath
       ? updateAtPath(messages, replacingAnswerPath, (message) => {
@@ -534,6 +582,9 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
             commitRequested: answer.commitRequested,
             appliedFiles: [...(message.appliedFiles || []), ...(answer.appliedFiles || [])],
             commitDone: message.commitDone || answer.commitDone,
+            commitSha: answer.commitSha || message.commitSha,
+            commitMessage: answer.commitMessage || message.commitMessage,
+            commitError: answer.commitError,
           }
         })
       : edited
@@ -556,6 +607,10 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
         activePath,
         repositoryPaths: [...new Set([...remotePaths, ...files.map((file) => file.path)])],
         getGitContext,
+        onOperation: (operation) => setLiveOperations((current) => {
+          const index = current.findIndex((item) => item.id === operation.id)
+          return index < 0 ? [...current, operation] : current.map((item, itemIndex) => itemIndex === index ? operation : item)
+        }),
         signal: abortRef.current?.signal,
         onDelta: (delta) => {
           // 关闭思考时不累积推理内容；推理模型仍可能返回 reasoning，但界面不再显示。
@@ -571,26 +626,60 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       const reasoningDurationSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
       // 关闭思考时落盘也不带思考字段，历史里不再出现"已思考"气泡。
       const keepReasoning = config.reasoningEnabled
-      const answer: AgentMessage = { role: 'assistant', content: result.reply, operations: result.operations, ...(keepReasoning ? { reasoningSummary: result.reasoningSummary, reasoningDurationSeconds } : {}), ...(mode === 'edit' && config.permissionMode !== 'auto' && result.proposals.length ? { proposals: result.proposals } : {}), ...(mode === 'edit' && config.permissionMode !== 'auto' && result.commitRequested ? { commitRequested: true } : {}), ...(mode === 'edit' && config.permissionMode === 'auto' && result.proposals.length ? { appliedFiles: result.proposals.map((proposal) => { const file = sources.find((source) => source.path === proposal.path); return { path: proposal.path, action: proposal.action, diff: file ? fileDiff(file.content, proposal.content) : { start: 0, removed: [], added: [] } } }) } : {}) }
-      const finalMessages = withAnswer(nextMessages, answer, result.reply, keepReasoning ? result.reasoningSummary : undefined, reasoningDurationSeconds)
-      saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: finalMessages, updatedAt: Date.now() })
+      let resolvedProposals = result.proposals
+      const appliedFiles: NonNullable<AgentMessage['appliedFiles']> = []
+      if (mode === 'edit' && config.permissionMode === 'auto' && result.proposals.length) {
+        resolvedProposals = []
+        for (const proposal of result.proposals) {
+          const applying = { ...proposal, status: 'applying' as const }
+          resolvedProposals.push(applying)
+          const mutation = proposal.action === 'create'
+            ? await onCreateFile(proposal.path, proposal.content)
+            : await onApplyChange(proposal.path, proposal.content)
+          const resolved = mutation.ok
+            ? { ...proposal, status: 'applied' as const, error: undefined, resolvedAt: Date.now() }
+            : { ...proposal, status: 'failed' as const, error: mutation.error, resolvedAt: Date.now() }
+          resolvedProposals = resolvedProposals.map((item) => item.id === proposal.id ? resolved : item)
+          if (mutation.ok) {
+            const source = sources.find((item) => item.path === proposal.path)
+            const before = proposal.beforeContent ?? source?.content ?? ''
+            appliedFiles.push({ path: proposal.path, action: proposal.action, diff: fileDiff(before, proposal.content) })
+          }
+        }
+      }
+      const failedChanges = resolvedProposals.filter((proposal) => proposal.status === 'failed').length
+      const answer: AgentMessage = {
+        role: 'assistant',
+        content: result.reply,
+        operations: result.operations,
+        ...(keepReasoning ? { reasoningSummary: result.reasoningSummary, reasoningDurationSeconds } : {}),
+        ...(mode === 'edit' && resolvedProposals.length ? { proposals: resolvedProposals } : {}),
+        ...(mode === 'edit' && result.commitRequested ? { commitRequested: true } : {}),
+        ...(appliedFiles.length ? { appliedFiles } : {}),
+        ...(failedChanges && result.commitRequested ? { commitError: `有 ${failedChanges} 个文件应用失败，已暂停自动提交。` } : {}),
+      }
+      let finalMessages = withAnswer(nextMessages, answer, result.reply, keepReasoning ? result.reasoningSummary : undefined, reasoningDurationSeconds)
+      const conversationTitle = conversation.title === '新对话' ? text.slice(0, 28) : conversation.title
+      saveConversation({ ...conversation, mode, title: conversationTitle, messages: finalMessages, updatedAt: Date.now() })
       if (result.proposals.length) {
         if (config.permissionMode === 'auto') {
-          result.proposals.forEach((proposal) => { if (proposal.action === 'create') onCreateFile(proposal.path, proposal.content); else onApplyChange(proposal.path, proposal.content) })
-          setNotice(`已按自动执行许可暂存 ${result.proposals.length} 个文件修改。`)
+          setNotice(failedChanges
+            ? `已应用 ${appliedFiles.length} 个文件，${failedChanges} 个失败，可在 Diff 记录中重试。`
+            : `已按自动执行许可应用 ${appliedFiles.length} 个文件修改。`)
         } else setNotice(`已生成 ${result.proposals.length} 个待审核文件修改，请在回答气泡里确认。`)
       }
-      if (result.commitRequested && config.permissionMode === 'auto') {
-        // 让 React 完成上面的文件状态更新；父级提交函数通过实时 ref 读取这一帧的新内容。
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+      if (result.commitRequested && config.permissionMode === 'auto' && !failedChanges) {
         setBusy('commit')
-        await onCommit()
+        const commit = await onCommit()
         const answerPath = replacingAnswerPath || flattenMessages(finalMessages).at(-1)?.path
         if (answerPath) {
-          const committedMessages = updateAtPath(finalMessages, answerPath, (message) => ({ ...message, commitDone: true }))
-          saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: committedMessages, updatedAt: Date.now() })
+          finalMessages = updateAtPath(finalMessages, answerPath, (message) => commit.ok
+            ? { ...message, commitRequested: false, commitDone: true, commitSha: commit.commitSha, commitMessage: commit.message, commitError: undefined }
+            : { ...message, commitRequested: true, commitDone: false, commitError: commit.error })
+          saveConversation({ ...conversation, mode, title: conversationTitle, messages: finalMessages, updatedAt: Date.now() })
         }
-        setNotice('已按自动执行许可提交 Git 修改。')
+        if (commit.ok) setNotice(`已提交 Git 修改：${commit.commitSha.slice(0, 7)}`)
+        else setError(commit.error)
       }
     } catch (reason) {
       if (reason instanceof Error && reason.name === 'AbortError') {
@@ -625,33 +714,44 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     saveConversation({ ...conversation, messages, updatedAt: Date.now() })
   }
   const beginQuestionEdit = (index: number, text: string) => { setEditingQuestion(index); setEditedQuestion(text); setError('') }
-  const acceptProposalInMessage = (msgPath: number[], proposalId: string) => {
-    const messages = updateAtPath(conversation.messages, msgPath, (message) => {
-      const proposal = message.proposals?.find((item) => item.id === proposalId)
-      if (!proposal) return message
-      if (proposal.action === 'create') onCreateFile(proposal.path, proposal.content)
-      else onApplyChange(proposal.path, proposal.content)
-      // 记录应用的 JSON 修改（含行级 diff），后续请求会带给 AI，让它知道自己改了什么。
-      const file = files.find((item) => item.path === proposal.path)
-      return { ...message, proposals: message.proposals?.filter((item) => item.id !== proposalId), appliedFiles: [...(message.appliedFiles || []), { path: proposal.path, action: proposal.action, diff: file ? fileDiff(file.content, proposal.content) : { start: 0, removed: [], added: [] } }] }
-    })
+  const acceptProposalInMessage = async (msgPath: number[], proposalId: string) => {
+    const entry = flattenMessages(conversation.messages).find((item) => item.path.length === msgPath.length && item.path.every((part, index) => part === msgPath[index]))
+    const proposal = entry?.message.proposals?.find((item) => item.id === proposalId)
+    if (!proposal) return
+    const applyingMessages = updateAtPath(conversation.messages, msgPath, (message) => ({ ...message, proposals: message.proposals?.map((item) => item.id === proposalId ? { ...item, status: 'applying', error: undefined } : item) }))
+    saveConversation({ ...conversation, messages: applyingMessages, updatedAt: Date.now() })
+    const mutation = proposal.action === 'create'
+      ? await onCreateFile(proposal.path, proposal.content)
+      : await onApplyChange(proposal.path, proposal.content)
+    const messages = updateAtPath(applyingMessages, msgPath, (message) => ({
+      ...message,
+      proposals: message.proposals?.map((item) => item.id === proposalId
+        ? { ...item, status: mutation.ok ? 'applied' : 'failed', error: mutation.ok ? undefined : mutation.error, resolvedAt: Date.now() }
+        : item),
+      ...(mutation.ok ? { appliedFiles: [...(message.appliedFiles || []), { path: proposal.path, action: proposal.action, diff: fileDiff(proposal.beforeContent ?? files.find((item) => item.path === proposal.path)?.content ?? '', proposal.content) }] } : {}),
+    }))
     saveConversation({ ...conversation, messages, updatedAt: Date.now() })
+    if (mutation.ok) setNotice(`已应用 ${proposal.path}。`)
+    else setError(mutation.error)
   }
   const rejectProposalInMessage = (msgPath: number[], proposalId: string) => {
-    const messages = updateAtPath(conversation.messages, msgPath, (message) => ({ ...message, proposals: message.proposals?.filter((item) => item.id !== proposalId) }))
+    const messages = updateAtPath(conversation.messages, msgPath, (message) => ({ ...message, proposals: message.proposals?.map((item) => item.id === proposalId ? { ...item, status: 'rejected', error: undefined, resolvedAt: Date.now() } : item) }))
     saveConversation({ ...conversation, messages, updatedAt: Date.now() })
   }
   const commitFromMessage = async (msgPath: number[]) => {
     setBusy('commit'); setError('')
     try {
-      await onCommit()
-      const messages = updateAtPath(conversation.messages, msgPath, (message) => ({ ...message, commitRequested: false, commitDone: true }))
+      const commit = await onCommit()
+      const messages = updateAtPath(conversation.messages, msgPath, (message) => commit.ok
+        ? { ...message, commitRequested: false, commitDone: true, commitSha: commit.commitSha, commitMessage: commit.message, commitError: undefined }
+        : { ...message, commitRequested: true, commitDone: false, commitError: commit.error })
       saveConversation({ ...conversation, messages, updatedAt: Date.now() })
-      setNotice('已提交 Git 修改。')
+      if (commit.ok) setNotice(`已提交 Git 修改：${commit.commitSha.slice(0, 7)}`)
+      else setError(commit.error)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Git 提交失败') } finally { setBusy(null) }
   }
   const cancelCommitFromMessage = (msgPath: number[]) => {
-    const messages = updateAtPath(conversation.messages, msgPath, (message) => ({ ...message, commitRequested: false }))
+    const messages = updateAtPath(conversation.messages, msgPath, (message) => ({ ...message, commitRequested: false, commitError: undefined }))
     saveConversation({ ...conversation, messages, updatedAt: Date.now() })
   }
 
@@ -666,10 +766,11 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       <div className="agent-advanced"><button type="button" onClick={() => setAdvancedOpen((value) => !value)}><strong>高级设置</strong><span>{advancedOpen ? '隐藏' : '展开'}</span></button>{advancedOpen && <div className="agent-field-grid"><label className="agent-field"><span>最大 Token 数</span><input type="number" min="128" max="32000" value={config.maxTokens} onChange={(event) => setConfig((current) => ({ ...current, maxTokens: Number(event.target.value) || 128 }))} /></label><label className="agent-field"><span>Temperature（随机性）</span><input type="number" min="0" max="2" step="0.1" value={config.temperature} onChange={(event) => setConfig((current) => ({ ...current, temperature: Number(event.target.value) || 0 }))} /></label></div>}</div>
       <p className="agent-local-note">密钥仅保存在当前浏览器本地；请求会直接发送到所选 AI 服务商。</p>
     </section>}
-    {notice && <div className="agent-notice"><AgentGlyph name="check" />{notice}</div>}
-    {error && <div className="agent-error"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
-    {historyOpen && <section className="agent-history" ref={historyRef}><header><strong>对话历史</strong><button type="button" onClick={startConversation}><AgentGlyph name="plus" />新对话</button></header>{conversations.map((item) => <div className={item.id === conversation.id ? 'active' : ''} key={item.id}><button type="button" onClick={() => { setConversation(item); setMode(item.mode ?? 'chat'); setHistoryOpen(false) }}><strong>{item.title}</strong><small>{new Date(item.updatedAt).toLocaleString('zh-CN')}</small></button><button type="button" onClick={() => exportConversation(item)} title="导出 Markdown"><AgentGlyph name="download" /></button></div>)}</section>}
-    <div className="agent-conversation" ref={conversationRef} onScroll={(event) => { const el = event.currentTarget; stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32 }}>{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={acceptProposalInMessage} onRejectProposal={rejectProposalInMessage} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div>{config.reasoningEnabled && <details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>}{!config.reasoningEnabled && !answerStarted && <div className="agent-pending"><span className="agent-typing"><span /><span /><span /></span>{mode === 'edit' ? '正在生成修改方案…' : '正在思考…'}</div>}{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
+    <div className="agent-context-bar" aria-label="Agent 当前上下文"><span><AgentGlyph name={activePath ? 'file' : 'folder'} /><strong>{activePath || '未打开笔记'}</strong></span><small>{repositoryBranch ? `${repositoryBranch} · ` : ''}已读取 {files.length}/{remoteFileCount} 篇 · {files.filter((file) => file.status !== 'clean').length} 个本地修改</small></div>
+    {notice && <div className="agent-notice" role="status"><AgentGlyph name="check" />{notice}</div>}
+    {error && <div className="agent-error" role="alert"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
+    {historyOpen && <section className="agent-history" ref={historyRef}><header><strong>对话历史</strong><button type="button" onClick={startConversation}><AgentGlyph name="plus" />新对话</button></header>{conversations.map((item) => <div className={item.id === conversation.id ? 'active' : ''} key={item.id}><button type="button" onClick={() => { setConversation(item); setMode(item.mode ?? 'chat'); setHistoryOpen(false) }}><strong>{item.title}</strong><small>{item.mode === 'edit' ? 'Edit' : 'Chat'} · {new Date(item.updatedAt).toLocaleString('zh-CN')}</small></button><button type="button" onClick={() => exportConversation(item)} title="导出 Markdown"><AgentGlyph name="download" /></button></div>)}</section>}
+    <div className="agent-conversation" ref={conversationRef} onScroll={(event) => { const el = event.currentTarget; stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32 }}>{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} repositoryBranch={repositoryBranch} changedFileCount={files.filter((file) => file.status !== 'clean').length} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={(path, proposalId) => void acceptProposalInMessage(path, proposalId)} onRejectProposal={rejectProposalInMessage} onOpenFile={onOpenFile} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{conversation.messages.length === 1 && <div className="agent-starters" aria-label="建议问法"><button type="button" onClick={() => setInput('结合这些笔记和你的知识，找出三个值得继续探索的关联。')}>发现跨笔记关联</button><button type="button" onClick={() => setInput('检查当前笔记的逻辑缺口，补充我可能忽略的背景知识。')}>补充背景与反例</button><button type="button" onClick={() => { setMode('edit'); setInput('整理当前笔记的结构，保留原意并提升可读性。') }}>整理并完善笔记</button></div>}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div>{config.reasoningEnabled && <details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>}{!answerStarted && Boolean(liveOperations.length) && <div className="agent-live-operations">{liveOperations.map((operation) => <span className={operation.status || 'succeeded'} key={operation.id || `${operation.tool}:${operation.at}`}><i>{operation.status === 'running' ? <span className="agent-operation-spinner" /> : operation.status === 'failed' ? '×' : '✓'}</i>{operation.summary}</span>)}</div>}{!answerStarted && !liveOperations.length && <div className="agent-pending"><span className="agent-typing"><span /><span /><span /></span>{mode === 'edit' ? '正在分析仓库并生成修改方案…' : '正在结合笔记与通用知识思考…'}</div>}{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
     <footer className="agent-composer"><div className="agent-composer-input"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={mode === 'edit' ? '描述要修改或新建的笔记。AI 会先给出可审核的方案。' : '询问笔记内容，Enter 发送…'} /></div><div className="agent-composer-tools">{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="编辑范围" className="agent-option-trigger" onClick={() => setScopeOpen((value) => !value)}><AgentGlyph name={scope === 'current' ? 'file' : 'folder'} />{scope === 'current' ? '当前文件' : '仓库笔记'}</button>{scopeOpen && <div className="agent-option-popover scope-popover" ref={clampPopover}><header><strong>编辑范围</strong></header><button type="button" className={scope === 'current' ? 'selected' : ''} disabled={!activePath} onClick={() => { setScope('current'); setScopeOpen(false) }}><AgentGlyph name="file" /><span><strong>当前文件</strong><small>{activePath || '请先从仓库中打开一个文件'}</small></span><i>✓</i></button><button type="button" className={scope === 'cached' ? 'selected' : ''} onClick={() => { setScope('cached'); setScopeOpen(false) }}><AgentGlyph name="folder" /><span><strong>仓库笔记</strong><small>已缓存 {files.length}/{remoteFileCount} 个 Markdown 文件</small></span><i>✓</i></button>{files.length < remoteFileCount && <button type="button" className="scope-load-button" onClick={() => void onLoadAllFiles()} disabled={loadingFiles}>{loadingFiles ? '正在读取全部笔记…' : '读取全部笔记'}</button>}</div>}</div>}<div className="agent-option-wrap"><button type="button" title="思考" className={`agent-option-trigger ${config.reasoningEnabled ? 'active' : ''}`} onClick={() => setReasoningOpen((value) => !value)}><AgentGlyph name="brain" />思考{config.reasoningEnabled ? ` · ${{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[config.reasoningEffort]}` : ' · 关'}</button>{reasoningOpen && <div className="agent-option-popover reasoning-popover" ref={clampPopover}><header><strong>思考</strong></header><div className="agent-effort">{(['low', 'medium', 'high', 'xhigh', 'max'] as const).map((effort) => <button type="button" className={config.reasoningEffort === effort ? 'active' : ''} key={effort} onClick={() => setConfig((current) => ({ ...current, reasoningEffort: effort, reasoningEnabled: true }))}><span>{{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[effort]}</span>{config.reasoningEffort === effort && <AgentGlyph name="check" />}</button>)}</div><p>让支持推理的模型返回可展开的思考过程。</p><button type="button" className={`reasoning-toggle ${config.reasoningEnabled ? 'on' : ''}`} onClick={() => setConfig((current) => ({ ...current, reasoningEnabled: !current.reasoningEnabled }))}><AgentGlyph name="brain" />{config.reasoningEnabled ? '关闭思考' : '开启思考'}</button></div>}</div>{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="操作许可" className={`agent-option-trigger ${config.permissionMode === 'auto' ? 'auto' : ''}`} onClick={() => setPermissionOpen((value) => !value)}><AgentGlyph name={config.permissionMode === 'auto' ? 'alert' : 'shield'} />{config.permissionMode === 'auto' ? '自动执行' : '每次确认'}</button>{permissionOpen && <div className="agent-option-popover permission-popover" ref={clampPopover}><header><strong>操作许可</strong></header><button type="button" className={config.permissionMode === 'confirm' ? 'selected' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'confirm' })); setPermissionOpen(false) }}><AgentGlyph name="shield" /><span><strong>请求批准</strong><small>修改、新建或提交 Git 前逐项确认。</small></span><i>✓</i></button><button type="button" className={config.permissionMode === 'auto' ? 'selected auto' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'auto' })); setPermissionOpen(false) }}><AgentGlyph name="alert" /><span><strong>自动执行</strong><small>收到方案后直接暂存修改与提交请求。</small></span><i>✓</i></button></div>}</div>}<button type="button" className="agent-send-button" title={busy === 'send' ? '停止回答' : '发送'} onClick={() => { if (busy === 'send') abortRef.current?.abort(); else void send() }} disabled={busy === 'send' ? false : busy !== null || !input.trim()}><AgentGlyph name={busy === 'send' ? 'stop' : 'send'} /></button></div></footer>
   </div>
 }

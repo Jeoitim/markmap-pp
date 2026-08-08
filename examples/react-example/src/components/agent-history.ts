@@ -23,7 +23,7 @@ export async function saveAgentConversations(conversations: AgentConversation[])
 
 export function createConversation(): AgentConversation {
   const now = Date.now()
-  return { id: crypto.randomUUID(), title: '新对话', createdAt: now, updatedAt: now, messages: [{ role: 'assistant', content: '你好，我可以基于已缓存的 Markdown 笔记回答问题，或在 Edit 模式中生成可审核的修改。' }] }
+  return { id: crypto.randomUUID(), title: '新对话', createdAt: now, updatedAt: now, messages: [{ role: 'assistant', content: '你好，我会结合你的 Markdown 笔记、当前操作上下文和通用知识来回答；也可以在 Edit 模式中生成可审核、可追踪的文件修改。' }] }
 }
 
 export function activeContent(message: AgentMessage): string {

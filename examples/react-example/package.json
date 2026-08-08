@@ -23,6 +23,7 @@
     "@fontsource-variable/noto-serif-sc": "^5.3.0",
     "@lezer/highlight": "^1.2.3",
     "codemirror": "^6.0.2",
+    "diff": "^9.0.0",
     "katex": "^0.16.47",
     "lxgw-wenkai-webfont": "^1.7.0",
     "markmap-common": "workspace:*",

@@ -15,9 +15,11 @@ export interface AgentQuestionVersion {
 }
 
 export interface AgentOperation {
+  id?: string
   tool: string
   summary: string
   at: number
+  status?: 'running' | 'succeeded' | 'failed'
 }
 
 export interface AgentMessage {
@@ -33,6 +35,9 @@ export interface AgentMessage {
   commitRequested?: boolean
   appliedFiles?: { path: string; action: 'update' | 'create'; diff?: AgentFileDiff }[]
   commitDone?: boolean
+  commitSha?: string
+  commitMessage?: string
+  commitError?: string
   /** 本轮实际执行过的只读/提案工具，后续轮次会把它作为操作记忆。 */
   operations?: AgentOperation[]
 }
@@ -49,6 +54,10 @@ export interface AgentProposal {
   action: 'update' | 'create'
   content: string
   reason: string
+  beforeContent?: string
+  status?: 'pending' | 'applying' | 'applied' | 'rejected' | 'failed'
+  error?: string
+  resolvedAt?: number
 }
 
 export interface AgentResult {
@@ -81,6 +90,7 @@ export interface AskAgentOptions {
   /** 仓库全部已知路径，用于在受限编辑范围内仍能阻止新建同名文件。 */
   repositoryPaths?: string[]
   getGitContext?: (paths: string[]) => Promise<string>
+  onOperation?: (operation: AgentOperation) => void
 }
 
 interface ToolCall {
@@ -406,7 +416,7 @@ async function executeTool(call: ToolCall, mode: AgentMode, files: AgentSourceFi
     if (action === 'update' && !fileMap.has(path)) return `错误：无法更新不存在的 ${path}；如需新建请使用 create。`
     if (action === 'create' && repositoryPaths.has(path)) return `错误：${path} 已存在；如需修改请把它加入当前编辑范围后使用 update。`
     if (action !== 'update' && action !== 'create') return '错误：action 只能是 update 或 create。'
-    const proposal: AgentProposal = { id: `${path}:${Date.now()}:${proposals.length}`, path, action, content, reason }
+    const proposal: AgentProposal = { id: `${path}:${Date.now()}:${proposals.length}`, path, action, content, reason, beforeContent: fileMap.get(path)?.content || '', status: 'pending' }
     const existing = proposals.findIndex((item) => item.path === path)
     if (existing >= 0) proposals[existing] = proposal
     else proposals.push(proposal)
@@ -453,11 +463,20 @@ export async function askAgent(config: AgentProviderConfig, mode: AgentMode, mes
     }
     loopMessages.push({ role: 'assistant', content: output.content, toolCalls: output.toolCalls })
     for (const call of output.toolCalls) {
-      const result = await executeTool(call, mode, files, proposals, options, gitContext)
-      if (call.name === 'request_git_commit' && !result.startsWith('错误')) commitRequested = true
       const summary = operationSummary(call)
-      operations.push({ tool: call.name, summary, at: Date.now() })
-      loopMessages.push({ role: 'tool', content: result, toolCallId: call.id, toolName: call.name })
+      options.onOperation?.({ id: call.id, tool: call.name, summary, at: Date.now(), status: 'running' })
+      try {
+        const result = await executeTool(call, mode, files, proposals, options, gitContext)
+        const failed = result.startsWith('错误：')
+        if (call.name === 'request_git_commit' && !failed) commitRequested = true
+        const operation: AgentOperation = { id: call.id, tool: call.name, summary, at: Date.now(), status: failed ? 'failed' : 'succeeded' }
+        operations.push(operation)
+        options.onOperation?.(operation)
+        loopMessages.push({ role: 'tool', content: result, toolCallId: call.id, toolName: call.name })
+      } catch (error) {
+        options.onOperation?.({ id: call.id, tool: call.name, summary, at: Date.now(), status: 'failed' })
+        throw error
+      }
     }
   }
   throw new Error('Agent 连续调用工具次数过多，已安全停止。请缩小任务范围后重试。')

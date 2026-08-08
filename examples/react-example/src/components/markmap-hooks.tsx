@@ -10,7 +10,7 @@ import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme } from './markdown-editor'
-import AgentPanel from './agent-panel'
+import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { inspectMarkdown } from './markdown-lint'
 import {
   downloadMarkdown,
@@ -785,36 +785,55 @@ export default function MarkmapHooks() {
     setMarkdown(value)
   }, [])
 
-  const applyAgentChange = useCallback((path: string, content: string) => {
-    setCachedFiles((current) => {
-      const file = current.find((item) => item.path === path)
-      if (!file) return current
-      const next = {
-        ...file,
-        content,
-        status: (file.status === 'added' ? 'added' : file.originalPath !== file.path ? 'renamed' : content === file.baseContent ? 'clean' : 'modified') as CachedMarkdownFile['status'],
-        updatedAt: Date.now(),
-      }
-      void putCachedFile(next).catch(() => setGithubError('本地缓存写入失败'))
+  const applyAgentChange = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
+    const current = cachedFilesRef.current
+    const file = current.find((item) => item.path === path)
+    if (!file) return { ok: false, error: `尚未读取 ${path}，请先将该笔记加载到本地。` }
+    const next = {
+      ...file,
+      content,
+      status: (file.status === 'added' ? 'added' : file.originalPath !== file.path ? 'renamed' : content === file.baseContent ? 'clean' : 'modified') as CachedMarkdownFile['status'],
+      updatedAt: Date.now(),
+    }
+    try {
+      await putCachedFile(next)
       const updated = current.map((item) => item.id === next.id ? next : item)
       cachedFilesRef.current = updated
-      return updated
-    })
-    if (activeRepoPath === path) updateMarkdown(content, 'agent')
+      setCachedFiles(updated)
+      if (activeRepoPath === path) updateMarkdown(content, 'agent')
+      return { ok: true }
+    } catch {
+      const error = '本地缓存写入失败'
+      setGithubError(error)
+      return { ok: false, error }
+    }
   }, [activeRepoPath, updateMarkdown])
 
-  const createAgentFile = useCallback((path: string, content: string) => {
-    if (!githubConfig || !remoteHead) { setGithubError('请先绑定并刷新 GitHub 仓库'); return }
-    const occupied = cachedFiles.some((file) => file.path === path) || remoteFiles.some((file) => file.path === path)
-    if (!validRepositoryPath(path) || !/\.md$/i.test(path) || occupied) { setGithubError(occupied ? '该笔记文件已存在' : 'AI 提议的文件路径无效'); return }
+  const createAgentFile = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
+    if (!githubConfig || !remoteHead) {
+      const error = '请先绑定并刷新 GitHub 仓库'
+      setGithubError(error)
+      return { ok: false, error }
+    }
+    const occupied = cachedFilesRef.current.some((file) => file.path === path) || remoteFiles.some((file) => file.path === path)
+    if (!validRepositoryPath(path) || !/\.md$/i.test(path) || occupied) {
+      const error = occupied ? '该笔记文件已存在' : 'AI 提议的文件路径无效'
+      setGithubError(error)
+      return { ok: false, error }
+    }
     const file: CachedMarkdownFile = { id: `${repoKeyOf(githubConfig)}:${path}`, repoKey: repoKeyOf(githubConfig), path, originalPath: path, content, baseContent: '', baseSha: '', baseCommit: remoteHead, status: 'added', updatedAt: Date.now() }
-    void putCachedFile(file).catch(() => setGithubError('本地缓存写入失败'))
-    setCachedFiles((current) => {
-      const updated = [...current, file].sort((first, second) => first.path.localeCompare(second.path))
+    try {
+      await putCachedFile(file)
+      const updated = [...cachedFilesRef.current, file].sort((first, second) => first.path.localeCompare(second.path))
       cachedFilesRef.current = updated
-      return updated
-    })
-  }, [cachedFiles, githubConfig, remoteFiles, remoteHead])
+      setCachedFiles(updated)
+      return { ok: true }
+    } catch {
+      const error = '本地缓存写入失败'
+      setGithubError(error)
+      return { ok: false, error }
+    }
+  }, [githubConfig, remoteFiles, remoteHead])
   const syncFromMap = useCallback(() => {
     const data = mmRef.current?.getData(true)
     if (data) updateMarkdown(toMarkdown(data), 'map')
@@ -1318,8 +1337,8 @@ export default function MarkmapHooks() {
     return true
   }
 
-  const pushRepositoryChanges = async () => {
-    if (!githubConfig) return
+  const pushRepositoryChanges = async (): Promise<AgentCommitResult> => {
+    if (!githubConfig) return { ok: false, error: '请先绑定 GitHub 仓库' }
     setGithubBusyAction('sync'); setGithubError(''); setGithubNotice('')
     try {
       const filesToPush = cachedFilesRef.current
@@ -1338,8 +1357,11 @@ export default function MarkmapHooks() {
       setVirtualFolders([])
       saveVirtualFolders(repoKeyOf(githubConfig), [])
       setGithubNotice(`已推送：${result.message}`)
+      return { ok: true, commitSha: result.commitSha, message: result.message }
     } catch (error) {
-      setGithubError(error instanceof Error ? error.message : '推送失败')
+      const message = error instanceof Error ? error.message : '推送失败'
+      setGithubError(message)
+      return { ok: false, error: message }
     } finally { setGithubBusyAction(null) }
   }
 
@@ -2267,7 +2289,7 @@ ${documentRenderConfig.style}
               <MarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span><span>Markdown</span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
-            </> : editorView === 'agent' ? <AgentPanel files={cachedFiles.filter((file) => file.status !== 'deleted')} activePath={activeRepoPath} onApplyChange={applyAgentChange} onCreateFile={createAgentFile} onCommit={pushRepositoryChanges} getGitContext={getAgentGitContext} remoteFileCount={remoteFiles.length} remotePaths={remoteFiles.map((file) => file.path)} onLoadAllFiles={loadAllRepositoryNotes} loadingFiles={githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
+            </> : editorView === 'agent' ? <AgentPanel files={cachedFiles.filter((file) => file.status !== 'deleted')} activePath={activeRepoPath} onApplyChange={applyAgentChange} onCreateFile={createAgentFile} onOpenFile={(path) => { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) }} onCommit={pushRepositoryChanges} getGitContext={getAgentGitContext} remoteFileCount={remoteFiles.length} remotePaths={remoteFiles.map((file) => file.path)} repositoryBranch={githubConfig?.branch} onLoadAllFiles={loadAllRepositoryNotes} loadingFiles={githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {!githubConfig ? <div className="repository-unbound"><Icon name="github" /><strong>尚未绑定 GitHub 仓库</strong><span>绑定后可浏览 Markdown 文件并在本地暂存修改。</span><button onClick={() => setActivePanel('github')}>绑定仓库</button></div> : <>
                 <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{repositoryCommitRef ? `commit ${repositoryCommitRef.slice(0, 7)}` : githubConfig.branch}</small></div><button className="discard-button" title={repositoryCommitRef ? '查看 commit 阶段时不能放弃当前分支修改' : '放弃所有本地修改'} onClick={() => void discardRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !hasRepositoryDrafts}><Icon name="undo" className={repositoryDiscardLoading ? 'loading-icon' : undefined} /><span>放弃</span></button><button className="repository-icon-button" title="刷新当前分支" aria-label="刷新当前分支" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" className={repositoryRefreshLoading ? 'loading-icon' : undefined} /></i></button><button className="repository-icon-button sync-button" title={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !changedFiles.length}><i><Icon name="sync" className={repositorySyncLoading ? 'loading-icon' : undefined} /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}

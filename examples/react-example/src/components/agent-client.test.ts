@@ -51,6 +51,7 @@ describe('笔记 Agent 工具循环', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const getGitContext = vi.fn(async () => 'abc1234 | user | 2026-08-08 | update plan')
+    const onOperation = vi.fn()
 
     const result = await askAgent(
       config,
@@ -58,13 +59,19 @@ describe('笔记 Agent 工具循环', () => {
       [{ role: 'user', content: '完善计划并提交' }],
       [{ path: 'notes/plan.md', content: '# 计划', status: 'modified' }],
       '',
-      { activePath: 'notes/plan.md', getGitContext },
+      { activePath: 'notes/plan.md', getGitContext, onOperation },
     )
 
     expect(result.reply).toContain('待确认')
     expect(result.proposals).toMatchObject([{ path: 'notes/plan.md', action: 'update', reason: '补充下一步' }])
     expect(result.commitRequested).toBe(true)
     expect(result.operations.map((item) => item.tool)).toEqual(['read_note', 'read_git_history', 'propose_note_change', 'request_git_commit'])
+    expect(onOperation.mock.calls.map(([operation]) => `${operation.tool}:${operation.status}`)).toEqual([
+      'read_note:running', 'read_note:succeeded',
+      'read_git_history:running', 'read_git_history:succeeded',
+      'propose_note_change:running', 'propose_note_change:succeeded',
+      'request_git_commit:running', 'request_git_commit:succeeded',
+    ])
     expect(getGitContext).toHaveBeenCalledWith(['notes/plan.md'])
     expect(fetchMock).toHaveBeenCalledTimes(3)
     const secondRequest = JSON.parse(String(fetchMock.mock.calls[1][1]?.body)) as { messages: Array<{ role: string; content?: string }> }
