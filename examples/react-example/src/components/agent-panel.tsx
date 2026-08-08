@@ -1,4 +1,5 @@
-import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, type ComponentPropsWithoutRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
+import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, type ComponentPropsWithoutRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessage, type AgentProposal } from './agent-client'
@@ -240,6 +241,74 @@ function AgentMarkdown({ children, streaming = false }: { children: string; stre
   return <div className={`agent-markdown${streaming ? ' agent-streaming-markdown' : ''}`}>{content}{streaming && <b aria-hidden="true" />}</div>
 }
 
+function useDialogFocus(open: boolean, ref: RefObject<HTMLElement | null>, onClose: () => void) {
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose }, [onClose])
+  useEffect(() => {
+    if (!open) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const dialog = ref.current
+    const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') || [])
+    window.requestAnimationFrame(() => (dialog?.querySelector<HTMLElement>('[data-autofocus]') || focusable()[0] || dialog)?.focus())
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); return }
+      if (event.key !== 'Tab') return
+      const items = focusable()
+      if (!items.length) { event.preventDefault(); dialog?.focus(); return }
+      const first = items[0], last = items.at(-1)!
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', keydown)
+    return () => { document.removeEventListener('keydown', keydown); previous?.focus() }
+  }, [open, ref])
+}
+
+function conversationPendingCount(item: AgentConversation) {
+  return flattenMessages(item.messages).reduce((count, { message }) => {
+    const applied = new Set(message.appliedFiles?.map((file) => file.path))
+    const proposals = (message.proposals || []).filter((proposal) => proposal.status === 'failed' || proposal.status === 'pending' || proposal.status === 'applying' || (!proposal.status && !applied.has(proposal.path))).length
+    return count + proposals + (message.commitRequested && !message.commitDone ? 1 : 0)
+  }, 0)
+}
+
+interface AgentHistoryDrawerProps {
+  conversations: AgentConversation[]
+  activeId: string
+  onClose: () => void
+  onNew: () => void
+  onSelect: (item: AgentConversation) => void
+  onRename: (id: string, title: string) => void
+  onDelete: (id: string) => void
+  onExport: (item: AgentConversation) => void
+}
+
+function AgentHistoryDrawer({ conversations, activeId, onClose, onNew, onSelect, onRename, onDelete, onExport }: AgentHistoryDrawerProps) {
+  const drawerRef = useRef<HTMLElement | null>(null)
+  const [query, setQuery] = useState('')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  useDialogFocus(true, drawerRef, onClose)
+  const visible = conversations.filter((item) => item.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const finishRename = () => {
+    const title = renameValue.trim()
+    if (renamingId && title) onRename(renamingId, title)
+    setRenamingId(null)
+  }
+  return <><button type="button" className="agent-drawer-backdrop" onClick={onClose} aria-label="关闭对话历史" tabIndex={-1} /><section className="agent-drawer agent-history-drawer" ref={drawerRef} role="dialog" aria-modal="true" aria-labelledby="agent-history-title" tabIndex={-1}>
+    <header><div><strong id="agent-history-title">对话历史</strong><small>搜索、管理和恢复 Agent 任务</small></div><button type="button" className="agent-drawer-close" onClick={onClose} aria-label="关闭对话历史"><AgentGlyph name="close" /></button></header>
+    <div className="agent-history-search"><AgentGlyph name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索对话标题" aria-label="搜索对话标题" data-autofocus /></div>
+    <button type="button" className="agent-history-new" onClick={onNew}><AgentGlyph name="plus" />新建对话</button>
+    <div className="agent-history-list">{visible.length ? visible.map((item) => {
+      const pending = conversationPendingCount(item)
+      return <article className={item.id === activeId ? 'active' : ''} key={item.id}>
+        {renamingId === item.id ? <div className="agent-history-rename"><input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={finishRename} onKeyDown={(event) => { if (event.key === 'Enter') finishRename(); if (event.key === 'Escape') setRenamingId(null) }} aria-label="新对话标题" /><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={finishRename}><AgentGlyph name="check" /></button></div> : <button type="button" className="agent-history-main" onClick={() => onSelect(item)}><strong>{item.title}</strong><span><i className={`agent-mode-badge ${item.mode === 'edit' ? 'edit' : 'chat'}`}>{item.mode === 'edit' ? 'Edit' : 'Chat'}</i>{pending > 0 && <b>{pending} 项待处理</b>}<small>{new Date(item.updatedAt).toLocaleString('zh-CN')}</small></span></button>}
+        <div className="agent-history-actions"><button type="button" onClick={() => { setRenamingId(item.id); setRenameValue(item.title) }} title="重命名" aria-label={`重命名 ${item.title}`}><AgentGlyph name="edit" /></button><button type="button" onClick={() => onExport(item)} title="导出 Markdown" aria-label={`导出 ${item.title}`}><AgentGlyph name="download" /></button><button type="button" className="danger" onClick={() => onDelete(item.id)} title="删除" aria-label={`删除 ${item.title}`}><AgentGlyph name="trash" /></button></div>
+      </article>
+    }) : <div className="agent-history-empty">没有匹配的对话</div>}</div>
+  </section></>
+}
+
 interface ConversationMessageProps {
   message: AgentMessage
   path: number[]
@@ -303,7 +372,7 @@ interface AgentPanelProps {
   fontWeight: number
 }
 
-function AgentGlyph({ name }: { name: 'bot' | 'send' | 'stop' | 'settings' | 'refresh' | 'check' | 'close' | 'history' | 'download' | 'plus' | 'minus' | 'git' | 'shield' | 'alert' | 'brain' | 'chevron' | 'folder' | 'file' | 'copy' | 'code' | 'diagram' | 'fullscreen' | 'edit' | 'arrow-left' | 'arrow-right' }) {
+function AgentGlyph({ name }: { name: 'bot' | 'send' | 'stop' | 'settings' | 'refresh' | 'check' | 'close' | 'history' | 'download' | 'plus' | 'minus' | 'git' | 'shield' | 'alert' | 'brain' | 'chevron' | 'folder' | 'file' | 'copy' | 'code' | 'diagram' | 'fullscreen' | 'edit' | 'search' | 'trash' | 'arrow-left' | 'arrow-right' }) {
   const paths = {
     bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
     send: <><path d="m21 3-7.5 18-3.8-7.7L2 9.5 21 3Z"/><path d="m9.7 13.3 4.1-4.1"/></>,
@@ -325,6 +394,8 @@ function AgentGlyph({ name }: { name: 'bot' | 'send' | 'stop' | 'settings' | 're
     diagram: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 15 3-3 3 2 4-5M7 8h.01"/></>,
     fullscreen: <><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></>,
     edit: <><path d="m4 20 4.2-1 10-10a2.2 2.2 0 0 0-3.1-3.1l-10 10L4 20Z"/><path d="m13.5 6.5 4 4"/></>,
+    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+    trash: <><path d="M4 7h16M9 3h6l1 4H8l1-4ZM7 7l1 14h8l1-14M10 11v6M14 11v6"/></>,
     'arrow-left': <path d="m14 6-6 6 6 6"/>, 'arrow-right': <path d="m10 6 6 6-6 6"/>,
   }
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
@@ -343,18 +414,19 @@ function fileDiff(before: string, after: string) {
 
 function ProposalDiff({ proposal, file, onAccept, onReject, onOpen }: { proposal: AgentProposal; file?: CachedMarkdownFile; onAccept: () => void; onReject: () => void; onOpen: () => void }) {
   const status = proposal.status || 'pending'
-  const [expanded, setExpanded] = useState(status === 'pending' || status === 'failed')
+  const [expanded, setExpanded] = useState(false)
+  const drawerRef = useRef<HTMLElement | null>(null)
+  const titleId = `agent-diff-${useId().replace(/:/g, '')}`
+  useDialogFocus(expanded, drawerRef, () => setExpanded(false))
   const diff = useMemo(() => buildAgentDiff(proposal.beforeContent ?? file?.content ?? '', proposal.content), [file?.content, proposal.beforeContent, proposal.content])
   const labels = { pending: '待审核', applying: '正在应用', applied: '已应用到本地', rejected: '已拒绝', failed: '应用失败' }
+  const diffRows = <>{diff.rows.map((row, index) => row.type === 'gap'
+    ? <span className="agent-diff-gap" key={`gap:${index}`}>折叠 {row.count} 行未修改内容</span>
+    : <code className={row.type} key={`${row.type}:${row.oldLine || 0}:${row.newLine || 0}:${index}`}><span>{row.oldLine || ''}</span><span>{row.newLine || ''}</span><b>{row.type === 'added' ? '+' : row.type === 'removed' ? '−' : ' '}</b><em>{row.content || ' '}</em></code>)}
+    {!diff.added && !diff.removed && <span className="agent-diff-context">内容没有变化</span>}</>
   return <article className={`agent-proposal ${status}`}>
     <header><div><strong>{proposal.path}</strong><small>{proposal.action === 'create' ? '新建笔记' : '修改笔记'} · {proposal.reason}</small></div><span className={`agent-proposal-status ${status}`}>{labels[status]}</span></header>
-    <button type="button" className="agent-diff-toggle" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}><span>Diff <b>+{diff.added}</b> <i>−{diff.removed}</i></span><span>{expanded ? '收起' : '查看修改'}</span></button>
-    {expanded && <div className="agent-diff" aria-label={`${proposal.path} 的修改预览`}>
-      {diff.rows.map((row, index) => row.type === 'gap'
-        ? <span className="agent-diff-gap" key={`gap:${index}`}>折叠 {row.count} 行未修改内容</span>
-        : <code className={row.type} key={`${row.type}:${row.oldLine || 0}:${row.newLine || 0}:${index}`}><span>{row.oldLine || ''}</span><span>{row.newLine || ''}</span><b>{row.type === 'added' ? '+' : row.type === 'removed' ? '−' : ' '}</b><em>{row.content || ' '}</em></code>)}
-      {!diff.added && !diff.removed && <span className="agent-diff-context">内容没有变化</span>}
-    </div>}
+    <button type="button" className="agent-diff-toggle" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded}><span>Diff <b>+{diff.added}</b> <i>−{diff.removed}</i></span><span>打开完整对比</span></button>
     {proposal.error && <p className="agent-proposal-error" role="alert">{proposal.error}</p>}
     <footer>
       {(status === 'pending' || status === 'failed') && <><button type="button" className="agent-apply-button" onClick={onAccept}><AgentGlyph name="check" />{status === 'failed' ? '重试应用' : '接受修改'}</button><button type="button" onClick={onReject}>拒绝</button></>}
@@ -362,6 +434,13 @@ function ProposalDiff({ proposal, file, onAccept, onReject, onOpen }: { proposal
       {status === 'applied' && <><span className="agent-applied-inline"><AgentGlyph name="check" />已应用到本地</span><button type="button" onClick={onOpen}>打开文件</button></>}
       {status === 'rejected' && <span className="agent-proposal-muted">已保留修改记录，可展开重新查看</span>}
     </footer>
+    {expanded && typeof document !== 'undefined' && createPortal(<><button type="button" className="agent-drawer-backdrop portal" onClick={() => setExpanded(false)} aria-label="关闭 Diff" tabIndex={-1} /><section className="agent-drawer agent-diff-drawer" ref={drawerRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+      <header><div><strong id={titleId}>{proposal.path}</strong><small>{proposal.action === 'create' ? '新建笔记' : '修改笔记'} · {proposal.reason}</small></div><button type="button" className="agent-drawer-close" onClick={() => setExpanded(false)} data-autofocus aria-label="关闭 Diff"><AgentGlyph name="close" /></button></header>
+      <div className="agent-diff-summary"><span className={`agent-proposal-status ${status}`}>{labels[status]}</span><span><b>+{diff.added}</b><i>−{diff.removed}</i></span></div>
+      <div className="agent-diff" aria-label={`${proposal.path} 的修改预览`}>{diffRows}</div>
+      {proposal.error && <p className="agent-proposal-error" role="alert">{proposal.error}</p>}
+      <footer>{(status === 'pending' || status === 'failed') && <><button type="button" className="agent-apply-button" onClick={onAccept}><AgentGlyph name="check" />{status === 'failed' ? '重试应用' : '接受修改'}</button><button type="button" onClick={onReject}>拒绝</button></>}{status === 'applying' && <span className="agent-applied-inline"><span className="agent-operation-spinner" />正在写入并校验…</span>}{status === 'applied' && <button type="button" className="agent-apply-button" onClick={() => { setExpanded(false); onOpen() }}><AgentGlyph name="file" />打开文件</button>}{status === 'rejected' && <span className="agent-proposal-muted">该修改已拒绝，记录仍保留在对话中。</span>}</footer>
+    </section></>, document.body)}
   </article>
 }
 
@@ -371,6 +450,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [models, setModels] = useState<string[]>([])
+  const [connectionStatus, setConnectionStatus] = useState<'unconfigured' | 'configured' | 'checking' | 'connected' | 'failed'>('unconfigured')
   const [conversation, setConversation] = useState<AgentConversation>(() => createConversation())
   const [conversations, setConversations] = useState<AgentConversation[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -391,8 +471,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   const [thinkingStartedAt, setThinkingStartedAt] = useState<number | null>(null)
   const [thinkingSeconds, setThinkingSeconds] = useState(0)
   const [answerStarted, setAnswerStarted] = useState(false)
-  const historyRef = useRef<HTMLElement | null>(null)
-  const historyButtonRef = useRef<HTMLButtonElement | null>(null)
+  const settingsRef = useRef<HTMLElement | null>(null)
   const replyBufferRef = useRef('')
   const receivedStreamTextRef = useRef(false)
   const streamedContentRef = useRef('')
@@ -400,27 +479,19 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   const conversationRef = useRef<HTMLDivElement | null>(null)
   const stickToBottomRef = useRef(true)
 
+  useDialogFocus(settingsOpen, settingsRef, () => setSettingsOpen(false))
+
   useEffect(() => {
     let disposed = false
     void loadAgentProviderConfig().then((saved) => {
       if (disposed) return
       setConfig(saved)
       setModels(saved.availableModels || [])
-      setSettingsOpen(!saved.apiKey)
+      setConnectionStatus(saved.provider === 'ollama' || saved.apiKey ? 'configured' : 'unconfigured')
+      setSettingsOpen(saved.provider !== 'ollama' && !saved.apiKey)
     }).catch(() => { if (!disposed) setError('无法读取本地 AI 配置') })
     return () => { disposed = true }
   }, [])
-
-  useEffect(() => {
-    if (!historyOpen) return
-    const closeHistory = (event: PointerEvent) => {
-      const target = event.target as Node
-      if (historyRef.current?.contains(target) || historyButtonRef.current?.contains(target)) return
-      setHistoryOpen(false)
-    }
-    window.addEventListener('pointerdown', closeHistory)
-    return () => window.removeEventListener('pointerdown', closeHistory)
-  }, [historyOpen])
 
   useEffect(() => {
     if (!permissionOpen && !reasoningOpen && !scopeOpen) return
@@ -493,6 +564,26 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
+  const renameConversation = (id: string, title: string) => {
+    const updated = conversations.map((item) => item.id === id ? { ...item, title, updatedAt: Date.now() } : item).sort((a, b) => b.updatedAt - a.updatedAt)
+    setConversations(updated)
+    if (conversation.id === id) setConversation(updated.find((item) => item.id === id)!)
+    void saveAgentConversations(updated).catch(() => setError('对话历史保存失败'))
+  }
+
+  const deleteConversation = (id: string) => {
+    const target = conversations.find((item) => item.id === id)
+    if (!target || !window.confirm(`删除对话“${target.title}”？此操作无法撤销。`)) return
+    let updated = conversations.filter((item) => item.id !== id)
+    if (conversation.id === id) {
+      const next = updated[0] || { ...createConversation(), mode }
+      if (!updated.length) updated = [next]
+      setConversation(next); setMode(next.mode ?? 'chat')
+    }
+    setConversations(updated)
+    void saveAgentConversations(updated).catch(() => setError('对话历史保存失败'))
+  }
+
   const selectedFiles = useMemo(() => scope === 'current' && activePath ? files.filter((file) => file.path === activePath) : files, [activePath, files, scope])
 
   const chooseProvider = (id: AgentProviderId) => {
@@ -508,6 +599,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       availableModels: targetProfile?.availableModels || [],
     }
     setConfig(nextConfig); setModels(nextConfig.availableModels); setNotice(''); setError('')
+    setConnectionStatus(id === 'ollama' || nextConfig.apiKey ? 'configured' : 'unconfigured')
     void saveAgentProviderConfig(nextConfig).catch(() => setError('AI 配置保存失败'))
   }
 
@@ -515,7 +607,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     setBusy('save'); setError(''); setNotice('')
     const nextConfig = withActiveProfile(config)
     setConfig(nextConfig)
-    try { await saveAgentProviderConfig(nextConfig); setNotice('AI 配置已保存在当前浏览器本地。') } catch { setError('AI 配置保存失败') } finally { setBusy(null) }
+    try { await saveAgentProviderConfig(nextConfig); setConnectionStatus(nextConfig.provider === 'ollama' || nextConfig.apiKey ? 'configured' : 'unconfigured'); setNotice('AI 配置已保存在当前浏览器本地。') } catch { setError('AI 配置保存失败') } finally { setBusy(null) }
   }
 
   const getModels = async () => {
@@ -531,8 +623,8 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   }
 
   const testConnection = async () => {
-    setBusy('test'); setError(''); setNotice('')
-    try { await testAgentConnection(config); setNotice('连接成功。') } catch (reason) { setError(reason instanceof Error ? reason.message : '连接失败') } finally { setBusy(null) }
+    setBusy('test'); setConnectionStatus('checking'); setError(''); setNotice('')
+    try { await testAgentConnection(config); setConnectionStatus('connected'); setNotice('连接成功。') } catch (reason) { setConnectionStatus('failed'); setError(reason instanceof Error ? reason.message : '连接失败') } finally { setBusy(null) }
   }
 
   const send = async (replacement?: { text: string; userIndex?: number }) => {
@@ -754,22 +846,24 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     const messages = updateAtPath(conversation.messages, msgPath, (message) => ({ ...message, commitRequested: false, commitError: undefined }))
     saveConversation({ ...conversation, messages, updatedAt: Date.now() })
   }
+  const connectionLabel = { unconfigured: '未配置', configured: '已配置', checking: '检查中', connected: '已连接', failed: '连接失败' }[connectionStatus]
+  const providerLabel = providerDefinition(config.provider).label
 
   return <div className="agent-workspace" style={{ '--agent-font-size': `${fontSize}px`, '--agent-font-family': fontFamily, '--agent-font-weight': fontWeight } as CSSProperties}>
-    <header className="agent-toolbar"><div className="agent-mode-tabs" role="tablist"><button type="button" className={mode === 'chat' ? 'active' : ''} onClick={() => switchMode('chat')}>Chat</button><button type="button" className={mode === 'edit' ? 'active' : ''} onClick={() => switchMode('edit')}>Edit</button></div><span>{providerDefinition(config.provider).label} · {config.model || '未选择模型'}</span><button ref={historyButtonRef} type="button" className="agent-settings-button" onClick={() => setHistoryOpen((value) => !value)} title="对话历史"><AgentGlyph name="history" /></button><button type="button" className="agent-settings-button" onClick={() => setSettingsOpen((value) => !value)} title="AI 配置"><AgentGlyph name="settings" /></button></header>
-    {settingsOpen && <section className="agent-settings" aria-label="AI 服务配置">
-      <header><div><strong>AI 服务配置</strong><small>配置 AI Agent 的聊天与笔记编辑能力</small></div><button type="button" onClick={() => setSettingsOpen(false)} aria-label="关闭配置"><AgentGlyph name="close" /></button></header>
+    <header className="agent-toolbar"><div className="agent-mode-tabs" role="tablist" aria-label="Agent 模式"><button type="button" role="tab" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'active' : ''} onClick={() => switchMode('chat')}>Chat</button><button type="button" role="tab" aria-selected={mode === 'edit'} className={mode === 'edit' ? 'active' : ''} onClick={() => switchMode('edit')}>Edit</button></div><span className="agent-provider-summary" title={`${providerLabel} · ${config.model || '未选择模型'} · ${connectionLabel}`} aria-label={`${providerLabel}，${config.model || '未选择模型'}，${connectionLabel}`}><i className={`agent-connection-dot ${connectionStatus}`} /><b>{providerLabel}</b><small>{connectionLabel}</small></span><button type="button" className="agent-settings-button" onClick={() => { setHistoryOpen((value) => !value); setSettingsOpen(false) }} title="对话历史" aria-label={`${historyOpen ? '关闭' : '打开'}对话历史`} aria-expanded={historyOpen}><AgentGlyph name="history" /></button><button type="button" className="agent-settings-button" onClick={() => { setSettingsOpen((value) => !value); setHistoryOpen(false) }} title={`AI 配置：${config.model || '未选择模型'}`} aria-label={`${settingsOpen ? '关闭' : '打开'} AI 配置`} aria-expanded={settingsOpen}><AgentGlyph name="settings" /></button></header>
+    {settingsOpen && <><button type="button" className="agent-drawer-backdrop" onClick={() => setSettingsOpen(false)} aria-label="关闭 AI 配置" tabIndex={-1} /><section className="agent-drawer agent-settings" ref={settingsRef} role="dialog" aria-modal="true" aria-labelledby="agent-settings-title" tabIndex={-1}>
+      <header><div><strong id="agent-settings-title">AI 服务配置</strong><small>连接模型、调整回答策略与 Agent 权限</small></div><button type="button" className="agent-drawer-close" onClick={() => setSettingsOpen(false)} data-autofocus aria-label="关闭配置"><AgentGlyph name="close" /></button></header>
       <label className="agent-field agent-provider-field"><span>AI 服务商</span><select value={config.provider} onChange={(event) => chooseProvider(event.target.value as AgentProviderId)}>{providerDefinitions.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
       <div className="agent-field-grid"><label className="agent-field"><span>API 密钥</span><input type="password" autoComplete="off" value={config.apiKey} onChange={(event) => setConfig((current) => ({ ...current, apiKey: event.target.value }))} placeholder={config.provider === 'ollama' ? '本地 Ollama 通常不需要密钥' : '输入 API Key'} /></label><label className="agent-field"><span>Base URL</span><input value={config.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://api.example.com/v1" /></label></div>
       <label className="agent-field"><span>模型名称</span><div className="agent-model-input"><select value={config.model} onChange={(event) => setConfig((current) => ({ ...current, model: event.target.value }))}>{!models.includes(config.model) && <option value={config.model}>{config.model || '请选择模型'}</option>}{models.map((model) => <option key={model} value={model}>{model}</option>)}</select><button type="button" onClick={() => void getModels()} disabled={busy !== null}><AgentGlyph name="refresh" />{busy === 'models' ? '获取中…' : '获取模型列表'}</button></div></label>
       <div className="agent-settings-actions"><button type="button" className="agent-test-button" onClick={() => void testConnection()} disabled={busy !== null}><AgentGlyph name="check" />{busy === 'test' ? '测试中…' : '测试连接'}</button><button type="button" className="agent-save-button" onClick={() => void saveConfig()} disabled={busy !== null}>{busy === 'save' ? '保存中…' : '保存到本地'}</button></div>
       <div className="agent-advanced"><button type="button" onClick={() => setAdvancedOpen((value) => !value)}><strong>高级设置</strong><span>{advancedOpen ? '隐藏' : '展开'}</span></button>{advancedOpen && <div className="agent-field-grid"><label className="agent-field"><span>最大 Token 数</span><input type="number" min="128" max="32000" value={config.maxTokens} onChange={(event) => setConfig((current) => ({ ...current, maxTokens: Number(event.target.value) || 128 }))} /></label><label className="agent-field"><span>Temperature（随机性）</span><input type="number" min="0" max="2" step="0.1" value={config.temperature} onChange={(event) => setConfig((current) => ({ ...current, temperature: Number(event.target.value) || 0 }))} /></label></div>}</div>
       <p className="agent-local-note">密钥仅保存在当前浏览器本地；请求会直接发送到所选 AI 服务商。</p>
-    </section>}
+    </section></>}
     <div className="agent-context-bar" aria-label="Agent 当前上下文"><span><AgentGlyph name={activePath ? 'file' : 'folder'} /><strong>{activePath || '未打开笔记'}</strong></span><small>{repositoryBranch ? `${repositoryBranch} · ` : ''}已读取 {files.length}/{remoteFileCount} 篇 · {files.filter((file) => file.status !== 'clean').length} 个本地修改</small></div>
-    {notice && <div className="agent-notice" role="status"><AgentGlyph name="check" />{notice}</div>}
-    {error && <div className="agent-error" role="alert"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
-    {historyOpen && <section className="agent-history" ref={historyRef}><header><strong>对话历史</strong><button type="button" onClick={startConversation}><AgentGlyph name="plus" />新对话</button></header>{conversations.map((item) => <div className={item.id === conversation.id ? 'active' : ''} key={item.id}><button type="button" onClick={() => { setConversation(item); setMode(item.mode ?? 'chat'); setHistoryOpen(false) }}><strong>{item.title}</strong><small>{item.mode === 'edit' ? 'Edit' : 'Chat'} · {new Date(item.updatedAt).toLocaleString('zh-CN')}</small></button><button type="button" onClick={() => exportConversation(item)} title="导出 Markdown"><AgentGlyph name="download" /></button></div>)}</section>}
+    {notice && <div className="agent-notice" role="status" aria-live="polite" aria-atomic="true"><AgentGlyph name="check" />{notice}</div>}
+    {error && <div className="agent-error" role="alert" aria-live="assertive" aria-atomic="true"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
+    {historyOpen && <AgentHistoryDrawer conversations={conversations} activeId={conversation.id} onClose={() => setHistoryOpen(false)} onNew={startConversation} onSelect={(item) => { setConversation(item); setMode(item.mode ?? 'chat'); setHistoryOpen(false) }} onRename={renameConversation} onDelete={deleteConversation} onExport={exportConversation} />}
     <div className="agent-conversation" ref={conversationRef} onScroll={(event) => { const el = event.currentTarget; stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32 }}>{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} repositoryBranch={repositoryBranch} changedFileCount={files.filter((file) => file.status !== 'clean').length} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={(path, proposalId) => void acceptProposalInMessage(path, proposalId)} onRejectProposal={rejectProposalInMessage} onOpenFile={onOpenFile} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{conversation.messages.length === 1 && <div className="agent-starters" aria-label="建议问法"><button type="button" onClick={() => setInput('结合这些笔记和你的知识，找出三个值得继续探索的关联。')}>发现跨笔记关联</button><button type="button" onClick={() => setInput('检查当前笔记的逻辑缺口，补充我可能忽略的背景知识。')}>补充背景与反例</button><button type="button" onClick={() => { setMode('edit'); setInput('整理当前笔记的结构，保留原意并提升可读性。') }}>整理并完善笔记</button></div>}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div>{config.reasoningEnabled && <details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>}{!answerStarted && Boolean(liveOperations.length) && <div className="agent-live-operations">{liveOperations.map((operation) => <span className={operation.status || 'succeeded'} key={operation.id || `${operation.tool}:${operation.at}`}><i>{operation.status === 'running' ? <span className="agent-operation-spinner" /> : operation.status === 'failed' ? '×' : '✓'}</i>{operation.summary}</span>)}</div>}{!answerStarted && !liveOperations.length && <div className="agent-pending"><span className="agent-typing"><span /><span /><span /></span>{mode === 'edit' ? '正在分析仓库并生成修改方案…' : '正在结合笔记与通用知识思考…'}</div>}{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
     <footer className="agent-composer"><div className="agent-composer-input"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={mode === 'edit' ? '描述要修改或新建的笔记。AI 会先给出可审核的方案。' : '询问笔记内容，Enter 发送…'} /></div><div className="agent-composer-tools">{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="编辑范围" className="agent-option-trigger" onClick={() => setScopeOpen((value) => !value)}><AgentGlyph name={scope === 'current' ? 'file' : 'folder'} />{scope === 'current' ? '当前文件' : '仓库笔记'}</button>{scopeOpen && <div className="agent-option-popover scope-popover" ref={clampPopover}><header><strong>编辑范围</strong></header><button type="button" className={scope === 'current' ? 'selected' : ''} disabled={!activePath} onClick={() => { setScope('current'); setScopeOpen(false) }}><AgentGlyph name="file" /><span><strong>当前文件</strong><small>{activePath || '请先从仓库中打开一个文件'}</small></span><i>✓</i></button><button type="button" className={scope === 'cached' ? 'selected' : ''} onClick={() => { setScope('cached'); setScopeOpen(false) }}><AgentGlyph name="folder" /><span><strong>仓库笔记</strong><small>已缓存 {files.length}/{remoteFileCount} 个 Markdown 文件</small></span><i>✓</i></button>{files.length < remoteFileCount && <button type="button" className="scope-load-button" onClick={() => void onLoadAllFiles()} disabled={loadingFiles}>{loadingFiles ? '正在读取全部笔记…' : '读取全部笔记'}</button>}</div>}</div>}<div className="agent-option-wrap"><button type="button" title="思考" className={`agent-option-trigger ${config.reasoningEnabled ? 'active' : ''}`} onClick={() => setReasoningOpen((value) => !value)}><AgentGlyph name="brain" />思考{config.reasoningEnabled ? ` · ${{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[config.reasoningEffort]}` : ' · 关'}</button>{reasoningOpen && <div className="agent-option-popover reasoning-popover" ref={clampPopover}><header><strong>思考</strong></header><div className="agent-effort">{(['low', 'medium', 'high', 'xhigh', 'max'] as const).map((effort) => <button type="button" className={config.reasoningEffort === effort ? 'active' : ''} key={effort} onClick={() => setConfig((current) => ({ ...current, reasoningEffort: effort, reasoningEnabled: true }))}><span>{{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[effort]}</span>{config.reasoningEffort === effort && <AgentGlyph name="check" />}</button>)}</div><p>让支持推理的模型返回可展开的思考过程。</p><button type="button" className={`reasoning-toggle ${config.reasoningEnabled ? 'on' : ''}`} onClick={() => setConfig((current) => ({ ...current, reasoningEnabled: !current.reasoningEnabled }))}><AgentGlyph name="brain" />{config.reasoningEnabled ? '关闭思考' : '开启思考'}</button></div>}</div>{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="操作许可" className={`agent-option-trigger ${config.permissionMode === 'auto' ? 'auto' : ''}`} onClick={() => setPermissionOpen((value) => !value)}><AgentGlyph name={config.permissionMode === 'auto' ? 'alert' : 'shield'} />{config.permissionMode === 'auto' ? '自动执行' : '每次确认'}</button>{permissionOpen && <div className="agent-option-popover permission-popover" ref={clampPopover}><header><strong>操作许可</strong></header><button type="button" className={config.permissionMode === 'confirm' ? 'selected' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'confirm' })); setPermissionOpen(false) }}><AgentGlyph name="shield" /><span><strong>请求批准</strong><small>修改、新建或提交 Git 前逐项确认。</small></span><i>✓</i></button><button type="button" className={config.permissionMode === 'auto' ? 'selected auto' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'auto' })); setPermissionOpen(false) }}><AgentGlyph name="alert" /><span><strong>自动执行</strong><small>收到方案后直接暂存修改与提交请求。</small></span><i>✓</i></button></div>}</div>}<button type="button" className="agent-send-button" title={busy === 'send' ? '停止回答' : '发送'} onClick={() => { if (busy === 'send') abortRef.current?.abort(); else void send() }} disabled={busy === 'send' ? false : busy !== null || !input.trim()}><AgentGlyph name={busy === 'send' ? 'stop' : 'send'} /></button></div></footer>
   </div>
