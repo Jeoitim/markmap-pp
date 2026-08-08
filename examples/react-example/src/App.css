@@ -153,6 +153,7 @@ svg { flex: 0 0 auto; }
 .agent-settings { top: 51px; max-height: calc(50% - 58px); margin: 0; padding: 17px 18px; }
 .agent-typing { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; }
 .agent-typing > span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: agent-thinking 1.05s ease-in-out infinite; }
+.agent-pending { display: flex; align-items: center; gap: 9px; min-height: 38px; color: var(--muted); font-size: calc(var(--agent-font-size) * .86); }
 @keyframes agent-thinking { 50% { transform: scale(.55); opacity: .35; } }
 :root[data-theme='dark'] .agent-field input, :root[data-theme='dark'] .agent-field select { border-color: var(--border); background: var(--panel); box-shadow: none; }
 :root[data-theme='dark'] .agent-model-input button, :root[data-theme='dark'] .agent-settings-actions button:not(.agent-test-button), :root[data-theme='dark'] .agent-proposal footer button { border-color: var(--border); color: var(--text); background: var(--panel-soft); }
