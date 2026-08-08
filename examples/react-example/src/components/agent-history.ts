@@ -1,11 +1,13 @@
 import { loadLocalSetting, saveLocalSetting } from './github-sync'
-import type { AgentMessage } from './agent-client'
+import type { AgentMessage, AgentMode } from './agent-client'
 
 export interface AgentConversation {
   id: string
   title: string
   createdAt: number
   updatedAt: number
+  /** 该对话使用的模式，打开对话时恢复，避免上次是 Edit 的对话默认进入 Chat。 */
+  mode?: AgentMode
   messages: AgentMessage[]
 }
 

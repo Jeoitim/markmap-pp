@@ -1,7 +1,7 @@
 import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, type ComponentPropsWithoutRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { askAgent, testAgentConnection, type AgentMessage, type AgentProposal } from './agent-client'
+import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessage, type AgentProposal } from './agent-client'
 import { activeContent, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation } from './agent-history'
 import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
 import type { CachedMarkdownFile } from './github-sync'
@@ -265,10 +265,11 @@ interface AgentPanelProps {
   fontWeight: number
 }
 
-function AgentGlyph({ name }: { name: 'bot' | 'send' | 'settings' | 'refresh' | 'check' | 'close' | 'history' | 'download' | 'plus' | 'minus' | 'git' | 'shield' | 'alert' | 'brain' | 'chevron' | 'folder' | 'file' | 'copy' | 'code' | 'diagram' | 'fullscreen' | 'edit' | 'arrow-left' | 'arrow-right' }) {
+function AgentGlyph({ name }: { name: 'bot' | 'send' | 'stop' | 'settings' | 'refresh' | 'check' | 'close' | 'history' | 'download' | 'plus' | 'minus' | 'git' | 'shield' | 'alert' | 'brain' | 'chevron' | 'folder' | 'file' | 'copy' | 'code' | 'diagram' | 'fullscreen' | 'edit' | 'arrow-left' | 'arrow-right' }) {
   const paths = {
     bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
     send: <><path d="m21 3-7.5 18-3.8-7.7L2 9.5 21 3Z"/><path d="m9.7 13.3 4.1-4.1"/></>,
+    stop: <rect x="6.5" y="6.5" width="11" height="11" rx="2"/>,
     settings: <><path d="M4 7h10m4 0h2M4 12h3m4 0h9M4 17h8m4 0h4"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></>,
     refresh: <><path d="M20 7v5h-5"/><path d="M18.2 16.5A8 8 0 1 1 19.8 9L20 12"/></>,
     check: <path d="m5 12 4 4L19 6"/>, close: <path d="m6 6 12 12M18 6 6 18"/>,
@@ -345,6 +346,10 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   const historyButtonRef = useRef<HTMLButtonElement | null>(null)
   const replyBufferRef = useRef('')
   const receivedStreamTextRef = useRef(false)
+  const streamedContentRef = useRef('')
+  const abortRef = useRef<AbortController | null>(null)
+  const conversationRef = useRef<HTMLDivElement | null>(null)
+  const stickToBottomRef = useRef(true)
 
   useEffect(() => {
     let disposed = false
@@ -396,6 +401,8 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   useEffect(() => {
     if (busy !== 'send') return
     const timer = window.setInterval(() => {
+      const container = conversationRef.current
+      if (container && stickToBottomRef.current) container.scrollTop = container.scrollHeight
       const next = replyBufferRef.current.slice(0, 1)
       if (!next) return
       replyBufferRef.current = replyBufferRef.current.slice(1)
@@ -408,7 +415,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     let disposed = false
     void loadAgentConversations().then((saved) => {
       if (disposed || !saved.length) return
-      setConversations(saved); setConversation(saved[0])
+      setConversations(saved); setConversation(saved[0]); setMode(saved[0].mode ?? 'chat')
     }).catch(() => { if (!disposed) setError('无法读取本地对话历史') })
     return () => { disposed = true }
   }, [])
@@ -422,7 +429,14 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     })
   }
 
-  const startConversation = () => { const next = createConversation(); saveConversation(next); setHistoryOpen(false) }
+  const startConversation = () => { const next = { ...createConversation(), mode }; saveConversation(next); setHistoryOpen(false) }
+
+  const switchMode = (next: AgentMode) => {
+    if (next === mode) return
+    setMode(next)
+    // 只有真实对话（不是初始欢迎语）才记忆模式；空对话由下次发送时记录。
+    if (conversation.messages.length > 1) saveConversation({ ...conversation, mode: next, updatedAt: Date.now() })
+  }
 
   const exportConversation = (item: AgentConversation) => {
     const url = URL.createObjectURL(new Blob([conversationMarkdown(item)], { type: 'text/markdown;charset=utf-8' }))
@@ -475,6 +489,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   const send = async (replacement?: { text: string; userIndex?: number }) => {
     const text = (replacement?.text || input).trim()
     if (!text || busy) return
+    stickToBottomRef.current = true
     const flat = flattenMessages(conversation.messages)
     const revising = replacement?.userIndex !== undefined
     const revisionIndex = replacement?.userIndex ?? -1
@@ -502,15 +517,33 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     }
     setLastRequest(revising ? { text, userIndex: revisionIndex } : { text })
     const startedAt = Date.now()
-    saveConversation({ ...conversation, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: nextMessages, updatedAt: Date.now() })
+    saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: nextMessages, updatedAt: Date.now() })
     if (!revising) setInput('')
-    setEditingQuestion(null); setBusy('send'); setError(''); setStreamingReply(''); setStreamingReasoning(''); setAnswerStarted(false); setThinkingSeconds(0); setThinkingStartedAt(startedAt); replyBufferRef.current = ''; receivedStreamTextRef.current = false
+    setEditingQuestion(null); setBusy('send'); setError(''); setStreamingReply(''); setStreamingReasoning(''); setAnswerStarted(false); setThinkingSeconds(0); setThinkingStartedAt(startedAt); replyBufferRef.current = ''; receivedStreamTextRef.current = false; streamedContentRef.current = ''; abortRef.current = new AbortController()
+    // 把新的回答挂到正确位置：重新生成覆盖旧回答（加新版本），修改提问追加到问题分支尾部，普通发送直接追加。
+    const withAnswer = (messages: AgentMessage[], answer: AgentMessage, reply: string, reasoningSummary: string | undefined, duration: number) => replacingAnswerPath
+      ? updateAtPath(messages, replacingAnswerPath, (message) => {
+          const versions = [...(message.answerVersions || [{ content: message.content, reasoningSummary: message.reasoningSummary, reasoningDurationSeconds: message.reasoningDurationSeconds }]), { content: reply, reasoningSummary, reasoningDurationSeconds: duration }]
+          return { ...message, answerVersions: versions, activeAnswerVersion: versions.length - 1 }
+        })
+      : edited
+        ? updateAtPath(messages, questionPath!, (question) => {
+            const versions = question.questionVersions!.map((version, vi) => vi === question.questionVersions!.length - 1 ? { ...version, tail: [...version.tail, answer] } : version)
+            return { ...question, questionVersions: versions }
+          })
+        : [...messages, answer]
     try {
       const sources = selectedFiles.map((file) => ({ path: file.path, content: file.content }))
       const gitContext = await getGitContext(sources.map((file) => file.path))
-      const result = await askAgent(config, mode, requestMessages, sources, gitContext, (delta) => {
-        if (delta.reasoning) setStreamingReasoning((current) => current + delta.reasoning!)
-        if (delta.content && mode === 'chat') { receivedStreamTextRef.current = true; setThinkingSeconds(Math.max(1, Math.round((Date.now() - startedAt) / 1000))); setAnswerStarted(true); replyBufferRef.current += delta.content }
+      // 把本对话已批准应用过的修改（含行级 diff）带给模型，让它知道自己改了什么。
+      const appliedChanges: AgentAppliedChange[] = flattenMessages(nextMessages).flatMap((entry) => (entry.message.appliedFiles || []).flatMap((file) => file.diff ? [{ path: file.path, action: file.action, diff: file.diff }] : []))
+      const result = await askAgent(config, mode, requestMessages, sources, gitContext, {
+        appliedChanges,
+        signal: abortRef.current?.signal,
+        onDelta: (delta) => {
+          if (delta.reasoning) setStreamingReasoning((current) => current + delta.reasoning!)
+          if (delta.content && mode === 'chat') { receivedStreamTextRef.current = true; streamedContentRef.current += delta.content; setThinkingSeconds(Math.max(1, Math.round((Date.now() - startedAt) / 1000))); setAnswerStarted(true); replyBufferRef.current += delta.content }
+        },
       })
       if (mode === 'edit' || !receivedStreamTextRef.current) { setThinkingSeconds(Math.max(1, Math.round((Date.now() - startedAt) / 1000))); setAnswerStarted(true); replyBufferRef.current += result.reply }
       await new Promise<void>((resolve) => {
@@ -518,19 +551,9 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
         waitForReply()
       })
       const reasoningDurationSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
-      const answer: AgentMessage = { role: 'assistant', content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds, ...(mode === 'edit' && config.permissionMode !== 'auto' && result.proposals.length ? { proposals: result.proposals } : {}), ...(mode === 'edit' && config.permissionMode !== 'auto' && result.commitRequested ? { commitRequested: true } : {}) }
-      const finalMessages = replacingAnswerPath
-        ? updateAtPath(nextMessages, replacingAnswerPath, (message) => {
-            const versions = [...(message.answerVersions || [{ content: message.content, reasoningSummary: message.reasoningSummary, reasoningDurationSeconds: message.reasoningDurationSeconds }]), { content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds }]
-            return { ...message, answerVersions: versions, activeAnswerVersion: versions.length - 1 }
-          })
-        : edited
-          ? updateAtPath(nextMessages, questionPath!, (question) => {
-              const versions = question.questionVersions!.map((version, vi) => vi === question.questionVersions!.length - 1 ? { ...version, tail: [...version.tail, answer] } : version)
-              return { ...question, questionVersions: versions }
-            })
-          : [...nextMessages, answer]
-      saveConversation({ ...conversation, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: finalMessages, updatedAt: Date.now() })
+      const answer: AgentMessage = { role: 'assistant', content: result.reply, reasoningSummary: result.reasoningSummary, reasoningDurationSeconds, ...(mode === 'edit' && config.permissionMode !== 'auto' && result.proposals.length ? { proposals: result.proposals } : {}), ...(mode === 'edit' && config.permissionMode !== 'auto' && result.commitRequested ? { commitRequested: true } : {}), ...(mode === 'edit' && config.permissionMode === 'auto' && result.proposals.length ? { appliedFiles: result.proposals.map((proposal) => { const file = sources.find((source) => source.path === proposal.path); return { path: proposal.path, action: proposal.action, diff: file ? fileDiff(file.content, proposal.content) : { start: 0, removed: [], added: [] } } }) } : {}) }
+      const finalMessages = withAnswer(nextMessages, answer, result.reply, result.reasoningSummary, reasoningDurationSeconds)
+      saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: finalMessages, updatedAt: Date.now() })
       if (result.proposals.length) {
         if (config.permissionMode === 'auto') {
           result.proposals.forEach((proposal) => { if (proposal.action === 'create') onCreateFile(proposal.path, proposal.content); else onApplyChange(proposal.path, proposal.content) })
@@ -538,7 +561,24 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
         } else setNotice(`已生成 ${result.proposals.length} 个待审核文件修改，请在回答气泡里确认。`)
       }
       if (result.commitRequested && config.permissionMode === 'auto') { setBusy('commit'); await onCommit(); setNotice('已按自动执行许可提交 Git 修改。') }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '模型请求失败') } finally { setBusy(null); setThinkingStartedAt(null) }
+    } catch (reason) {
+      if (reason instanceof Error && reason.name === 'AbortError') {
+        // 手动停止：等缓冲里的部分回答吐完，把它落盘保留下来；不做版本化，简单追加。
+        await new Promise<void>((resolve) => {
+          const waitForReply = () => replyBufferRef.current ? window.setTimeout(waitForReply, 20) : resolve()
+          waitForReply()
+        })
+        const partial = streamedContentRef.current
+        if (partial) {
+          const answer: AgentMessage = { role: 'assistant', content: partial }
+          const finalMessages = replacingAnswerPath ? updateAtPath(nextMessages, replacingAnswerPath, () => answer) : [...nextMessages, answer]
+          saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: finalMessages, updatedAt: Date.now() })
+        }
+        setNotice('已停止回答。')
+      } else {
+        setError(reason instanceof Error ? reason.message : '模型请求失败')
+      }
+    } finally { setBusy(null); setThinkingStartedAt(null); abortRef.current = null }
   }
 
   const selectAnswerVersion = (path: number[], versionIndex: number) => {
@@ -560,7 +600,9 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       if (!proposal) return message
       if (proposal.action === 'create') onCreateFile(proposal.path, proposal.content)
       else onApplyChange(proposal.path, proposal.content)
-      return { ...message, proposals: message.proposals?.filter((item) => item.id !== proposalId), appliedFiles: [...(message.appliedFiles || []), { path: proposal.path, action: proposal.action }] }
+      // 记录应用的 JSON 修改（含行级 diff），后续请求会带给 AI，让它知道自己改了什么。
+      const file = files.find((item) => item.path === proposal.path)
+      return { ...message, proposals: message.proposals?.filter((item) => item.id !== proposalId), appliedFiles: [...(message.appliedFiles || []), { path: proposal.path, action: proposal.action, diff: file ? fileDiff(file.content, proposal.content) : { start: 0, removed: [], added: [] } }] }
     })
     saveConversation({ ...conversation, messages, updatedAt: Date.now() })
   }
@@ -583,7 +625,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   }
 
   return <div className="agent-workspace" style={{ '--agent-font-size': `${fontSize}px`, '--agent-font-family': fontFamily, '--agent-font-weight': fontWeight } as CSSProperties}>
-    <header className="agent-toolbar"><div className="agent-mode-tabs" role="tablist"><button type="button" className={mode === 'chat' ? 'active' : ''} onClick={() => setMode('chat')}>Chat</button><button type="button" className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>Edit</button></div><span>{providerDefinition(config.provider).label} · {config.model || '未选择模型'}</span><button ref={historyButtonRef} type="button" className="agent-settings-button" onClick={() => setHistoryOpen((value) => !value)} title="对话历史"><AgentGlyph name="history" /></button><button type="button" className="agent-settings-button" onClick={() => setSettingsOpen((value) => !value)} title="AI 配置"><AgentGlyph name="settings" /></button></header>
+    <header className="agent-toolbar"><div className="agent-mode-tabs" role="tablist"><button type="button" className={mode === 'chat' ? 'active' : ''} onClick={() => switchMode('chat')}>Chat</button><button type="button" className={mode === 'edit' ? 'active' : ''} onClick={() => switchMode('edit')}>Edit</button></div><span>{providerDefinition(config.provider).label} · {config.model || '未选择模型'}</span><button ref={historyButtonRef} type="button" className="agent-settings-button" onClick={() => setHistoryOpen((value) => !value)} title="对话历史"><AgentGlyph name="history" /></button><button type="button" className="agent-settings-button" onClick={() => setSettingsOpen((value) => !value)} title="AI 配置"><AgentGlyph name="settings" /></button></header>
     {settingsOpen && <section className="agent-settings" aria-label="AI 服务配置">
       <header><div><strong>AI 服务配置</strong><small>配置 AI Agent 的聊天与笔记编辑能力</small></div><button type="button" onClick={() => setSettingsOpen(false)} aria-label="关闭配置"><AgentGlyph name="close" /></button></header>
       <label className="agent-field agent-provider-field"><span>AI 服务商</span><select value={config.provider} onChange={(event) => chooseProvider(event.target.value as AgentProviderId)}>{providerDefinitions.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
@@ -595,8 +637,8 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     </section>}
     {notice && <div className="agent-notice"><AgentGlyph name="check" />{notice}</div>}
     {error && <div className="agent-error"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
-    {historyOpen && <section className="agent-history" ref={historyRef}><header><strong>对话历史</strong><button type="button" onClick={startConversation}><AgentGlyph name="plus" />新对话</button></header>{conversations.map((item) => <div className={item.id === conversation.id ? 'active' : ''} key={item.id}><button type="button" onClick={() => { setConversation(item); setHistoryOpen(false) }}><strong>{item.title}</strong><small>{new Date(item.updatedAt).toLocaleString('zh-CN')}</small></button><button type="button" onClick={() => exportConversation(item)} title="导出 Markdown"><AgentGlyph name="download" /></button></div>)}</section>}
-    <div className="agent-conversation">{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={acceptProposalInMessage} onRejectProposal={rejectProposalInMessage} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div><details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
-    <footer className="agent-composer"><div className="agent-composer-input"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={mode === 'edit' ? '描述要修改或新建的笔记。AI 会先给出可审核的方案。' : '询问笔记内容，Enter 发送…'} /></div><div className="agent-composer-tools">{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="编辑范围" className="agent-option-trigger" onClick={() => setScopeOpen((value) => !value)}><AgentGlyph name={scope === 'current' ? 'file' : 'folder'} />{scope === 'current' ? '当前文件' : '仓库笔记'}</button>{scopeOpen && <div className="agent-option-popover scope-popover" ref={clampPopover}><header><strong>编辑范围</strong></header><button type="button" className={scope === 'current' ? 'selected' : ''} disabled={!activePath} onClick={() => { setScope('current'); setScopeOpen(false) }}><AgentGlyph name="file" /><span><strong>当前文件</strong><small>{activePath || '请先从仓库中打开一个文件'}</small></span><i>✓</i></button><button type="button" className={scope === 'cached' ? 'selected' : ''} onClick={() => { setScope('cached'); setScopeOpen(false) }}><AgentGlyph name="folder" /><span><strong>仓库笔记</strong><small>已缓存 {files.length}/{remoteFileCount} 个 Markdown 文件</small></span><i>✓</i></button>{files.length < remoteFileCount && <button type="button" className="scope-load-button" onClick={() => void onLoadAllFiles()} disabled={loadingFiles}>{loadingFiles ? '正在读取全部笔记…' : '读取全部笔记'}</button>}</div>}</div>}<div className="agent-option-wrap"><button type="button" title="思考" className={`agent-option-trigger ${config.reasoningEnabled ? 'active' : ''}`} onClick={() => setReasoningOpen((value) => !value)}><AgentGlyph name="brain" />思考{config.reasoningEnabled ? ` · ${{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[config.reasoningEffort]}` : ' · 关'}</button>{reasoningOpen && <div className="agent-option-popover reasoning-popover" ref={clampPopover}><header><strong>思考</strong></header><div className="agent-effort">{(['low', 'medium', 'high', 'xhigh', 'max'] as const).map((effort) => <button type="button" className={config.reasoningEffort === effort ? 'active' : ''} key={effort} onClick={() => setConfig((current) => ({ ...current, reasoningEffort: effort, reasoningEnabled: true }))}><span>{{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[effort]}</span>{config.reasoningEffort === effort && <AgentGlyph name="check" />}</button>)}</div><p>让支持推理的模型返回可展开的思考过程。</p><button type="button" className={`reasoning-toggle ${config.reasoningEnabled ? 'on' : ''}`} onClick={() => setConfig((current) => ({ ...current, reasoningEnabled: !current.reasoningEnabled }))}><AgentGlyph name="brain" />{config.reasoningEnabled ? '关闭思考' : '开启思考'}</button></div>}</div>{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="操作许可" className={`agent-option-trigger ${config.permissionMode === 'auto' ? 'auto' : ''}`} onClick={() => setPermissionOpen((value) => !value)}><AgentGlyph name={config.permissionMode === 'auto' ? 'alert' : 'shield'} />{config.permissionMode === 'auto' ? '自动执行' : '每次确认'}</button>{permissionOpen && <div className="agent-option-popover permission-popover" ref={clampPopover}><header><strong>操作许可</strong></header><button type="button" className={config.permissionMode === 'confirm' ? 'selected' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'confirm' })); setPermissionOpen(false) }}><AgentGlyph name="shield" /><span><strong>请求批准</strong><small>修改、新建或提交 Git 前逐项确认。</small></span><i>✓</i></button><button type="button" className={config.permissionMode === 'auto' ? 'selected auto' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'auto' })); setPermissionOpen(false) }}><AgentGlyph name="alert" /><span><strong>自动执行</strong><small>收到方案后直接暂存修改与提交请求。</small></span><i>✓</i></button></div>}</div>}<button type="button" className="agent-send-button" title="发送" onClick={() => void send()} disabled={!input.trim() || busy !== null}><AgentGlyph name="send" /></button></div></footer>
+    {historyOpen && <section className="agent-history" ref={historyRef}><header><strong>对话历史</strong><button type="button" onClick={startConversation}><AgentGlyph name="plus" />新对话</button></header>{conversations.map((item) => <div className={item.id === conversation.id ? 'active' : ''} key={item.id}><button type="button" onClick={() => { setConversation(item); setMode(item.mode ?? 'chat'); setHistoryOpen(false) }}><strong>{item.title}</strong><small>{new Date(item.updatedAt).toLocaleString('zh-CN')}</small></button><button type="button" onClick={() => exportConversation(item)} title="导出 Markdown"><AgentGlyph name="download" /></button></div>)}</section>}
+    <div className="agent-conversation" ref={conversationRef} onScroll={(event) => { const el = event.currentTarget; stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32 }}>{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={acceptProposalInMessage} onRejectProposal={rejectProposalInMessage} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div><details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
+    <footer className="agent-composer"><div className="agent-composer-input"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={mode === 'edit' ? '描述要修改或新建的笔记。AI 会先给出可审核的方案。' : '询问笔记内容，Enter 发送…'} /></div><div className="agent-composer-tools">{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="编辑范围" className="agent-option-trigger" onClick={() => setScopeOpen((value) => !value)}><AgentGlyph name={scope === 'current' ? 'file' : 'folder'} />{scope === 'current' ? '当前文件' : '仓库笔记'}</button>{scopeOpen && <div className="agent-option-popover scope-popover" ref={clampPopover}><header><strong>编辑范围</strong></header><button type="button" className={scope === 'current' ? 'selected' : ''} disabled={!activePath} onClick={() => { setScope('current'); setScopeOpen(false) }}><AgentGlyph name="file" /><span><strong>当前文件</strong><small>{activePath || '请先从仓库中打开一个文件'}</small></span><i>✓</i></button><button type="button" className={scope === 'cached' ? 'selected' : ''} onClick={() => { setScope('cached'); setScopeOpen(false) }}><AgentGlyph name="folder" /><span><strong>仓库笔记</strong><small>已缓存 {files.length}/{remoteFileCount} 个 Markdown 文件</small></span><i>✓</i></button>{files.length < remoteFileCount && <button type="button" className="scope-load-button" onClick={() => void onLoadAllFiles()} disabled={loadingFiles}>{loadingFiles ? '正在读取全部笔记…' : '读取全部笔记'}</button>}</div>}</div>}<div className="agent-option-wrap"><button type="button" title="思考" className={`agent-option-trigger ${config.reasoningEnabled ? 'active' : ''}`} onClick={() => setReasoningOpen((value) => !value)}><AgentGlyph name="brain" />思考{config.reasoningEnabled ? ` · ${{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[config.reasoningEffort]}` : ' · 关'}</button>{reasoningOpen && <div className="agent-option-popover reasoning-popover" ref={clampPopover}><header><strong>思考</strong></header><div className="agent-effort">{(['low', 'medium', 'high', 'xhigh', 'max'] as const).map((effort) => <button type="button" className={config.reasoningEffort === effort ? 'active' : ''} key={effort} onClick={() => setConfig((current) => ({ ...current, reasoningEffort: effort, reasoningEnabled: true }))}><span>{{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[effort]}</span>{config.reasoningEffort === effort && <AgentGlyph name="check" />}</button>)}</div><p>让支持推理的模型返回可展开的思考过程。</p><button type="button" className={`reasoning-toggle ${config.reasoningEnabled ? 'on' : ''}`} onClick={() => setConfig((current) => ({ ...current, reasoningEnabled: !current.reasoningEnabled }))}><AgentGlyph name="brain" />{config.reasoningEnabled ? '关闭思考' : '开启思考'}</button></div>}</div>{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="操作许可" className={`agent-option-trigger ${config.permissionMode === 'auto' ? 'auto' : ''}`} onClick={() => setPermissionOpen((value) => !value)}><AgentGlyph name={config.permissionMode === 'auto' ? 'alert' : 'shield'} />{config.permissionMode === 'auto' ? '自动执行' : '每次确认'}</button>{permissionOpen && <div className="agent-option-popover permission-popover" ref={clampPopover}><header><strong>操作许可</strong></header><button type="button" className={config.permissionMode === 'confirm' ? 'selected' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'confirm' })); setPermissionOpen(false) }}><AgentGlyph name="shield" /><span><strong>请求批准</strong><small>修改、新建或提交 Git 前逐项确认。</small></span><i>✓</i></button><button type="button" className={config.permissionMode === 'auto' ? 'selected auto' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'auto' })); setPermissionOpen(false) }}><AgentGlyph name="alert" /><span><strong>自动执行</strong><small>收到方案后直接暂存修改与提交请求。</small></span><i>✓</i></button></div>}</div>}<button type="button" className="agent-send-button" title={busy === 'send' ? '停止回答' : '发送'} onClick={() => { if (busy === 'send') abortRef.current?.abort(); else void send() }} disabled={busy === 'send' ? false : busy !== null || !input.trim()}><AgentGlyph name={busy === 'send' ? 'stop' : 'send'} /></button></div></footer>
   </div>
 }
