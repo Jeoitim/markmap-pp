@@ -590,6 +590,35 @@ export async function discardLocalGitChanges(id: string) {
   return inspectRepository(repository.root);
 }
 
+export async function discardLocalGitFile(id: string, relativePath: string) {
+  const resolved = await resolveRepositoryFile(id, relativePath, true);
+  const { repository, relative, target } = resolved;
+  if (!repository.isGitRepository)
+    throw new Error('当前文件夹不是 Git 仓库，无法放弃版本修改');
+  const existsInHead = repository.head
+    ? await runGit(repository.root, ['cat-file', '-e', `HEAD:${relative}`]).then(() => true).catch(() => false)
+    : false;
+  if (existsInHead) {
+    await runGit(repository.root, [
+      'restore',
+      '--source=HEAD',
+      '--staged',
+      '--worktree',
+      '--',
+      relative,
+    ]);
+  } else {
+    await runGit(repository.root, ['rm', '--cached', '--ignore-unmatch', '--', relative]).catch(() => '');
+    await fs.lstat(target).then(async (stat) => {
+      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('仅允许移除未跟踪的 Markdown 文件');
+      await fs.rm(target);
+    }).catch((error) => {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    });
+  }
+  return inspectRepository(repository.root);
+}
+
 export async function readLocalGitGraph(id: string): Promise<DesktopLocalGitGraph> {
   let { repository } = await resolveStoredRepository(id);
   if (!repository.isGitRepository) throw new Error('当前文件夹不是 Git 仓库，无法查看提交图');

@@ -116,6 +116,7 @@ export const desktopChannels = {
   localGitMove: 'desktop:local-git-move',
   localGitRemove: 'desktop:local-git-remove',
   localGitDiscard: 'desktop:local-git-discard',
+  localGitDiscardFile: 'desktop:local-git-discard-file',
   localGitGraph: 'desktop:local-git-graph',
   localGitSwitchBranch: 'desktop:local-git-switch-branch',
   localGitCommit: 'desktop:local-git-commit',

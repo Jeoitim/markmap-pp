@@ -31,6 +31,7 @@ import {
 import {
   commitLocalGitMarkdown,
   discardLocalGitChanges,
+  discardLocalGitFile,
   forgetLocalGitRepository,
   getLocalGitState,
   inspectLocalGitRepository,
@@ -393,6 +394,11 @@ function registerIpc() {
     assertTrusted(event);
     if (typeof id !== 'string') throw new Error('仓库标识无效');
     return discardLocalGitChanges(id);
+  });
+  ipcMain.handle(desktopChannels.localGitDiscardFile, async (event, id: unknown, relativePath: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string' || typeof relativePath !== 'string') throw new Error('文件路径无效');
+    return discardLocalGitFile(id, relativePath);
   });
   ipcMain.handle(desktopChannels.localGitGraph, async (event, id: unknown) => {
     assertTrusted(event);

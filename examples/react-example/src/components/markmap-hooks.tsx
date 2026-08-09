@@ -749,6 +749,8 @@ export default function MarkmapHooks() {
   const [cachedFiles, setCachedFiles] = useState<CachedMarkdownFile[]>([])
   // Agent 自动应用后可能在 React 下一次渲染前立即请求提交；ref 保证提交读取到刚写入的实时文件集合。
   const cachedFilesRef = useRef<CachedMarkdownFile[]>([])
+  const remoteCacheRevisionRef = useRef(new Map<string, number>())
+  const remoteCacheQueueRef = useRef(new Map<string, Promise<void>>())
   const [remoteHead, setRemoteHead] = useState('')
   const [repositoryCommitRef, setRepositoryCommitRef] = useState<string | null>(null)
   const [repositoryGraph, setRepositoryGraph] = useState<RepositoryGraphState | null>(null)
@@ -1628,6 +1630,26 @@ export default function MarkmapHooks() {
     finally { setLocalGitBusy(false); setLocalGitActivity(null) }
   }
 
+  const discardLocalRepositoryFile = async (target: RepositoryTarget) => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || !repositoryId || target.type !== 'file' || !window.confirm(`放弃“${target.name}”的未提交修改？`)) return
+    const key = `${repositoryId}:${target.path}`
+    const timer = localAutosaveTimersRef.current.get(key)
+    if (timer) window.clearTimeout(timer)
+    localAutosaveTimersRef.current.delete(key)
+    localAutosaveRevisionRef.current.set(key, (localAutosaveRevisionRef.current.get(key) || 0) + 1)
+    setLocalGitBusy(true); setLocalGitActivity('discard'); setLocalGitError(''); setLocalGitNotice('')
+    try {
+      await localAutosaveQueueRef.current.get(key)?.catch(() => {})
+      const repository = await desktop.localGit.discardFile(repositoryId, target.path)
+      replaceLocalRepository(repository)
+      await reloadLocalRepositoryTabs(repositoryId, new Set(repository.files.filter((file) => file.gitStatus !== 'D').map((file) => file.path)))
+      setLocalGitNotice(`已放弃 ${target.name} 的修改`)
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '放弃文件修改失败') }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
+  }
+
   const openLocalRepositoryGraph = async () => {
     const desktop = desktopApi()
     const repositoryId = localGitState.activeId
@@ -2489,6 +2511,53 @@ export default function MarkmapHooks() {
     } finally { setGithubBusyAction(null) }
   }
 
+  const discardRepositoryFile = async (target: RepositoryTarget) => {
+    if (!githubConfig || target.type !== 'file') return
+    const row = buildRepositoryRows(remoteFiles, cachedFilesRef.current, virtualFolders, new Set()).find((item) => item.type === 'file' && item.path === target.path)
+    const file = row?.cached
+    if (!file || file.status === 'clean' || !window.confirm(`放弃“${target.name}”的本地修改？`)) return
+    remoteCacheRevisionRef.current.set(file.path, (remoteCacheRevisionRef.current.get(file.path) || 0) + 1)
+    setGithubBusyAction('discard'); setGithubError(''); setGithubNotice('')
+    try {
+      await remoteCacheQueueRef.current.get(file.path)?.catch(() => {})
+      let nextFiles: CachedMarkdownFile[]
+      let restored: CachedMarkdownFile | null = null
+      if (file.status === 'added') {
+        await removeCachedFile(file.id)
+        nextFiles = cachedFilesRef.current.filter((item) => item.id !== file.id)
+      } else {
+        restored = {
+          ...file,
+          id: `${file.repoKey}:${file.originalPath}`,
+          path: file.originalPath,
+          content: file.baseContent,
+          status: 'clean',
+          updatedAt: Date.now(),
+        }
+        if (restored.id !== file.id) await removeCachedFile(file.id)
+        await putCachedFile(restored)
+        nextFiles = cachedFilesRef.current.filter((item) => item.id !== file.id && item.id !== restored!.id).concat(restored).sort((left, right) => left.path.localeCompare(right.path))
+      }
+      cachedFilesRef.current = nextFiles
+      setCachedFiles(nextFiles)
+      const affectedTabs = (tab: DocumentTab) => tab.repositoryPath === file.path
+      let nextTabs = restored
+        ? documentTabsRef.current.map((tab) => affectedTabs(tab) ? { ...tab, name: restored!.path, content: restored!.content, savedContent: restored!.content, repositoryPath: restored!.path, sourceKey: `repository:${file.repoKey}:${restored!.path}` } : tab)
+        : documentTabsRef.current.filter((tab) => !affectedTabs(tab))
+      if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
+      documentTabsRef.current = nextTabs
+      setDocumentTabs(nextTabs)
+      const active = nextTabs.find((tab) => tab.id === activeTabId) || nextTabs[0]
+      if (affectedTabs(activeDocumentTab || active) || !nextTabs.some((tab) => tab.id === activeTabId)) {
+        setActiveTabId(active.id)
+        displayDocumentTab(active)
+      }
+      setGithubNotice(`已放弃 ${target.name} 的修改`)
+    } catch (error) {
+      setGithubError(error instanceof Error ? error.message : '放弃文件修改失败')
+    } finally { setGithubBusyAction(null) }
+  }
+
   const openGitHubPanel = () => {
     setGithubError(''); setGithubNotice('')
     if (repositorySource === 'local') {
@@ -2769,7 +2838,10 @@ export default function MarkmapHooks() {
 
   useEffect(() => {
     if (!activeRepoPath) return
+    const revision = (remoteCacheRevisionRef.current.get(activeRepoPath) || 0) + 1
+    remoteCacheRevisionRef.current.set(activeRepoPath, revision)
     const timer = window.setTimeout(() => {
+      if (remoteCacheRevisionRef.current.get(activeRepoPath) !== revision) return
       setCachedFiles((current) => {
         const file = current.find((item) => item.path === activeRepoPath)
         if (!file || file.content === markdown) return current
@@ -2779,7 +2851,8 @@ export default function MarkmapHooks() {
           status: (file.status === 'added' ? 'added' : file.originalPath !== file.path ? 'renamed' : markdown === file.baseContent ? 'clean' : 'modified') as CachedMarkdownFile['status'],
           updatedAt: Date.now(),
         }
-        void putCachedFile(next).catch(() => setGithubError('本地缓存写入失败'))
+        const operation = putCachedFile(next).catch(() => setGithubError('本地缓存写入失败'))
+        remoteCacheQueueRef.current.set(activeRepoPath, operation)
         return current.map((item) => item.id === next.id ? next : item)
       })
     }, 220)
@@ -3580,6 +3653,7 @@ ${documentRenderConfig.style}
                   <strong>{localRepositoryMenu.target.name}</strong>
                   {localRepositoryMenu.target.type === 'file' && <button disabled={localRepositoryMenu.target.path.endsWith('/') || activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus === 'D'} onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void openLocalRepositoryFile(activeLocalRepository.id, target.path) }}>打开</button>}
                   {activeLocalRepository.isGitRepository && localRepositoryMenu.target.type === 'file' && <button disabled={['?', 'A'].includes(activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus || '')} title={['?', 'A'].includes(activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus || '') ? '新增文件还没有提交历史' : '查看该文件的历史提交'} onClick={() => { const menu = localRepositoryMenu; if (menu) void openLocalRepositoryHistory(menu.target, menu.x, menu.y) }}>查看历史提交</button>}
+                  {activeLocalRepository.isGitRepository && localRepositoryMenu.target.type === 'file' && <button disabled={!activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus} onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void discardLocalRepositoryFile(target) }}>放弃该文件修改</button>}
                   {localRepositoryMenu.target.type !== 'root' && <><button onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); startLocalRepositoryRename(target) }}>重命名</button><button onClick={() => { setLocalRepositoryClipboard({ mode: 'copy', target: localRepositoryMenu.target }); setLocalRepositoryMenu(null); setLocalGitNotice(`已复制 ${localRepositoryMenu.target.name}，请在目标文件夹右键粘贴`) }}>复制</button><button onClick={() => { setLocalRepositoryClipboard({ mode: 'cut', target: localRepositoryMenu.target }); setLocalRepositoryMenu(null); setLocalGitNotice(`已剪切 ${localRepositoryMenu.target.name}，请在目标文件夹右键粘贴`) }}>剪切</button><button onClick={() => { void navigator.clipboard.writeText(localRepositoryMenu.target.path); setLocalRepositoryMenu(null); setLocalGitNotice('已复制相对路径') }}>复制相对路径</button></>}
                   {(localRepositoryMenu.target.type === 'folder' || localRepositoryMenu.target.type === 'root') && <><hr/><button disabled={!localRepositoryClipboard} onClick={() => { const folder = localRepositoryMenu.target.path; setLocalRepositoryMenu(null); void pasteLocalRepositoryClipboard(folder) }}>粘贴{localRepositoryClipboard ? `“${localRepositoryClipboard.target.name}”` : ''}</button></>}
                   {localRepositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void removeLocalRepositoryTarget(target) }}>删除</button></>}
@@ -3618,6 +3692,7 @@ ${documentRenderConfig.style}
                   <strong>{repositoryMenu.target.name}</strong>
                   {repositoryMenu.target.type !== 'root' && <><button onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); startRepositoryRename(target) }}>重命名</button><button onClick={() => { setRepositoryClipboard({ mode: 'copy', target: repositoryMenu.target }); setRepositoryMenu(null) }}>复制</button><button onClick={() => { setRepositoryClipboard({ mode: 'cut', target: repositoryMenu.target }); setRepositoryMenu(null) }}>剪切</button></>}
                   {repositoryMenu.target.type === 'file' && <button disabled={!repositoryMenuFile?.remote} title={repositoryMenuFile?.remote ? '查看该文件的历史提交' : '本地新增文件还没有远程提交记录'} onClick={() => { const menu = repositoryMenu; if (menu) void openRepositoryHistory(menu.target, menu.x, menu.y) }}>查看历史提交</button>}
+                  {repositoryMenu.target.type === 'file' && <button disabled={!repositoryMenuFile?.cached || repositoryMenuFile.cached.status === 'clean'} onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); void discardRepositoryFile(target) }}>放弃该文件修改</button>}
                   {(repositoryMenu.target.type === 'folder' || repositoryMenu.target.type === 'root') && <><hr/><button disabled={!repositoryClipboard} onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void pasteRepositoryClipboard(folder) }}>粘贴{repositoryClipboard ? `“${repositoryClipboard.target.name}”` : ''}</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void createRepositoryFile(folder) }}>新建 Markdown</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); createRepositoryFolder(folder) }}>新建文件夹</button></>}
                   {repositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); void deleteRepositoryTarget(target) }}>删除</button></>}
                 </div>}

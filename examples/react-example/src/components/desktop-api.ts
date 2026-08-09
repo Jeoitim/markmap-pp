@@ -88,6 +88,7 @@ export interface MarkmapDesktopApi {
     move(id: string, sourcePath: string, destinationPath: string, kind: 'file' | 'folder'): Promise<DesktopLocalGitRepository>
     remove(id: string, relativePath: string, kind: 'file' | 'folder'): Promise<DesktopLocalGitRepository>
     discard(id: string): Promise<DesktopLocalGitRepository>
+    discardFile(id: string, relativePath: string): Promise<DesktopLocalGitRepository>
     graph(id: string): Promise<DesktopLocalGitGraph>
     switchBranch(id: string, branch: string): Promise<DesktopLocalGitRepository>
     commit(id: string, message: string): Promise<DesktopLocalGitRepository>
