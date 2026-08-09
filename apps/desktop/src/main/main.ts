@@ -65,6 +65,7 @@ const maxSaveFileBytes = 200 * 1024 * 1024;
 const allowedExternalProtocols = new Set(['https:', 'mailto:']);
 let mainWindow: BrowserWindow | null = null;
 const openedMarkdownFiles = new Map<string, string>();
+const approvedWindowCloses = new WeakSet<BrowserWindow>();
 let stopLocalGitWatcher: (() => void) | null = null;
 
 protocol.registerSchemesAsPrivileged([
@@ -200,6 +201,14 @@ async function openMarkdownDialog(
 }
 
 function registerIpc() {
+  ipcMain.handle(desktopChannels.windowClose, (event) => {
+    assertTrusted(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window.isDestroyed()) return false;
+    approvedWindowCloses.add(window);
+    window.close();
+    return true;
+  });
   ipcMain.handle(desktopChannels.appInfo, (event) => {
     assertTrusted(event);
     return {
@@ -545,6 +554,12 @@ async function createWindow() {
     } catch {
       /* Block unknown protocols. */
     }
+  });
+  window.on('close', (event) => {
+    if (approvedWindowCloses.has(window)) return;
+    event.preventDefault();
+    if (!window.webContents.isDestroyed())
+      window.webContents.send(desktopChannels.windowCloseRequested);
   });
   window.on('closed', () => {
     stopLocalGitWatcher?.();

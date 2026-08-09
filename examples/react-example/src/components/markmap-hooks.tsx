@@ -709,6 +709,7 @@ export default function MarkmapHooks() {
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
   const [pendingCloseBusy, setPendingCloseBusy] = useState(false)
   const [pendingCloseError, setPendingCloseError] = useState('')
+  const [windowClosePending, setWindowClosePending] = useState(false)
   const [mobileTabsOpen, setMobileTabsOpen] = useState(false)
   const documentTabsRef = useRef(documentTabs)
   const [markdown, setMarkdown] = useState(() => documentTabs[0].content)
@@ -1900,12 +1901,23 @@ export default function MarkmapHooks() {
   }, [activeTabId, markActiveDocumentSaved])
 
   useEffect(() => {
+    if (desktopApi()) return
     const hasUnsaved = documentTabs.some((tab) => tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab))
     if (!hasUnsaved) return
     const warnBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', warnBeforeUnload)
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [activeTabId, documentTabs, markdown])
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    if (!desktop) return
+    return desktop.windowControl.onCloseRequested(() => {
+      const hasUnsaved = documentTabsRef.current.some((tab) => tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdownRef.current } : tab))
+      if (hasUnsaved) setWindowClosePending(true)
+      else void desktop.windowControl.close()
+    })
+  }, [activeTabId])
 
   useEffect(() => {
     const saveWithShortcut = (event: KeyboardEvent) => {
@@ -3523,6 +3535,7 @@ ${documentRenderConfig.style}
   const activeTabSnapshot = activeDocumentTab ? { ...activeDocumentTab, name: fileName, content: markdown } : null
   const activeTabUnsaved = activeTabSnapshot ? tabHasUnsavedChanges(activeTabSnapshot) : false
   const pendingCloseTab = pendingCloseTabId ? documentTabs.find((tab) => tab.id === pendingCloseTabId) : null
+  const windowUnsavedCount = documentTabs.filter((tab) => tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab)).length
   const activeLocalRepository = localGitState.repositories.find((repository) => repository.id === localGitState.activeId)
   const localRepositoryAction = !activeLocalRepository
     ? 'clean'
@@ -3773,6 +3786,14 @@ ${documentRenderConfig.style}
           <p>{pendingCloseTab.localRepositoryId || pendingCloseTab.desktopFileId ? '保存会把当前内容写回磁盘，然后关闭标签。' : '可以先下载一份 Markdown 副本，再关闭标签。'}</p>
           {pendingCloseError && <div className="export-error"><Icon name="warning" />{pendingCloseError}</div>}
           <footer><button type="button" disabled={pendingCloseBusy} onClick={() => setPendingCloseTabId(null)}>取消</button><button type="button" className="danger" disabled={pendingCloseBusy} onClick={() => { const id = pendingCloseTab.id; setPendingCloseTabId(null); closeDocumentTab(id, true) }}>不保存</button><button type="button" className="primary" disabled={pendingCloseBusy} onClick={() => void savePendingDocumentAndClose()}>{pendingCloseBusy ? '正在保存…' : pendingCloseTab.localRepositoryId || pendingCloseTab.desktopFileId ? '保存并关闭' : '下载副本并关闭'}</button></footer>
+        </section>
+      </div>}
+
+      {windowClosePending && <div className="unsaved-dialog-backdrop">
+        <section className="unsaved-dialog" role="alertdialog" aria-modal="true" aria-labelledby="window-close-dialog-title">
+          <header><span><Icon name="warning" /></span><div><strong id="window-close-dialog-title">关闭 markmap++？</strong><small>{windowUnsavedCount} 个文件有未保存的修改</small></div></header>
+          <p>不保存并退出会丢弃这些标签中尚未写入磁盘或下载的内容。</p>
+          <footer><button type="button" onClick={() => setWindowClosePending(false)}>继续编辑</button><button type="button" className="danger" onClick={() => { setWindowClosePending(false); void desktopApi()?.windowControl.close() }}>不保存并退出</button></footer>
         </section>
       </div>}
 

@@ -99,6 +99,8 @@ export const desktopChannels = {
   openedMarkdown: 'desktop:opened-markdown',
   saveOpenedMarkdown: 'desktop:save-opened-markdown',
   saveFile: 'desktop:save-file',
+  windowCloseRequested: 'desktop:window-close-requested',
+  windowClose: 'desktop:window-close',
   localGitGet: 'desktop:local-git-get',
   localGitOpen: 'desktop:local-git-open',
   localGitSelect: 'desktop:local-git-select',

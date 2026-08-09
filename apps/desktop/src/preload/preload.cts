@@ -8,6 +8,8 @@ const desktopChannels = {
   openedMarkdown: 'desktop:opened-markdown',
   saveOpenedMarkdown: 'desktop:save-opened-markdown',
   saveFile: 'desktop:save-file',
+  windowCloseRequested: 'desktop:window-close-requested',
+  windowClose: 'desktop:window-close',
   localGitGet: 'desktop:local-git-get',
   localGitOpen: 'desktop:local-git-open',
   localGitSelect: 'desktop:local-git-select',
@@ -49,6 +51,14 @@ const api = {
     const handler = (_event: Electron.IpcRendererEvent, file: DesktopOpenedFile) => listener(file)
     ipcRenderer.on(desktopChannels.openedMarkdown, handler)
     return () => ipcRenderer.removeListener(desktopChannels.openedMarkdown, handler)
+  },
+  windowControl: {
+    close: () => ipcRenderer.invoke(desktopChannels.windowClose) as Promise<boolean>,
+    onCloseRequested: (listener: () => void) => {
+      const handler = () => listener()
+      ipcRenderer.on(desktopChannels.windowCloseRequested, handler)
+      return () => ipcRenderer.removeListener(desktopChannels.windowCloseRequested, handler)
+    },
   },
   localGit: {
     get: () => ipcRenderer.invoke(desktopChannels.localGitGet) as Promise<DesktopLocalGitState>,

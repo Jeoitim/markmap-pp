@@ -70,6 +70,10 @@ export interface MarkmapDesktopApi {
   saveOpenedMarkdown(id: string, content: string): Promise<DesktopOpenedFile>
   saveFile(request: { suggestedName: string; mimeType: string; bytes: Uint8Array }): Promise<{ canceled: boolean; path?: string }>
   onOpenedMarkdown(listener: (file: DesktopOpenedFile) => void): () => void
+  windowControl: {
+    close(): Promise<boolean>
+    onCloseRequested(listener: () => void): () => void
+  }
   localGit: {
     get(): Promise<DesktopLocalGitState>
     open(): Promise<DesktopLocalGitState | null>
