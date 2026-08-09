@@ -68,6 +68,20 @@ svg { flex: 0 0 auto; }
 .document-tab-new:hover { color: var(--accent); background: color-mix(in srgb,var(--accent) 9%,transparent); }
 .document-tab-new svg { width: 15px; height: 15px; }
 .mobile-tabs-backdrop { display: none; }
+.unsaved-dialog-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 18px; background: #090b124f; backdrop-filter: blur(4px); }
+.unsaved-dialog { width: min(440px,100%); display: grid; gap: 15px; padding: 20px; border: 1px solid var(--border); border-radius: 15px; background: var(--panel); box-shadow: 0 24px 70px #090b1252; }
+.unsaved-dialog > header { display: flex; align-items: start; gap: 12px; }
+.unsaved-dialog > header > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #c47b19; background: #e39a3517; }
+.unsaved-dialog > header svg { width: 18px; height: 18px; }
+.unsaved-dialog > header div { min-width: 0; display: grid; gap: 5px; }
+.unsaved-dialog > header strong { font-size: 14px; }
+.unsaved-dialog > header small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.unsaved-dialog > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.unsaved-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; }
+.unsaved-dialog > footer button { min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-soft); font-size: 11px; font-weight: 650; cursor: pointer; }
+.unsaved-dialog > footer button.danger { color: #b94e47; }
+.unsaved-dialog > footer button.primary { color: #fff; border-color: var(--accent); background: var(--accent); }
+.unsaved-dialog > footer button:disabled { opacity: .55; cursor: wait; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 .workspace { min-height: 0; display: grid; background: var(--border); }

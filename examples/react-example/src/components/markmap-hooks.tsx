@@ -663,6 +663,9 @@ function readUserPreviewBackground(style: string) {
 export default function MarkmapHooks() {
   const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [createDocumentTab('markmap++ 操作指南.md', loadDocument(), 'starter')])
   const [activeTabId, setActiveTabId] = useState(() => documentTabs[0].id)
+  const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
+  const [pendingCloseBusy, setPendingCloseBusy] = useState(false)
+  const [pendingCloseError, setPendingCloseError] = useState('')
   const [mobileTabsOpen, setMobileTabsOpen] = useState(false)
   const documentTabsRef = useRef(documentTabs)
   const [markdown, setMarkdown] = useState(() => documentTabs[0].content)
@@ -950,13 +953,17 @@ export default function MarkmapHooks() {
     displayDocumentTab(tab)
   }, [activeTabId, displayDocumentTab, persistActiveDocumentTab])
 
-  const closeDocumentTab = useCallback((tabId: string) => {
+  const closeDocumentTab = useCallback((tabId: string, discardUnsaved = false) => {
     const savedTabs = persistActiveDocumentTab()
     const closingIndex = savedTabs.findIndex((tab) => tab.id === tabId)
     if (closingIndex < 0) return
     let nextTabs = savedTabs.filter((tab) => tab.id !== tabId)
     const closing = savedTabs[closingIndex]
-    if (closing && tabHasUnsavedChanges(closing) && !window.confirm(`“${closing.name}”有未保存的修改，仍要关闭吗？`)) return
+    if (closing && tabHasUnsavedChanges(closing) && !discardUnsaved) {
+      setPendingCloseTabId(tabId)
+      setPendingCloseError('')
+      return
+    }
     if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
@@ -965,6 +972,32 @@ export default function MarkmapHooks() {
     setActiveTabId(nextTab.id)
     displayDocumentTab(nextTab)
   }, [activeTabId, displayDocumentTab, persistActiveDocumentTab])
+
+  const savePendingDocumentAndClose = useCallback(async () => {
+    const tab = documentTabsRef.current.find((item) => item.id === pendingCloseTabId)
+    if (!tab) { setPendingCloseTabId(null); return }
+    setPendingCloseBusy(true); setPendingCloseError('')
+    try {
+      const desktop = desktopApi()
+      if (tab.localRepositoryId && tab.localPath) {
+        if (!desktop) throw new Error('请在桌面应用中保存本地 Git 文件')
+        const result = await desktop.localGit.write(tab.localRepositoryId, tab.localPath, tab.content)
+        setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === result.repository.id ? result.repository : item) }))
+      } else if (tab.desktopFileId) {
+        if (!desktop) throw new Error('文件授权已失效，请重新打开')
+        await desktop.saveOpenedMarkdown(tab.desktopFileId, tab.content)
+      } else {
+        const result = await saveBlob(new Blob([tab.content], { type: 'text/markdown;charset=utf-8' }), tab.name)
+        if (result.canceled) return
+      }
+      const nextTabs = documentTabsRef.current.map((item) => item.id === tab.id ? { ...item, savedContent: item.content } : item)
+      documentTabsRef.current = nextTabs
+      setDocumentTabs(nextTabs)
+      setPendingCloseTabId(null)
+      closeDocumentTab(tab.id, true)
+    } catch (error) { setPendingCloseError(error instanceof Error ? error.message : '保存文件失败') }
+    finally { setPendingCloseBusy(false) }
+  }, [closeDocumentTab, pendingCloseTabId])
 
   const createBlankDocumentTab = useCallback(() => {
     openDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })
@@ -2905,6 +2938,7 @@ ${documentRenderConfig.style}
   const activeCachedFile = activeRepoPath ? cachedFiles.find((file) => file.path === activeRepoPath) : undefined
   const activeTabSnapshot = activeDocumentTab ? { ...activeDocumentTab, name: fileName, content: markdown } : null
   const activeTabUnsaved = activeTabSnapshot ? tabHasUnsavedChanges(activeTabSnapshot) : false
+  const pendingCloseTab = pendingCloseTabId ? documentTabs.find((tab) => tab.id === pendingCloseTabId) : null
   const activeLocalRepository = localGitState.repositories.find((repository) => repository.id === localGitState.activeId)
   const agentUsesLocalRepository = Boolean(activeLocalFile)
   const agentUsesStandaloneFile = !activeLocalFile && !activeRepoPath
@@ -3090,6 +3124,15 @@ ${documentRenderConfig.style}
             <button type="button" className="mobile-tab-close" aria-label={`关闭 ${tab.name}`} onClick={() => closeDocumentTab(tab.id)}><Icon name="x" /></button>
           </article>)}</div>
           <footer><button type="button" onClick={() => { setMobileTabsOpen(false); void chooseMarkdownFile() }}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />新建标签</button></footer>
+        </section>
+      </div>}
+
+      {pendingCloseTab && <div className="unsaved-dialog-backdrop" onMouseDown={() => !pendingCloseBusy && setPendingCloseTabId(null)}>
+        <section className="unsaved-dialog" role="alertdialog" aria-modal="true" aria-labelledby="unsaved-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+          <header><span><Icon name="warning" /></span><div><strong id="unsaved-dialog-title">保存对“{pendingCloseTab.name}”的修改？</strong><small>{pendingCloseTab.localPath || pendingCloseTab.desktopPath || '当前标签还没有可持续写入的位置'}</small></div></header>
+          <p>{pendingCloseTab.localRepositoryId || pendingCloseTab.desktopFileId ? '保存会把当前内容写回磁盘，然后关闭标签。' : '可以先下载一份 Markdown 副本，再关闭标签。'}</p>
+          {pendingCloseError && <div className="export-error"><Icon name="warning" />{pendingCloseError}</div>}
+          <footer><button type="button" disabled={pendingCloseBusy} onClick={() => setPendingCloseTabId(null)}>取消</button><button type="button" className="danger" disabled={pendingCloseBusy} onClick={() => { const id = pendingCloseTab.id; setPendingCloseTabId(null); closeDocumentTab(id, true) }}>不保存</button><button type="button" className="primary" disabled={pendingCloseBusy} onClick={() => void savePendingDocumentAndClose()}>{pendingCloseBusy ? '正在保存…' : pendingCloseTab.localRepositoryId || pendingCloseTab.desktopFileId ? '保存并关闭' : '下载副本并关闭'}</button></footer>
         </section>
       </div>}
 
