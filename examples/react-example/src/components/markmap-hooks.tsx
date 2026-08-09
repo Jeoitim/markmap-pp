@@ -443,7 +443,7 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'link' | 'map' | 'moon' | 'more' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
+type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'link' | 'map' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'undo' | 'warning' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
@@ -464,6 +464,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15m6-12v15"/></>,
   moon: <path d="M20 15.2A8 8 0 1 1 8.8 4 6.5 6.5 0 0 0 20 15.2Z"/>,
   more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
+  plus: <path d="M12 5v14M5 12h14"/>,
   refresh: <><path d="M20 7v5h-5"/><path d="M18.2 16.5A8 8 0 1 1 19.8 9L20 12"/></>,
   settings: <><path d="M4 7h10m4 0h2M4 12h3m4 0h9M4 17h8m4 0h4"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></>,
   sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></>,
@@ -479,6 +480,27 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
 
 function loadDocument() {
   return starterDocument
+}
+
+interface DocumentTab {
+  id: string
+  sourceKey: string
+  name: string
+  content: string
+  repositoryPath: string | null
+}
+
+let documentTabSequence = 0
+
+function createDocumentTab(name: string, content: string, sourceKey?: string, repositoryPath: string | null = null): DocumentTab {
+  documentTabSequence += 1
+  return {
+    id: `document-${Date.now().toString(36)}-${documentTabSequence.toString(36)}`,
+    sourceKey: sourceKey || `document:${Date.now()}:${documentTabSequence}`,
+    name,
+    content,
+    repositoryPath,
+  }
 }
 
 function loadSettings(): AppSettings {
@@ -616,9 +638,13 @@ function readUserPreviewBackground(style: string) {
 }
 
 export default function MarkmapHooks() {
-  const [markdown, setMarkdown] = useState(loadDocument)
+  const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [createDocumentTab('markmap++ 操作指南.md', loadDocument(), 'starter')])
+  const [activeTabId, setActiveTabId] = useState(() => documentTabs[0].id)
+  const [mobileTabsOpen, setMobileTabsOpen] = useState(false)
+  const documentTabsRef = useRef(documentTabs)
+  const [markdown, setMarkdown] = useState(() => documentTabs[0].content)
   const [renderedMarkdown, setRenderedMarkdown] = useState(markdown)
-  const [fileName, setFileName] = useState('markmap++ 操作指南.md')
+  const [fileName, setFileName] = useState(() => documentTabs[0].name)
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
   const [editorView, setEditorView] = useState<'markdown' | 'repository' | 'agent'>('markdown')
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
@@ -823,6 +849,71 @@ export default function MarkmapHooks() {
     if (Math.abs(deltaX) < 42 || Math.abs(deltaX) < Math.abs(deltaY)) return
     moveHelpTip(deltaX < 0 ? 1 : -1)
   }
+
+  const displayDocumentTab = useCallback((tab: DocumentTab) => {
+    historyRef.current = []
+    lastEditRef.current = { source: '', time: 0 }
+    markdownRef.current = tab.content
+    setCanUndo(false)
+    setMarkdown(tab.content)
+    setRenderedMarkdown(tab.content)
+    setFileName(tab.name)
+    setActiveRepoPath(tab.repositoryPath)
+    setEditorView('markdown')
+    setSaveState('saved')
+    setMobileTabsOpen(false)
+    window.setTimeout(() => mmRef.current?.fit(), 60)
+  }, [])
+
+  const persistActiveDocumentTab = useCallback(() => {
+    const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId
+      ? { ...tab, name: fileName, content: markdownRef.current, repositoryPath: activeRepoPath }
+      : tab)
+    documentTabsRef.current = nextTabs
+    setDocumentTabs(nextTabs)
+    return nextTabs
+  }, [activeRepoPath, activeTabId, fileName])
+
+  const openDocumentTab = useCallback((name: string, content: string, sourceKey?: string, repositoryPath: string | null = null) => {
+    const savedTabs = persistActiveDocumentTab()
+    const existing = sourceKey ? savedTabs.find((tab) => tab.sourceKey === sourceKey) : undefined
+    const tab = existing
+      ? { ...existing, name, content, repositoryPath }
+      : createDocumentTab(name, content, sourceKey, repositoryPath)
+    const nextTabs = existing ? savedTabs.map((item) => item.id === tab.id ? tab : item) : [...savedTabs, tab]
+    documentTabsRef.current = nextTabs
+    setDocumentTabs(nextTabs)
+    setActiveTabId(tab.id)
+    displayDocumentTab(tab)
+  }, [displayDocumentTab, persistActiveDocumentTab])
+
+  const activateDocumentTab = useCallback((tabId: string) => {
+    if (tabId === activeTabId) { setMobileTabsOpen(false); return }
+    const savedTabs = persistActiveDocumentTab()
+    const tab = savedTabs.find((item) => item.id === tabId)
+    if (!tab) return
+    setActiveTabId(tab.id)
+    displayDocumentTab(tab)
+  }, [activeTabId, displayDocumentTab, persistActiveDocumentTab])
+
+  const closeDocumentTab = useCallback((tabId: string) => {
+    const savedTabs = persistActiveDocumentTab()
+    const closingIndex = savedTabs.findIndex((tab) => tab.id === tabId)
+    if (closingIndex < 0) return
+    let nextTabs = savedTabs.filter((tab) => tab.id !== tabId)
+    if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n')]
+    documentTabsRef.current = nextTabs
+    setDocumentTabs(nextTabs)
+    if (tabId !== activeTabId) return
+    const nextTab = nextTabs[Math.min(closingIndex, nextTabs.length - 1)]
+    setActiveTabId(nextTab.id)
+    displayDocumentTab(nextTab)
+  }, [activeTabId, displayDocumentTab, persistActiveDocumentTab])
+
+  const createBlankDocumentTab = useCallback(() => {
+    openDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n')
+  }, [openDocumentTab])
+
   const updateMarkdown = useCallback((value: string, source = 'editor') => {
     const current = markdownRef.current
     if (value === current) return
@@ -837,16 +928,11 @@ export default function MarkmapHooks() {
     setSaveState('saving')
     setMarkdown(value)
   }, [])
-  const applyOpenedMarkdown = useCallback((name: string, content: string) => {
-    setActiveRepoPath(null)
-    setEditorView('markdown')
-    updateMarkdown(content, 'file')
-    setRenderedMarkdown(content)
-    setFileName(name)
-    window.setTimeout(() => mmRef.current?.fit(), 60)
-  }, [updateMarkdown])
+  const applyOpenedMarkdown = useCallback((name: string, content: string, sourceKey?: string) => {
+    openDocumentTab(name, content, sourceKey)
+  }, [openDocumentTab])
 
-  useEffect(() => desktopApi()?.onOpenedMarkdown((file) => applyOpenedMarkdown(file.name, file.content)), [applyOpenedMarkdown])
+  useEffect(() => desktopApi()?.onOpenedMarkdown((file) => applyOpenedMarkdown(file.name, file.content, `desktop:${file.path}`)), [applyOpenedMarkdown])
 
 
   const applyAgentChange = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
@@ -930,32 +1016,14 @@ export default function MarkmapHooks() {
   }, [])
 
   const activateCachedFile = useCallback((file: CachedMarkdownFile) => {
-    historyRef.current = []
-    lastEditRef.current = { source: '', time: 0 }
-    markdownRef.current = file.content
-    setCanUndo(false)
-    setMarkdown(file.content)
-    setRenderedMarkdown(file.content)
-    setFileName(file.path)
-    setActiveRepoPath(file.path)
-    setEditorView('markdown')
-    setSaveState('saved')
-    window.setTimeout(() => mmRef.current?.fit(), 80)
-  }, [])
+    const repositoryKey = githubConfig ? repoKeyOf(githubConfig) : 'github'
+    openDocumentTab(file.path, file.content, `repository:${repositoryKey}:${file.path}`, file.path)
+  }, [githubConfig, openDocumentTab])
 
   const activateHistoricalFile = useCallback((content: string, path: string, commitSha: string) => {
-    historyRef.current = []
-    lastEditRef.current = { source: '', time: 0 }
-    markdownRef.current = content
-    setCanUndo(false)
-    setMarkdown(content)
-    setRenderedMarkdown(content)
-    setFileName(historicalFileName(path, commitSha))
-    setActiveRepoPath(null)
-    setEditorView('markdown')
-    setSaveState('saved')
-    window.setTimeout(() => mmRef.current?.fit(), 80)
-  }, [])
+    const repositoryKey = githubConfig ? repoKeyOf(githubConfig) : 'github'
+    openDocumentTab(historicalFileName(path, commitSha), content, `history:${repositoryKey}:${commitSha}:${path}`)
+  }, [githubConfig, openDocumentTab])
 
   const refreshCachedFiles = useCallback(async (config: GitHubConfig) => {
     const files = await listCachedFiles(repoKeyOf(config))
@@ -1998,7 +2066,7 @@ export default function MarkmapHooks() {
     const file = event.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = () => applyOpenedMarkdown(file.name, String(reader.result || ''))
+    reader.onload = () => applyOpenedMarkdown(file.name, String(reader.result || ''), `upload:${file.name}:${file.size}:${file.lastModified}`)
     reader.readAsText(file)
     event.target.value = ''
   }
@@ -2010,7 +2078,7 @@ export default function MarkmapHooks() {
       return
     }
     const file = await desktop.openMarkdown()
-    if (file) applyOpenedMarkdown(file.name, file.content)
+    if (file) applyOpenedMarkdown(file.name, file.content, `desktop:${file.path}`)
   }
 
   const toggleFullscreen = async () => {
@@ -2565,6 +2633,7 @@ ${documentRenderConfig.style}
           <button type="button" className="button primary" onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
           <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
           <button type="button" className="icon-button" aria-label={previewDarkMode ? '切换浅色模式' : '切换深色模式'} title={previewDarkMode ? '浅色模式 · 雾白背景' : '深色模式 · 深灰背景'} onClick={() => updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d')}><Icon name={previewDarkMode ? 'sun' : 'moon'} /></button>
+          <button type="button" className="icon-button mobile-tabs-trigger" aria-label={`打开文档标签，共 ${documentTabs.length} 个`} title="文档标签" aria-expanded={mobileTabsOpen} onClick={() => setMobileTabsOpen(true)}><Icon name="map" /><b>{documentTabs.length}</b></button>
           <button type="button" className="icon-button more-action" aria-label="更多操作" title="更多操作" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
           <span className="brand-corner-mark" title="markmap++" aria-label="markmap++ 品牌图标"><img src={brandIconUrl} alt="" /></span>
           {actionMenuOpen && <div className="action-overflow-menu">
@@ -2574,6 +2643,16 @@ ${documentRenderConfig.style}
           </div>}
         </nav>
       </header>
+
+      <nav className="document-tabs-bar" aria-label="打开的文档">
+        <div className="document-tabs-scroll" role="tablist">
+          {documentTabs.map((tab) => <div className={`document-tab ${tab.id === activeTabId ? 'active' : ''}`} key={tab.id}>
+            <button type="button" className="document-tab-select" role="tab" aria-selected={tab.id === activeTabId} title={tab.name} onClick={() => activateDocumentTab(tab.id)}><Icon name="map" /><span>{tab.name}</span>{tab.repositoryPath && <i title="仓库文档" />}</button>
+            <button type="button" className="document-tab-close" aria-label={`关闭 ${tab.name}`} title="关闭标签" onClick={() => closeDocumentTab(tab.id)}><Icon name="x" /></button>
+          </div>)}
+        </div>
+        <button type="button" className="document-tab-new" aria-label="新建空白文档标签" title="新建标签" onClick={createBlankDocumentTab}><Icon name="plus" /></button>
+      </nav>
 
       <section ref={workspaceRef} className={`workspace mobile-${mobilePane}`} style={{ gridTemplateColumns: gridColumns }}>
         <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' || editorView === 'agent' ? 'repository-view' : ''}`} aria-label="Markdown 编辑器">
@@ -2636,6 +2715,17 @@ ${documentRenderConfig.style}
           </>
         </section>
       </section>
+
+      {mobileTabsOpen && <div className="mobile-tabs-backdrop" onMouseDown={() => setMobileTabsOpen(false)}>
+        <section className="mobile-tabs-sheet" role="dialog" aria-modal="true" aria-label="文档标签" onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><strong>文档标签</strong><small>{documentTabs.length} 个打开的文档</small></div><button type="button" className="header-icon" aria-label="关闭文档标签" onClick={() => setMobileTabsOpen(false)}><Icon name="x" /></button></header>
+          <div className="mobile-tabs-list" role="tablist">{documentTabs.map((tab, index) => <article className={tab.id === activeTabId ? 'active' : ''} key={tab.id}>
+            <button type="button" className="mobile-tab-select" role="tab" aria-selected={tab.id === activeTabId} onClick={() => activateDocumentTab(tab.id)}><span><Icon name="map" /><b>{index + 1}</b></span><span><strong>{tab.name}</strong><small>{tab.repositoryPath ? 'Git 仓库文档' : tab.id === activeTabId ? '当前文档' : 'Markdown 文档'}</small></span></button>
+            <button type="button" className="mobile-tab-close" aria-label={`关闭 ${tab.name}`} onClick={() => closeDocumentTab(tab.id)}><Icon name="x" /></button>
+          </article>)}</div>
+          <footer><button type="button" onClick={() => { setMobileTabsOpen(false); void chooseMarkdownFile() }}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />新建标签</button></footer>
+        </section>
+      </div>}
 
       {selectionMenu && <SelectionActionMenu x={selectionMenu.x} y={selectionMenu.y} text={selectionMenu.text} hasLink={selectionMenu.source === 'editor' ? Boolean(selectionMenu.link) : Boolean(selectionMenu.anchor)} onCopy={() => void copySelection(selectionMenu)} onCut={() => void cutSelection(selectionMenu)} onPaste={() => void pasteSelection(selectionMenu)} onLink={() => { setLinkPickerSelection(selectionMenu); setSelectionMenu(null) }} onRemoveLink={() => removeSelectionLink(selectionMenu)} onNativeMenu={() => allowNativeSelectionMenu(selectionMenu)} />}
       {linkPickerSelection && <RepositoryLinkPicker selectionText={linkPickerSelection.text} paths={repositoryPaths} indexes={repositoryIndexes} onChoose={(target) => chooseRepositoryLink(linkPickerSelection, target)} onCreate={async (path) => (await createAgentFile(path, `# ${linkPickerSelection.text}\n`)).ok} onClose={() => setLinkPickerSelection(null)} />}
