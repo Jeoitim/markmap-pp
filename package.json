@@ -1,6 +1,7 @@
 {
   "name": "markmap-plus-plus",
   "private": true,
+  "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=22"
   },
@@ -45,7 +46,11 @@
     "build:docs": "typedoc --out api --titleLink / --name markmap",
     "dev:react-example": "pnpm --filter markmap-plus-plus-app dev",
     "dev": "pnpm --filter markmap-plus-plus-app dev",
+    "dev:desktop": "pnpm --filter markmap-plus-plus-desktop dev",
     "build:app": "pnpm --filter markmap-plus-plus-app build",
+    "build:desktop": "pnpm --filter markmap-plus-plus-desktop build",
+    "package:desktop": "pnpm --filter markmap-plus-plus-desktop package",
+    "make:desktop:win": "pnpm --filter markmap-plus-plus-desktop make:win",
     "build:site": "node scripts/build-site.mjs",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",

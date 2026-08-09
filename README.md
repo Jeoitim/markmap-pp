@@ -167,6 +167,23 @@ pnpm --filter markmap-plus-plus-app preview
 
 本地 `pnpm dev` 只启动应用，因此 `http://localhost:5173/doc/` 不会显示文档。需要使用 `pnpm docs:dev` 单独启动 VitePress；正式部署则由 `pnpm build:site` 将两者合并。
 
+### Windows 桌面版（Beta）
+
+桌面版与 Web 版共用 React 应用，Electron 仅负责系统窗口、安全隔离、本地文件访问和安装更新能力。在仓库根目录运行：
+
+```bash
+# 启动桌面开发环境
+pnpm dev:desktop
+
+# 构建主进程和桌面渲染资源
+pnpm build:desktop
+
+# 生成 Windows x64 安装包和便携压缩包
+pnpm make:desktop:win
+```
+
+构建产物位于 `apps/desktop/out/make/`。第一版已接入系统原生 Markdown 打开/保存、本地工作区安全接口、稳定的桌面缓存来源和 Squirrel 更新框架；本地文件夹浏览界面及正式更新源将在后续版本启用。当前安装包尚未进行代码签名，Windows 可能显示 SmartScreen 提示。实现说明见 [`apps/desktop/README.md`](apps/desktop/README.md)。
+
 ## 部署到 GitHub Pages
 
 仓库已提供 [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)。推送到 `main` 分支后，GitHub Actions 会自动完成依赖安装、代码检查、应用与 VitePress 文档构建、Pages artifact 上传和部署。工作流会根据仓库名分别设置应用和文档的 `base`，因此 `/markmap-pp/` 与 `/markmap-pp/doc/` 的静态资源都能正确加载。

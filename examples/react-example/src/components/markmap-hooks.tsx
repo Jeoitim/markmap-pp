@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import DOMPurify from 'dompurify'
 import katex from 'katex'
 import { defaultOptions, deriveOptions, Markmap, toMarkdown, Transformer } from 'markmap-plus'
 import type { IMarkmapJSONOptions, IMarkmapOptions } from 'markmap-plus'
@@ -11,6 +12,7 @@ import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
+import { desktopApi, saveBlob } from './desktop-api'
 import { inspectMarkdown } from './markdown-lint'
 import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
 import { indexRepositoryNote, repositoryLinkHref, repositoryMarkdownLink, resolveHeading, resolveRepositoryLink, rewriteRepositoryLinks } from './repository-links'
@@ -297,6 +299,13 @@ async function resolveExportImageSource(source: string) {
 
 function buildDocumentRenderConfig(markdown: string): DocumentRenderConfig {
   const transformed = transformer.transform(markdown)
+  const sanitizeNode = (value: unknown) => {
+    if (!value || typeof value !== 'object') return
+    const node = value as { content?: unknown; children?: unknown[] }
+    if (typeof node.content === 'string') node.content = DOMPurify.sanitize(node.content)
+    node.children?.forEach(sanitizeNode)
+  }
+  sanitizeNode(transformed.root)
   const frontmatter = recordValue(transformed.frontmatter)
   const markmap = recordValue(frontmatter.markmap)
   const options = { ...markmap, ...recordValue(frontmatter.options) } as CodeOptions
@@ -484,15 +493,6 @@ function loadSettings(): AppSettings {
   } catch {
     return defaultSettings
   }
-}
-
-function saveBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = name
-  anchor.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 const previewLightText = '#f4f6f9'
@@ -836,6 +836,17 @@ export default function MarkmapHooks() {
     setSaveState('saving')
     setMarkdown(value)
   }, [])
+  const applyOpenedMarkdown = useCallback((name: string, content: string) => {
+    setActiveRepoPath(null)
+    setEditorView('markdown')
+    updateMarkdown(content, 'file')
+    setRenderedMarkdown(content)
+    setFileName(name)
+    window.setTimeout(() => mmRef.current?.fit(), 60)
+  }, [updateMarkdown])
+
+  useEffect(() => desktopApi()?.onOpenedMarkdown((file) => applyOpenedMarkdown(file.name, file.content)), [applyOpenedMarkdown])
+
 
   const applyAgentChange = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
     const current = cachedFilesRef.current
@@ -1986,12 +1997,19 @@ export default function MarkmapHooks() {
     const file = event.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = () => {
-      const next = String(reader.result || '')
-      setActiveRepoPath(null); setEditorView('markdown'); updateMarkdown(next, 'file'); setRenderedMarkdown(next); setFileName(file.name)
-      window.setTimeout(() => mmRef.current?.fit(), 60)
+    reader.onload = () => applyOpenedMarkdown(file.name, String(reader.result || ''))
+    reader.readAsText(file)
+    event.target.value = ''
+  }
+
+  const chooseMarkdownFile = async () => {
+    const desktop = desktopApi()
+    if (!desktop) {
+      fileInputRef.current?.click()
+      return
     }
-    reader.readAsText(file); event.target.value = ''
+    const file = await desktop.openMarkdown()
+    if (file) applyOpenedMarkdown(file.name, file.content)
   }
 
   const toggleFullscreen = async () => {
@@ -2442,14 +2460,14 @@ ${documentRenderConfig.style}
     const baseName = fileName.replace(/\.(md|markdown)$/i, '') || 'markmap'
     try {
       if (exportFormat === 'md') {
-        saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), `${baseName}.md`)
+        await saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), `${baseName}.md`)
       } else {
         await document.fonts.ready
         const { source, width, height } = createExportSvg(previewBackgroundColor, exportDarkMode, exportUsesTransparentBackground)
         const exportSource = await prepareExportSvg(source, exportDarkMode)
-        if (exportFormat === 'svg') saveBlob(new Blob([exportSource], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
+        if (exportFormat === 'svg') await saveBlob(new Blob([exportSource], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
         else if (exportFormat === 'html') {
-          saveBlob(new Blob([createInteractiveHtml(exportSource, baseName, previewBackgroundColor, exportDarkMode)], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
+          await saveBlob(new Blob([createInteractiveHtml(exportSource, baseName, previewBackgroundColor, exportDarkMode)], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
         } else {
           const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(exportSource)}`
           const image = new Image()
@@ -2462,7 +2480,7 @@ ${documentRenderConfig.style}
           const mime = exportFormat === 'png' ? 'image/png' : 'image/jpeg'
           const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, 0.94))
           if (!blob) throw new Error('导出文件生成失败')
-          saveBlob(blob, `${baseName}.${exportFormat === 'jpeg' ? 'jpg' : 'png'}`)
+          await saveBlob(blob, `${baseName}.${exportFormat === 'jpeg' ? 'jpg' : 'png'}`)
         }
       }
       setActivePanel(null)
@@ -2540,7 +2558,7 @@ ${documentRenderConfig.style}
         <div className="document-name" title={fileName}><span className={`save-dot ${titleSyncState}`} /><span>{fileName}</span><small>{titleSyncText}</small></div>
         <nav ref={actionsRef} className="actions" aria-label="文档操作">
           <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
-          <button type="button" className="button secondary collapsible-action" onClick={() => fileInputRef.current?.click()}><Icon name="folder" /><span>打开</span></button>
+          <button type="button" className="button secondary collapsible-action" onClick={() => void chooseMarkdownFile()}><Icon name="folder" /><span>打开</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={openHelpPanel}><Icon name="help" /><span>说明</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
@@ -2548,7 +2566,7 @@ ${documentRenderConfig.style}
           <button type="button" className="icon-button" aria-label={previewDarkMode ? '切换浅色模式' : '切换深色模式'} title={previewDarkMode ? '浅色模式 · 雾白背景' : '深色模式 · 深灰背景'} onClick={() => updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d')}><Icon name={previewDarkMode ? 'sun' : 'moon'} /></button>
           <button type="button" className="icon-button more-action" aria-label="更多操作" title="更多操作" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
           {actionMenuOpen && <div className="action-overflow-menu">
-            <button type="button" onClick={() => { setActionMenuOpen(false); fileInputRef.current?.click() }}><Icon name="folder" /><span>打开 Markdown</span></button>
+            <button type="button" onClick={() => { setActionMenuOpen(false); void chooseMarkdownFile() }}><Icon name="folder" /><span>打开 Markdown</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); openHelpPanel() }}><Icon name="help" /><span>使用说明</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); undoLastChange() }} disabled={!canUndo}><Icon name="undo" /><span>撤回修改</span></button>
           </div>}

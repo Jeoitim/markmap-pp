@@ -6,6 +6,7 @@ import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessa
 import { buildAgentDiff } from './agent-diff'
 import { activeContent, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation } from './agent-history'
 import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
+import { saveBlob } from './desktop-api'
 import type { CachedMarkdownFile } from './github-sync'
 
 type AgentMode = 'chat' | 'edit'
@@ -52,12 +53,7 @@ function withActiveProfile(config: AgentProviderConfig): AgentProviderConfig {
 }
 
 function downloadJson(name: string, data: unknown) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = name
-  anchor.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  void saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), name)
 }
 
 function backupDate() {
@@ -199,13 +195,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
   }
   const downloadSvg = () => {
     if (!current.svg) return
-    const blob = new Blob([current.svg], { type: 'image/svg+xml' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `mermaid-${id}.svg`
-    link.click()
-    URL.revokeObjectURL(url)
+    void saveBlob(new Blob([current.svg], { type: 'image/svg+xml' }), `mermaid-${id}.svg`)
   }
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
@@ -600,9 +590,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
   }
 
   const exportConversation = (item: AgentConversation) => {
-    const url = URL.createObjectURL(new Blob([conversationMarkdown(item)], { type: 'text/markdown;charset=utf-8' }))
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${item.title || 'AI 对话'}.md`; anchor.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    void saveBlob(new Blob([conversationMarkdown(item)], { type: 'text/markdown;charset=utf-8' }), `${item.title || 'AI 对话'}.md`)
   }
 
   const conversationSnapshot = () => [conversation, ...conversations.filter((item) => item.id !== conversation.id)].sort((a, b) => b.updatedAt - a.updatedAt)

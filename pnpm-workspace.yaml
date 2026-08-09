@@ -1,8 +1,11 @@
 packages:
+  - "apps/*"
   - "packages/*"
   - "examples/*"
 overrides:
   vite: ^8.0.0-beta.13
 allowBuilds:
+  electron: true
+  electron-winstaller: true
   esbuild: true
   nx: true

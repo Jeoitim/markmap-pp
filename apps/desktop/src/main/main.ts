@@ -1,0 +1,421 @@
+import { spawn } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  net,
+  protocol,
+  session,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
+import {
+  desktopChannels,
+  type DesktopOpenedFile,
+  type DesktopSaveRequest,
+} from '../shared/contracts.js';
+import {
+  checkForUpdates,
+  configureUpdates,
+  getUpdateState,
+  installUpdate,
+} from './updates.js';
+import {
+  getWorkspaceInfo,
+  readWorkspaceMarkdown,
+  selectWorkspace,
+  writeWorkspaceMarkdown,
+} from './workspace.js';
+
+const appScheme = 'markmap';
+const appHost = 'app';
+const appId = 'io.github.jeoitim.markmap-plus-plus';
+const maxOpenFileBytes = 20 * 1024 * 1024;
+const maxSaveFileBytes = 200 * 1024 * 1024;
+const allowedExternalProtocols = new Set(['https:', 'mailto:']);
+let mainWindow: BrowserWindow | null = null;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: appScheme,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      codeCache: true,
+    },
+  },
+]);
+
+function handleSquirrelStartup() {
+  if (process.platform !== 'win32') return false;
+  const event = process.argv[1];
+  if (!event?.startsWith('--squirrel-')) return false;
+  const updateExe = path.resolve(
+    path.dirname(process.execPath),
+    '..',
+    'Update.exe',
+  );
+  const executableName = path.basename(process.execPath);
+  const run = (args: string[]) => {
+    try {
+      spawn(updateExe, args, { detached: true, stdio: 'ignore' }).unref();
+    } catch {
+      // Squirrel will still finish installation even if shortcut maintenance fails.
+    }
+  };
+  if (event === '--squirrel-install' || event === '--squirrel-updated')
+    run(['--createShortcut', executableName]);
+  if (event === '--squirrel-uninstall')
+    run(['--removeShortcut', executableName]);
+  app.quit();
+  return true;
+}
+
+const squirrelStartup = handleSquirrelStartup();
+
+function rendererRoot() {
+  return path.join(app.getAppPath(), 'dist', 'renderer');
+}
+
+async function registerAppProtocol() {
+  protocol.handle(appScheme, async (request) => {
+    const url = new URL(request.url);
+    if (url.host !== appHost) return new Response('Not found', { status: 404 });
+    const root = path.resolve(rendererRoot());
+    const requestPath = decodeURIComponent(
+      url.pathname === '/' ? '/index.html' : url.pathname,
+    );
+    const relative = path.normalize(requestPath).replace(/^[/\\]+/, '');
+    const target = path.resolve(root, relative);
+    if (target !== root && !target.startsWith(`${root}${path.sep}`))
+      return new Response('Not found', { status: 404 });
+    try {
+      return await net.fetch(pathToFileURL(target).toString());
+    } catch {
+      return new Response('Not found', { status: 404 });
+    }
+  });
+}
+
+function isTrustedUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === `${appScheme}:` && url.host === appHost) return true;
+    return (
+      !app.isPackaged &&
+      url.protocol === 'http:' &&
+      (url.hostname === '127.0.0.1' || url.hostname === 'localhost') &&
+      url.port === '5173'
+    );
+  } catch {
+    return false;
+  }
+}
+
+function assertTrusted(event: IpcMainInvokeEvent) {
+  if (!isTrustedUrl(event.senderFrame?.url || event.sender.getURL()))
+    throw new Error('拒绝来自非应用页面的请求');
+}
+
+function safeExternalUrl(value: string) {
+  const url = new URL(value);
+  if (!allowedExternalProtocols.has(url.protocol))
+    throw new Error('不允许打开该链接协议');
+  return url.toString();
+}
+
+function contentSecurityPolicy() {
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https: http:",
+    "font-src 'self' data:",
+    'connect-src https: http:',
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-src 'none'",
+  ].join('; ');
+}
+
+async function openMarkdownDialog(
+  window: BrowserWindow,
+): Promise<DesktopOpenedFile | null> {
+  const result = await dialog.showOpenDialog(window, {
+    title: '打开 Markdown 文件',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Markdown', extensions: ['md', 'markdown'] },
+      { name: '文本文件', extensions: ['txt'] },
+    ],
+  });
+  const filePath = result.filePaths[0];
+  if (result.canceled || !filePath) return null;
+  const stat = await fs.stat(filePath);
+  if (stat.size > maxOpenFileBytes)
+    throw new Error('文件超过 20 MB，无法直接打开');
+  return {
+    name: path.basename(filePath),
+    path: filePath,
+    content: await fs.readFile(filePath, 'utf8'),
+  };
+}
+
+async function showOpenMarkdown(window: BrowserWindow) {
+  const opened = await openMarkdownDialog(window);
+  if (opened) window.webContents.send(desktopChannels.openedMarkdown, opened);
+}
+
+function installMenu() {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: '文件',
+      submenu: [
+        {
+          label: '打开 Markdown…',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => {
+            if (mainWindow) void showOpenMarkdown(mainWindow);
+          },
+        },
+        { type: 'separator' },
+        { role: 'quit', label: '退出' },
+      ],
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload', label: '重新加载' },
+        { role: 'toggleDevTools', label: '开发者工具' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '实际大小' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '全屏' },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function registerIpc() {
+  ipcMain.handle(desktopChannels.appInfo, (event) => {
+    assertTrusted(event);
+    return {
+      appVersion: app.getVersion(),
+      electronVersion: process.versions.electron,
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged,
+    };
+  });
+  ipcMain.handle(
+    desktopChannels.openExternal,
+    async (event, value: unknown) => {
+      assertTrusted(event);
+      if (typeof value !== 'string') throw new Error('链接无效');
+      await shell.openExternal(safeExternalUrl(value));
+      return true;
+    },
+  );
+  ipcMain.handle(desktopChannels.openMarkdown, async (event) => {
+    assertTrusted(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) return null;
+    return openMarkdownDialog(window);
+  });
+  ipcMain.handle(
+    desktopChannels.saveFile,
+    async (event, request: DesktopSaveRequest) => {
+      assertTrusted(event);
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (
+        !window ||
+        typeof request?.suggestedName !== 'string' ||
+        !(request.bytes instanceof Uint8Array)
+      )
+        throw new Error('保存请求无效');
+      if (request.bytes.byteLength > maxSaveFileBytes)
+        throw new Error('导出文件超过 200 MB');
+      const suggestedName =
+        path.basename(request.suggestedName).replace(/[<>:"/\\|?*]/g, '_') ||
+        'markmap.md';
+      const result = await dialog.showSaveDialog(window, {
+        title: '保存文件',
+        defaultPath: suggestedName,
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      await fs.writeFile(result.filePath, request.bytes);
+      return { canceled: false, path: result.filePath };
+    },
+  );
+  ipcMain.handle(desktopChannels.workspaceGet, async (event) => {
+    assertTrusted(event);
+    return getWorkspaceInfo();
+  });
+  ipcMain.handle(desktopChannels.workspaceSelect, async (event) => {
+    assertTrusted(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    return window ? selectWorkspace(window) : null;
+  });
+  ipcMain.handle(
+    desktopChannels.workspaceRead,
+    async (event, relativePath: unknown) => {
+      assertTrusted(event);
+      if (typeof relativePath !== 'string') throw new Error('文件路径无效');
+      return readWorkspaceMarkdown(relativePath);
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.workspaceWrite,
+    async (event, relativePath: unknown, content: unknown) => {
+      assertTrusted(event);
+      if (typeof relativePath !== 'string' || typeof content !== 'string')
+        throw new Error('写入参数无效');
+      return writeWorkspaceMarkdown(relativePath, content);
+    },
+  );
+  ipcMain.handle(desktopChannels.updateGetState, (event) => {
+    assertTrusted(event);
+    return getUpdateState();
+  });
+  ipcMain.handle(desktopChannels.updateCheck, async (event) => {
+    assertTrusted(event);
+    return checkForUpdates();
+  });
+  ipcMain.handle(desktopChannels.updateInstall, (event) => {
+    assertTrusted(event);
+    return installUpdate();
+  });
+}
+
+function configureSession() {
+  const allowedPermissions = new Set([
+    'clipboard-read',
+    'clipboard-sanitized-write',
+    'fullscreen',
+  ]);
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission, requestingOrigin) =>
+      isTrustedUrl(requestingOrigin) && allowedPermissions.has(permission),
+  );
+  session.defaultSession.setPermissionRequestHandler(
+    (webContents, permission, callback) =>
+      callback(
+        isTrustedUrl(webContents.getURL()) &&
+          allowedPermissions.has(permission),
+      ),
+  );
+  if (app.isPackaged) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [contentSecurityPolicy()],
+        },
+      });
+    });
+  }
+}
+
+async function createWindow() {
+  const window = new BrowserWindow({
+    width: 1440,
+    height: 920,
+    minWidth: 960,
+    minHeight: 640,
+    show: true,
+    backgroundColor: '#15181d',
+    title: 'markmap++',
+    webPreferences: {
+      preload: path.join(app.getAppPath(), 'dist', 'preload', 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      void shell.openExternal(safeExternalUrl(url));
+    } catch {
+      /* Block unknown protocols. */
+    }
+    return { action: 'deny' };
+  });
+  window.webContents.on('will-navigate', (event, url) => {
+    if (isTrustedUrl(url)) return;
+    event.preventDefault();
+    try {
+      void shell.openExternal(safeExternalUrl(url));
+    } catch {
+      /* Block unknown protocols. */
+    }
+  });
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null;
+  });
+  const developmentUrl = process.env.VITE_DEV_SERVER_URL;
+  if (developmentUrl && !app.isPackaged) await window.loadURL(developmentUrl);
+  else await window.loadURL(`${appScheme}://${appHost}/index.html`);
+  return window;
+}
+
+if (!squirrelStartup) {
+  const singleInstance = app.requestSingleInstanceLock();
+  if (!singleInstance) app.quit();
+  else {
+    app.on('second-instance', () => {
+      if (!mainWindow) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    });
+    app
+      .whenReady()
+      .then(async () => {
+        app.setAppUserModelId(appId);
+        await registerAppProtocol();
+        configureSession();
+        registerIpc();
+        installMenu();
+        mainWindow = await createWindow();
+        await configureUpdates(() => mainWindow);
+        app.on('activate', async () => {
+          if (BrowserWindow.getAllWindows().length === 0)
+            mainWindow = await createWindow();
+        });
+      })
+      .catch((error) => {
+        dialog.showErrorBox(
+          'markmap++ 启动失败',
+          error instanceof Error ? error.message : String(error),
+        );
+        app.quit();
+      });
+  }
+}
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
