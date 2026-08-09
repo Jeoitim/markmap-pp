@@ -2,6 +2,7 @@ node_modules
 /dist
 /apps/desktop/dist
 /apps/desktop/out
+/apps/desktop/release
 docs/.vitepress/dist
 .pnpm-store/
 *.log

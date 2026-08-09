@@ -1,0 +1,75 @@
+name: Release Desktop Packages
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux AppImage
+            os: ubuntu-22.04
+            command: pnpm --filter markmap-plus-plus-desktop make:linux
+            artifact: desktop-linux
+          - name: macOS DMG
+            os: macos-13
+            command: pnpm --filter markmap-plus-plus-desktop make:mac
+            artifact: desktop-macos
+          - name: Windows installer and portable archive
+            os: windows-latest
+            command: pnpm --filter markmap-plus-plus-desktop make:win
+            artifact: desktop-windows
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package
+        run: ${{ matrix.command }}
+
+      - name: Upload release files
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: apps/desktop/release/*
+          if-no-files-found: error
+
+  publish:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@v7
+        with:
+          pattern: desktop-*
+          path: release
+          merge-multiple: true
+
+      - name: Create release and upload files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release/* --title "markmap++ ${{ github.ref_name }}" --generate-notes
