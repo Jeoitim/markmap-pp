@@ -8,6 +8,8 @@ export interface AgentConversation {
   updatedAt: number
   /** 该对话使用的模式，打开对话时恢复，避免上次是 Edit 的对话默认进入 Chat。 */
   mode?: AgentMode
+  /** 对话只属于一个明确工作区，避免切换仓库后误用旧提案。 */
+  workspaceKey?: string
   messages: AgentMessage[]
 }
 
@@ -21,9 +23,9 @@ export async function saveAgentConversations(conversations: AgentConversation[])
   await saveLocalSetting(HISTORY_KEY, conversations.slice(0, 80))
 }
 
-export function createConversation(): AgentConversation {
+export function createConversation(workspaceKey?: string): AgentConversation {
   const now = Date.now()
-  return { id: crypto.randomUUID(), title: '新对话', createdAt: now, updatedAt: now, messages: [{ role: 'assistant', content: '你好，我会结合你的 Markdown 笔记、当前操作上下文和通用知识来回答；也可以在 Edit 模式中生成可审核、可追踪的文件修改。' }] }
+  return { id: crypto.randomUUID(), title: '新对话', createdAt: now, updatedAt: now, workspaceKey, messages: [{ role: 'assistant', content: '你好，我会结合你的 Markdown 笔记、当前操作上下文和通用知识来回答；也可以在 Edit 模式中生成可审核、可追踪的文件修改。' }] }
 }
 
 export function activeContent(message: AgentMessage): string {

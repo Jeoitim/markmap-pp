@@ -87,6 +87,7 @@ export interface AskAgentOptions {
   appliedChanges?: AgentAppliedChange[]
   operationMemory?: AgentOperation[]
   activePath?: string | null
+  workspaceLabel?: string
   /** 仓库全部已知路径，用于在受限编辑范围内仍能阻止新建同名文件。 */
   repositoryPaths?: string[]
   getGitContext?: (paths: string[]) => Promise<string>
@@ -205,6 +206,7 @@ ${editRules}
 5. 对话历史提供意图连续性；下方“实时工作区”提供当前事实。两者冲突时，以工具返回的实时状态为准。
 
 实时工作区：
+- 工作区：${options.workspaceLabel || '当前工作区'}（不会访问其他已打开仓库）
 - 当前活动笔记：${options.activePath || '无'}
 - 当前可访问范围共 ${files.length} 篇：
 ${fileIndex}
@@ -382,7 +384,7 @@ async function executeTool(call: ToolCall, mode: AgentMode, files: AgentSourceFi
   const repositoryPaths = new Set(options.repositoryPaths || files.map((file) => file.path))
   const args = call.arguments
   if (call.name === 'get_working_state') {
-    return JSON.stringify({ activePath: options.activePath || null, accessibleNotes: files.length, files: files.map((file) => ({ path: file.path, status: file.status || 'clean' })), pendingProposals: proposals.map((proposal) => ({ path: proposal.path, action: proposal.action })), approvedChanges: (options.appliedChanges || []).map((change) => ({ path: change.path, action: change.action })) })
+    return JSON.stringify({ workspace: options.workspaceLabel || '当前工作区', activePath: options.activePath || null, accessibleNotes: files.length, files: files.map((file) => ({ path: file.path, status: file.status || 'clean' })), pendingProposals: proposals.map((proposal) => ({ path: proposal.path, action: proposal.action })), approvedChanges: (options.appliedChanges || []).map((change) => ({ path: change.path, action: change.action })) })
   }
   if (call.name === 'list_notes') {
     const prefix = stringArgument(args, 'prefix')

@@ -384,6 +384,9 @@ function ConversationMessage({ message, path, editing, editText, files, busy, re
 }
 
 interface AgentPanelProps {
+  workspaceKey: string
+  workspaceLabel: string
+  workspaceKind: 'remote' | 'local' | 'file'
   files: AgentSourceFile[]
   activePath: string | null
   onApplyChange: (path: string, content: string) => Promise<AgentMutationResult>
@@ -473,14 +476,14 @@ function ProposalDiff({ proposal, file, textStyle, onAccept, onReject, onOpen }:
   </article>
 }
 
-export default function AgentPanel({ files, activePath, onApplyChange, onCreateFile, onOpenFile, onCommit, getGitContext, remoteFileCount, remotePaths, repositoryBranch, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
+export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind, files, activePath, onApplyChange, onCreateFile, onOpenFile, onCommit, getGitContext, remoteFileCount, remotePaths, repositoryBranch, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
   const [mode, setMode] = useState<AgentMode>('chat')
   const [config, setConfig] = useState<AgentProviderConfig>(defaultAgentProviderConfig)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [connectionStatus, setConnectionStatus] = useState<'unconfigured' | 'configured' | 'checking' | 'connected' | 'failed'>('unconfigured')
-  const [conversation, setConversation] = useState<AgentConversation>(() => createConversation())
+  const [conversation, setConversation] = useState<AgentConversation>(() => createConversation(workspaceKey))
   const [conversations, setConversations] = useState<AgentConversation[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [input, setInput] = useState('')
@@ -565,10 +568,21 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     let disposed = false
     void loadAgentConversations().then((saved) => {
       if (disposed || !saved.length) return
-      setConversations(saved); setConversation(saved[0]); setMode(saved[0].mode ?? 'chat')
+      setConversations(saved)
+      const current = saved.find((item) => item.workspaceKey === workspaceKey) || createConversation(workspaceKey)
+      setConversation(current); setMode(current.mode ?? 'chat')
     }).catch(() => { if (!disposed) setError('无法读取本地对话历史') })
     return () => { disposed = true }
-  }, [])
+  }, [workspaceKey])
+
+  useEffect(() => {
+    if (conversation.workspaceKey === workspaceKey) return
+    const current = conversations.find((item) => item.workspaceKey === workspaceKey) || createConversation(workspaceKey)
+    setConversation(current)
+    setMode(current.mode ?? 'chat')
+    setNotice('已切换到当前工作区的独立 Agent 会话。')
+    setError('')
+  }, [conversation.workspaceKey, conversations, workspaceKey])
 
   const saveConversation = (next: AgentConversation) => {
     setConversation(next)
@@ -579,7 +593,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     })
   }
 
-  const startConversation = () => { const next = { ...createConversation(), mode }; saveConversation(next); setHistoryOpen(false) }
+  const startConversation = () => { const next = { ...createConversation(workspaceKey), mode }; saveConversation(next); setHistoryOpen(false) }
 
   const switchMode = (next: AgentMode) => {
     if (next === mode) return
@@ -610,7 +624,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
         const messages = value.messages.filter((message) => isRecord(message) && (message.role === 'user' || message.role === 'assistant')) as AgentMessage[]
         if (!messages.length) return null
         const now = Date.now()
-        return { id: typeof value.id === 'string' && value.id ? value.id : crypto.randomUUID(), title: typeof value.title === 'string' && value.title.trim() ? value.title.trim() : '导入的对话', createdAt: typeof value.createdAt === 'number' ? value.createdAt : now, updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : now, mode: value.mode === 'edit' ? 'edit' : 'chat', messages }
+        return { id: typeof value.id === 'string' && value.id ? value.id : crypto.randomUUID(), title: typeof value.title === 'string' && value.title.trim() ? value.title.trim() : '导入的对话', createdAt: typeof value.createdAt === 'number' ? value.createdAt : now, updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : now, mode: value.mode === 'edit' ? 'edit' : 'chat', workspaceKey: typeof value.workspaceKey === 'string' ? value.workspaceKey : workspaceKey, messages }
       }).filter((item): item is AgentConversation => item !== null)
       if (!imported.length) throw new Error('没有找到有效对话')
       const merged = new Map(conversationSnapshot().map((item) => [item.id, item]))
@@ -660,7 +674,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
     if (!target || !window.confirm(`删除对话“${target.title}”？此操作无法撤销。`)) return
     let updated = conversations.filter((item) => item.id !== id)
     if (conversation.id === id) {
-      const next = updated[0] || { ...createConversation(), mode }
+      const next = updated.find((item) => item.workspaceKey === workspaceKey) || { ...createConversation(workspaceKey), mode }
       if (!updated.length) updated = [next]
       setConversation(next); setMode(next.mode ?? 'chat')
     }
@@ -781,6 +795,7 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
         appliedChanges,
         operationMemory,
         activePath,
+        workspaceLabel,
         repositoryPaths: [...new Set([...remotePaths, ...files.map((file) => file.path)])],
         getGitContext,
         onOperation: (operation) => setLiveOperations((current) => {
@@ -946,10 +961,10 @@ export default function AgentPanel({ files, activePath, onApplyChange, onCreateF
       <div className="agent-advanced"><button type="button" onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen}><strong>高级设置</strong><span className={advancedOpen ? 'open' : ''}><small>{advancedOpen ? '收起' : '展开'}</small><AgentGlyph name="chevron" /></span></button>{advancedOpen && <div className="agent-field-grid"><label className="agent-field"><span>最大 Token 数</span><input type="number" min="128" max="32000" value={config.maxTokens} onChange={(event) => setConfig((current) => ({ ...current, maxTokens: Number(event.target.value) || 128 }))} /></label><label className="agent-field"><span>Temperature（随机性）</span><input type="number" min="0" max="2" step="0.1" value={config.temperature} onChange={(event) => setConfig((current) => ({ ...current, temperature: Number(event.target.value) || 0 }))} /></label></div>}</div>
       <p className="agent-local-note">密钥仅保存在当前浏览器本地；请求会直接发送到所选 AI 服务商。</p>
     </section></>}
-    <div className="agent-context-bar" aria-label="Agent 当前上下文"><span><AgentGlyph name={activePath ? 'file' : 'folder'} /><strong>{activePath || '未打开笔记'}</strong></span><small>{repositoryBranch ? `${repositoryBranch} · ` : ''}已读取 {files.length}/{remoteFileCount} 篇 · {files.filter((file) => file.status !== 'clean').length} 个本地修改</small></div>
+    <div className="agent-context-bar" aria-label="Agent 当前上下文"><span><AgentGlyph name={workspaceKind === 'file' ? 'file' : 'folder'} /><i className={`agent-workspace-kind ${workspaceKind}`}>{workspaceKind === 'local' ? '本地' : workspaceKind === 'remote' ? '远程' : '单文件'}</i><strong title={workspaceLabel}>{workspaceLabel}</strong>{activePath && <em>· {activePath}</em>}</span><small>{repositoryBranch ? `${repositoryBranch} · ` : ''}仅当前工作区 · 已读取 {files.length}/{remoteFileCount} 篇 · {files.filter((file) => file.status !== 'clean').length} 个修改</small></div>
     {notice && <div className="agent-notice" role="status" aria-live="polite" aria-atomic="true"><AgentGlyph name="check" />{notice}</div>}
     {error && <div className="agent-error" role="alert" aria-live="assertive" aria-atomic="true"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
-    {historyOpen && <AgentHistoryDrawer conversations={conversations} activeId={conversation.id} onClose={() => setHistoryOpen(false)} onNew={startConversation} onSelect={(item) => { setConversation(item); setMode(item.mode ?? 'chat'); setHistoryOpen(false) }} onRename={renameConversation} onDelete={deleteConversation} onExport={exportConversation} onImportAll={(file) => void importConversationHistory(file)} onExportAll={exportConversationHistory} />}
+    {historyOpen && <AgentHistoryDrawer conversations={conversations.filter((item) => item.workspaceKey === workspaceKey)} activeId={conversation.id} onClose={() => setHistoryOpen(false)} onNew={startConversation} onSelect={(item) => { setConversation(item); setMode(item.mode ?? 'chat'); setHistoryOpen(false) }} onRename={renameConversation} onDelete={deleteConversation} onExport={exportConversation} onImportAll={(file) => void importConversationHistory(file)} onExportAll={exportConversationHistory} />}
     <div className="agent-conversation" ref={conversationRef} onScroll={(event) => { const el = event.currentTarget; stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32 }}>{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} repositoryBranch={repositoryBranch} changedFileCount={files.filter((file) => file.status !== 'clean').length} textStyle={agentTextStyle} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={(path, proposalId) => void acceptProposalInMessage(path, proposalId)} onRejectProposal={rejectProposalInMessage} onOpenFile={onOpenFile} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{conversation.messages.length === 1 && <div className="agent-starters" aria-label="建议问法"><button type="button" onClick={() => setInput('结合这些笔记和你的知识，找出三个值得继续探索的关联。')}>发现跨笔记关联</button><button type="button" onClick={() => setInput('检查当前笔记的逻辑缺口，补充我可能忽略的背景知识。')}>补充背景与反例</button><button type="button" onClick={() => { setMode('edit'); setInput('整理当前笔记的结构，保留原意并提升可读性。') }}>整理并完善笔记</button></div>}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div>{config.reasoningEnabled && <details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>}{!answerStarted && Boolean(liveOperations.length) && <div className="agent-live-operations">{liveOperations.map((operation) => <span className={operation.status || 'succeeded'} key={operation.id || `${operation.tool}:${operation.at}`}><i>{operation.status === 'running' ? <span className="agent-operation-spinner" /> : operation.status === 'failed' ? '×' : '✓'}</i>{operation.summary}</span>)}</div>}{!answerStarted && !liveOperations.length && <div className="agent-pending"><span className="agent-typing"><span /><span /><span /></span>{mode === 'edit' ? '正在分析仓库并生成修改方案…' : '正在结合笔记与通用知识思考…'}</div>}{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
     <footer className="agent-composer"><div className="agent-composer-input"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={mode === 'edit' ? '描述要修改或新建的笔记。AI 会先给出可审核的方案。' : '询问笔记内容，Enter 发送…'} /></div><div className="agent-composer-tools">{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="编辑范围" className="agent-option-trigger" onClick={() => setScopeOpen((value) => !value)}><AgentGlyph name={scope === 'current' ? 'file' : 'folder'} />{scope === 'current' ? '当前文件' : '仓库笔记'}</button>{scopeOpen && <div className="agent-option-popover scope-popover" ref={clampPopover}><header><strong>编辑范围</strong></header><button type="button" className={scope === 'current' ? 'selected' : ''} disabled={!activePath} onClick={() => { setScope('current'); setScopeOpen(false) }}><AgentGlyph name="file" /><span><strong>当前文件</strong><small>{activePath || '请先从仓库中打开一个文件'}</small></span><i>✓</i></button><button type="button" className={scope === 'cached' ? 'selected' : ''} onClick={() => { setScope('cached'); setScopeOpen(false) }}><AgentGlyph name="folder" /><span><strong>仓库笔记</strong><small>已缓存 {files.length}/{remoteFileCount} 个 Markdown 文件</small></span><i>✓</i></button>{files.length < remoteFileCount && <button type="button" className="scope-load-button" onClick={() => void onLoadAllFiles()} disabled={loadingFiles}>{loadingFiles ? '正在读取全部笔记…' : '读取全部笔记'}</button>}</div>}</div>}<div className="agent-option-wrap"><button type="button" title="思考" className={`agent-option-trigger ${config.reasoningEnabled ? 'active' : ''}`} onClick={() => setReasoningOpen((value) => !value)}><AgentGlyph name="brain" />思考{config.reasoningEnabled ? ` · ${{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[config.reasoningEffort]}` : ' · 关'}</button>{reasoningOpen && <div className="agent-option-popover reasoning-popover" ref={clampPopover}><header><strong>思考</strong></header><div className="agent-effort">{(['low', 'medium', 'high', 'xhigh', 'max'] as const).map((effort) => <button type="button" className={config.reasoningEffort === effort ? 'active' : ''} key={effort} onClick={() => setConfig((current) => ({ ...current, reasoningEffort: effort, reasoningEnabled: true }))}><span>{{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[effort]}</span>{config.reasoningEffort === effort && <AgentGlyph name="check" />}</button>)}</div><p>让支持推理的模型返回可展开的思考过程。</p><button type="button" className={`reasoning-toggle ${config.reasoningEnabled ? 'on' : ''}`} onClick={() => setConfig((current) => ({ ...current, reasoningEnabled: !current.reasoningEnabled }))}><AgentGlyph name="brain" />{config.reasoningEnabled ? '关闭思考' : '开启思考'}</button></div>}</div>{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="操作许可" className={`agent-option-trigger ${config.permissionMode === 'auto' ? 'auto' : ''}`} onClick={() => setPermissionOpen((value) => !value)}><AgentGlyph name={config.permissionMode === 'auto' ? 'alert' : 'shield'} />{config.permissionMode === 'auto' ? '自动执行' : '每次确认'}</button>{permissionOpen && <div className="agent-option-popover permission-popover" ref={clampPopover}><header><strong>操作许可</strong></header><button type="button" className={config.permissionMode === 'confirm' ? 'selected' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'confirm' })); setPermissionOpen(false) }}><AgentGlyph name="shield" /><span><strong>请求批准</strong><small>修改、新建或提交 Git 前逐项确认。</small></span><i>✓</i></button><button type="button" className={config.permissionMode === 'auto' ? 'selected auto' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'auto' })); setPermissionOpen(false) }}><AgentGlyph name="alert" /><span><strong>自动执行</strong><small>收到方案后直接暂存修改与提交请求。</small></span><i>✓</i></button></div>}</div>}<button type="button" className="agent-send-button" title={busy === 'send' ? '停止回答' : '发送'} onClick={() => { if (busy === 'send') abortRef.current?.abort(); else void send() }} disabled={busy === 'send' ? false : busy !== null || !input.trim()}><AgentGlyph name={busy === 'send' ? 'stop' : 'send'} /></button></div></footer>
   </div>

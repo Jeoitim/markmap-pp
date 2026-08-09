@@ -853,6 +853,9 @@ svg { flex: 0 0 auto; }
 /* Agent 工作区：把当前文件、分支和本地修改数持续呈现给用户。 */
 .agent-context-bar { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 13px; border-bottom: 1px solid var(--border); color: var(--muted); background: color-mix(in srgb, var(--panel-soft) 78%, transparent); font-size: 10px; }
 .agent-context-bar > span { min-width: 0; display: flex; align-items: center; gap: 5px; }
+.agent-context-bar .agent-workspace-kind { flex: 0 0 auto; padding: 2px 5px; border-radius: 5px; color: var(--accent); background: color-mix(in srgb,var(--accent) 10%,transparent); font-size: 9px; font-style: normal; font-weight: 700; }
+.agent-context-bar .agent-workspace-kind.local { color: #24845e; background: #42b88316; }
+.agent-context-bar > span > em { min-width: 0; overflow: hidden; color: var(--muted); font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .agent-context-bar strong { overflow: hidden; color: var(--text); font: 10px "JetBrains Mono Variable", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .agent-context-bar small { flex: 0 0 auto; font-size: 10px; white-space: nowrap; }
 .agent-context-bar svg { flex: 0 0 auto; width: 13px; height: 13px; color: var(--accent); }
