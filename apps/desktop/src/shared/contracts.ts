@@ -81,6 +81,8 @@ export const desktopChannels = {
   localGitRead: 'desktop:local-git-read',
   localGitHistory: 'desktop:local-git-history',
   localGitWrite: 'desktop:local-git-write',
+  localGitRefresh: 'desktop:local-git-refresh',
+  localGitSync: 'desktop:local-git-sync',
   localGitCommit: 'desktop:local-git-commit',
   localGitPush: 'desktop:local-git-push',
   secureCacheGet: 'desktop:secure-cache-get',

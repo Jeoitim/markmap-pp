@@ -170,12 +170,18 @@ async function inspectRepository(
     '--symbolic-full-name',
     '@{upstream}',
   ]).catch(() => '');
-  const divergence = upstream
+  const remoteBranch = remoteName && branch !== 'HEAD'
+    ? `${remoteName}/${branch}`
+    : '';
+  const comparisonRef = upstream || (remoteBranch
+    ? await runGit(gitRoot, ['rev-parse', '--verify', remoteBranch]).then(() => remoteBranch).catch(() => '')
+    : '');
+  const divergence = comparisonRef
     ? await runGit(gitRoot, [
         'rev-list',
         '--left-right',
         '--count',
-        `HEAD...${upstream}`,
+        `HEAD...${comparisonRef}`,
       ]).catch(() => '')
     : '';
   const [aheadText = '0', behindText = '0'] = divergence.split(/\s+/);
@@ -339,6 +345,45 @@ export async function writeLocalGitMarkdown(
   }
   await fs.writeFile(target, content, 'utf8');
   return { path: relative, repository: await resolveStoredRepository(id).then((value) => value.repository) };
+}
+
+export async function refreshLocalGitRepository(id: string) {
+  const { repository } = await resolveStoredRepository(id);
+  if (!repository.remoteName) return repository;
+  try {
+    await runGit(repository.root, ['fetch', '--prune', repository.remoteName], true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/authentication|permission denied|could not read username|terminal prompts disabled/i.test(message))
+      throw new Error('Git 凭据不可用，请先在系统 Git 凭据管理器或 SSH Agent 中完成登录');
+    throw new Error(`检查远端更新失败：${message}`);
+  }
+  return inspectRepository(repository.root);
+}
+
+export async function syncLocalGitRepository(id: string) {
+  const repository = await refreshLocalGitRepository(id);
+  if (!repository.remoteName)
+    throw new Error('当前本地仓库没有配置远程地址，无法同步');
+  if (repository.branch === 'HEAD')
+    throw new Error('当前处于 detached HEAD，无法同步远程分支');
+  if (!repository.behindCount) return repository;
+  try {
+    await runGit(repository.root, [
+      'pull',
+      '--rebase',
+      '--autostash',
+      repository.remoteName,
+      repository.branch,
+    ], true);
+  } catch (error) {
+    await runGit(repository.root, ['rebase', '--abort']).catch(() => '');
+    const message = error instanceof Error ? error.message : String(error);
+    if (/conflict|could not apply|patch failed/i.test(message))
+      throw new Error('同步产生冲突，已停止自动同步；请使用专业 Git 工具检查并解决冲突');
+    throw new Error(`同步远端更新失败：${message}`);
+  }
+  return inspectRepository(repository.root);
 }
 
 export async function commitLocalGitMarkdown(id: string, message: string) {

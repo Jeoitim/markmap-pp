@@ -53,6 +53,8 @@ export interface MarkmapDesktopApi {
     read(id: string, relativePath: string): Promise<{ path: string; content: string }>
     history(id: string, relativePaths: string[]): Promise<string>
     write(id: string, relativePath: string, content: string): Promise<{ path: string; repository: DesktopLocalGitRepository }>
+    refresh(id: string): Promise<DesktopLocalGitRepository>
+    sync(id: string): Promise<DesktopLocalGitRepository>
     commit(id: string, message: string): Promise<DesktopLocalGitRepository>
     push(id: string): Promise<DesktopLocalGitRepository>
   }

@@ -34,9 +34,11 @@ import {
   getLocalGitState,
   openLocalGitRepository,
   pushLocalGitRepository,
+  refreshLocalGitRepository,
   readLocalGitHistory,
   readLocalGitMarkdown,
   selectLocalGitRepository,
+  syncLocalGitRepository,
   writeLocalGitMarkdown,
 } from './local-git.js';
 import {
@@ -328,6 +330,16 @@ function registerIpc() {
       return commitLocalGitMarkdown(id, message);
     },
   );
+  ipcMain.handle(desktopChannels.localGitRefresh, async (event, id: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string') throw new Error('仓库标识无效');
+    return refreshLocalGitRepository(id);
+  });
+  ipcMain.handle(desktopChannels.localGitSync, async (event, id: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string') throw new Error('仓库标识无效');
+    return syncLocalGitRepository(id);
+  });
   ipcMain.handle(desktopChannels.localGitPush, async (event, id: unknown) => {
     assertTrusted(event);
     if (typeof id !== 'string') throw new Error('仓库标识无效');
