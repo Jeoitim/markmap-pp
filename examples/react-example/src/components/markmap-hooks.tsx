@@ -448,7 +448,7 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'link' | 'map' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'x'
+type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'link' | 'map' | 'menu' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
@@ -467,6 +467,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.5-1.2 1-1.2 2"/><path d="M12 17h.01"/></>,
   link: <><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></>,
   map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15m6-12v15"/></>,
+  menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
   moon: <path d="M20 15.2A8 8 0 1 1 8.8 4 6.5 6.5 0 0 0 20 15.2Z"/>,
   more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
   plus: <path d="M12 5v14M5 12h14"/>,
@@ -684,6 +685,8 @@ export default function MarkmapHooks() {
   const [canUndo, setCanUndo] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [actionMenuOpen, setActionMenuOpen] = useState(false)
+  const [desktopMenuOpen, setDesktopMenuOpen] = useState(false)
+  const [desktopMenuSection, setDesktopMenuSection] = useState<'file' | 'edit' | 'view' | 'help'>('file')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
   const [exportScale, setExportScale] = useState(2)
   const [exportTransparentBackground, setExportTransparentBackground] = useState(false)
@@ -763,6 +766,7 @@ export default function MarkmapHooks() {
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const actionsRef = useRef<HTMLElement | null>(null)
+  const desktopMenuRef = useRef<HTMLDivElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
   const settingsPanelRef = useRef<HTMLElement | null>(null)
   const panelReturnFocusRef = useRef<HTMLElement | null>(null)
@@ -2437,6 +2441,17 @@ export default function MarkmapHooks() {
     }
   }, [actionMenuOpen])
 
+  useEffect(() => {
+    if (!desktopMenuOpen) return
+    const closeMenu = (event: PointerEvent) => {
+      if (!desktopMenuRef.current?.contains(event.target as Node)) setDesktopMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setDesktopMenuOpen(false) }
+    document.addEventListener('pointerdown', closeMenu)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => { document.removeEventListener('pointerdown', closeMenu); document.removeEventListener('keydown', closeOnEscape) }
+  }, [desktopMenuOpen])
+
   const openFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -2455,6 +2470,21 @@ export default function MarkmapHooks() {
     const file = await desktop.openMarkdown()
     if (file) applyOpenedMarkdown(file.name, file.content, `desktop:${file.id}`, { desktopFileId: file.id, desktopPath: file.path, savedContent: file.content })
   }
+
+  useEffect(() => {
+    if (!desktopApi()) return
+    const handleDesktopShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      const key = event.key.toLocaleLowerCase()
+      if (!['t', 'o', 'w'].includes(key)) return
+      event.preventDefault()
+      if (key === 't') createBlankDocumentTab()
+      else if (key === 'o') void chooseMarkdownFile()
+      else closeDocumentTab(activeTabId)
+    }
+    window.addEventListener('keydown', handleDesktopShortcut)
+    return () => window.removeEventListener('keydown', handleDesktopShortcut)
+  }, [activeTabId, closeDocumentTab, createBlankDocumentTab])
 
   const toggleFullscreen = async () => {
     if (document.fullscreenElement) await document.exitFullscreen()
@@ -3018,7 +3048,7 @@ ${documentRenderConfig.style}
     <main className="app-shell">
       {documentRenderConfig.style && <style>{documentRenderConfig.style}</style>}
       <header className="topbar">
-        <div className="brand" aria-label="markmap++"><span className="brand-mark"><img src={brandIconUrl} alt="" /></span><span className="brand-name">markmap<span>++</span></span></div>
+        <div className="brand-area" ref={desktopMenuRef}>{desktopApi() && <button type="button" className="desktop-menu-trigger" aria-label="应用菜单" title="应用菜单" aria-expanded={desktopMenuOpen} onClick={() => setDesktopMenuOpen((value) => !value)}><Icon name="menu" /></button>}<div className="brand" aria-label="markmap++"><span className="brand-mark"><img src={brandIconUrl} alt="" /></span><span className="brand-name">markmap<span>++</span></span></div>{desktopMenuOpen && <div className="desktop-app-menu" role="menu" aria-label="markmap++ 应用菜单"><nav><button className={desktopMenuSection === 'file' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('file')} onClick={() => setDesktopMenuSection('file')}>文件<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'edit' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('edit')} onClick={() => setDesktopMenuSection('edit')}>编辑<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'view' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('view')} onClick={() => setDesktopMenuSection('view')}>视图<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'help' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('help')} onClick={() => setDesktopMenuSection('help')}>帮助<Icon name="chevron-right" /></button></nav><section>{desktopMenuSection === 'file' ? <><button onClick={() => { setDesktopMenuOpen(false); createBlankDocumentTab() }}><span>新建标签页</span><kbd>Ctrl+T</kbd></button><button onClick={() => { setDesktopMenuOpen(false); void chooseMarkdownFile() }}><span>打开文件…</span><kbd>Ctrl+O</kbd></button><button onClick={() => { setDesktopMenuOpen(false); void openLocalGitFolder() }}><span>打开本地 Git 仓库…</span></button><hr/><button disabled={Boolean(activeRepoPath) || !activeTabUnsaved} onClick={() => { setDesktopMenuOpen(false); if (activeLocalFile) void saveActiveLocalDocument(); else void saveStandaloneDocument() }}><span>保存</span><kbd>Ctrl+S</kbd></button><button onClick={() => { setDesktopMenuOpen(false); setExportError(''); setExportFormat('md'); setExportTab('file'); setActivePanel('export') }}><span>另存 / 导出…</span></button><hr/><button onClick={() => { setDesktopMenuOpen(false); closeDocumentTab(activeTabId) }}><span>关闭标签页</span><kbd>Ctrl+W</kbd></button></> : desktopMenuSection === 'edit' ? <><button disabled={!canUndo} onClick={() => { setDesktopMenuOpen(false); undoLastChange() }}><span>撤销上次修改</span><kbd>Ctrl+Z</kbd></button><button onClick={() => { setDesktopMenuOpen(false); setActivePanel('editor') }}><span>编辑器偏好设置</span></button></> : desktopMenuSection === 'view' ? <><button onClick={() => { setDesktopMenuOpen(false); setEditorView('markdown') }}><span>Markdown 编辑器</span></button><button onClick={() => { setDesktopMenuOpen(false); openGitHubPanel() }}><span>仓库</span></button><button onClick={() => { setDesktopMenuOpen(false); setEditorView('agent') }}><span>Agent</span></button><hr/><button onClick={() => { setDesktopMenuOpen(false); setActivePanel('preview') }}><span>预览设置</span></button><button onClick={() => { setDesktopMenuOpen(false); void toggleFullscreen() }}><span>{fullscreen ? '退出全屏' : '进入全屏'}</span></button></> : <><button onClick={() => { setDesktopMenuOpen(false); openHelpPanel() }}><span>使用说明</span></button><button onClick={() => { setDesktopMenuOpen(false); void desktopApi()?.openExternal('https://github.com/Jeoitim/markmap-pp') }}><span>GitHub 项目</span></button></>}</section></div>}</div>
         <div className="document-name" title={fileName}><span className={`save-dot ${titleSyncState}`} /><span>{fileName}</span><small>{titleSyncText}</small></div>
         <nav ref={actionsRef} className="actions" aria-label="文档操作">
           <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
