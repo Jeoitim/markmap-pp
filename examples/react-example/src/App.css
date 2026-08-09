@@ -606,7 +606,7 @@ svg { flex: 0 0 auto; }
 .tree-inline-edit > svg { width: 1em; height: 1em; color: var(--muted); }
 .tree-folder .tree-inline-edit > svg { color: #c69538; }
 .tree-inline-edit input { min-width: 0; width: 100%; height: 23px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 4px; outline: none; color: var(--text); background: var(--panel); font-size: inherit; box-shadow: 0 0 0 2px color-mix(in srgb,var(--accent) 12%,transparent); }
-.repository-status { flex: 0 0 34px; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 13px; border-top: 1px solid var(--border); color: var(--muted); background: var(--panel-soft); font-size: max(11px, .82em); white-space: nowrap; }
+.repository-status { flex: 0 0 34px; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px 0 13px; border-top: 1px solid var(--border); color: var(--muted); background: var(--panel-soft); font-size: 11px; font-weight: 400; white-space: nowrap; }
 .repository-status > span:not(.repository-status-label) { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; }
 .repository-status > span.clean { background: #39ad72; }
 .repository-status > span.dirty { background: #d8872d; }
