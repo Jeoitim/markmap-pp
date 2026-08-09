@@ -1032,6 +1032,20 @@ export default function MarkmapHooks() {
     window.setTimeout(() => mmRef.current?.fit(), 60)
   }, [])
 
+  const displayNoOpenDocument = useCallback(() => {
+    historyRef.current = []
+    lastEditRef.current = { source: '', time: 0 }
+    markdownRef.current = ''
+    setMarkdown('')
+    setRenderedMarkdown('')
+    setFileName('')
+    setActiveRepoPath(null)
+    setActiveLocalFile(null)
+    setCanUndo(false)
+    setSaveState('saved')
+    setMobileTabsOpen(false)
+  }, [])
+
   const persistActiveDocumentTab = useCallback(() => {
     const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId
       ? { ...tab, name: fileName, content: markdownRef.current, repositoryPath: activeRepoPath, localRepositoryId: activeLocalFile?.repositoryId || null, localPath: activeLocalFile?.path || null }
@@ -1098,14 +1112,18 @@ export default function MarkmapHooks() {
       setPendingCloseError('')
       return
     }
-    if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
     if (tabId !== activeTabId) return
+    if (!nextTabs.length) {
+      setActiveTabId('')
+      displayNoOpenDocument()
+      return
+    }
     const nextTab = nextTabs[Math.min(closingIndex, nextTabs.length - 1)]
     setActiveTabId(nextTab.id)
     displayDocumentTab(nextTab)
-  }, [activeTabId, displayDocumentTab, markDocumentSaved, persistActiveDocumentTab])
+  }, [activeTabId, displayDocumentTab, displayNoOpenDocument, markDocumentSaved, persistActiveDocumentTab])
 
   const savePendingDocumentAndClose = useCallback(async () => {
     const tab = documentTabsRef.current.find((item) => item.id === pendingCloseTabId)
@@ -1588,10 +1606,13 @@ export default function MarkmapHooks() {
       replaceLocalRepository(repository)
       setLocalAgentContext((current) => current.repositoryId === repositoryId ? { ...current, files: current.files.filter((file) => file.path !== target.path && (target.type !== 'folder' || !file.path.startsWith(`${target.path}/`))) } : current)
       const removed = (tab: DocumentTab) => tab.localRepositoryId === repositoryId && Boolean(tab.localPath) && (tab.localPath === target.path || (target.type === 'folder' && tab.localPath!.startsWith(`${target.path}/`)))
-      let nextTabs = documentTabsRef.current.filter((tab) => !removed(tab))
-      if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
+      const nextTabs = documentTabsRef.current.filter((tab) => !removed(tab))
       documentTabsRef.current = nextTabs; setDocumentTabs(nextTabs)
-      if (activeDocumentTab && removed(activeDocumentTab)) { setActiveTabId(nextTabs[0].id); displayDocumentTab(nextTabs[0]) }
+      if (activeDocumentTab && removed(activeDocumentTab)) {
+        const nextTab = nextTabs[0]
+        if (nextTab) { setActiveTabId(nextTab.id); displayDocumentTab(nextTab) }
+        else { setActiveTabId(''); displayNoOpenDocument() }
+      }
       setLocalGitNotice(`已删除 ${target.name}`)
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '删除本地文件失败') }
     finally { setLocalGitBusy(false); setLocalGitActivity(null) }
@@ -1606,14 +1627,18 @@ export default function MarkmapHooks() {
       const file = await desktop.localGit.read(repositoryId, tab.localPath)
       refreshed.set(tab.localPath, file.content)
     }
-    let nextTabs = documentTabsRef.current
+    const nextTabs = documentTabsRef.current
       .filter((tab) => tab.localRepositoryId !== repositoryId || !tab.localPath || availablePaths.has(tab.localPath))
       .map((tab) => tab.localRepositoryId === repositoryId && tab.localPath && refreshed.has(tab.localPath) ? { ...tab, content: refreshed.get(tab.localPath)!, savedContent: refreshed.get(tab.localPath)! } : tab)
-    if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
     documentTabsRef.current = nextTabs; setDocumentTabs(nextTabs)
     const active = nextTabs.find((tab) => tab.id === activeTabId) || nextTabs[0]
-    if (active.id !== activeTabId) setActiveTabId(active.id)
-    displayDocumentTab(active)
+    if (active) {
+      if (active.id !== activeTabId) setActiveTabId(active.id)
+      displayDocumentTab(active)
+    } else {
+      setActiveTabId('')
+      displayNoOpenDocument()
+    }
   }
 
   const discardLocalRepositoryChanges = async () => {
@@ -2541,14 +2566,16 @@ export default function MarkmapHooks() {
       cachedFilesRef.current = nextFiles
       setCachedFiles(nextFiles)
       const affectedTabs = (tab: DocumentTab) => tab.repositoryPath === file.path
-      let nextTabs = restored
+      const nextTabs = restored
         ? documentTabsRef.current.map((tab) => affectedTabs(tab) ? { ...tab, name: restored!.path, content: restored!.content, savedContent: restored!.content, repositoryPath: restored!.path, sourceKey: `repository:${file.repoKey}:${restored!.path}` } : tab)
         : documentTabsRef.current.filter((tab) => !affectedTabs(tab))
-      if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
       documentTabsRef.current = nextTabs
       setDocumentTabs(nextTabs)
       const active = nextTabs.find((tab) => tab.id === activeTabId) || nextTabs[0]
-      if (affectedTabs(activeDocumentTab || active) || !nextTabs.some((tab) => tab.id === activeTabId)) {
+      if (!active) {
+        setActiveTabId('')
+        displayNoOpenDocument()
+      } else if (affectedTabs(activeDocumentTab || active) || !nextTabs.some((tab) => tab.id === activeTabId)) {
         setActiveTabId(active.id)
         displayDocumentTab(active)
       }
@@ -3490,7 +3517,8 @@ ${documentRenderConfig.style}
   }
 
   const gridColumns = editorCollapsed ? '0 18px 1fr' : `${editorWidth}% 18px 1fr`
-  const lineCount = markdown.split('\n').length
+  const hasOpenDocument = Boolean(activeDocumentTab)
+  const lineCount = hasOpenDocument ? markdown.split('\n').length : 0
   const activeCachedFile = activeRepoPath ? cachedFiles.find((file) => file.path === activeRepoPath) : undefined
   const activeTabSnapshot = activeDocumentTab ? { ...activeDocumentTab, name: fileName, content: markdown } : null
   const activeTabUnsaved = activeTabSnapshot ? tabHasUnsavedChanges(activeTabSnapshot) : false
@@ -3519,7 +3547,7 @@ ${documentRenderConfig.style}
           ? activeLocalRepository.upstream ? `推送 ${activeLocalRepository.aheadCount} 个本地提交` : '发布当前分支到远程'
           : 'Git 工作区干净'
   const agentUsesLocalRepository = Boolean(activeLocalFile)
-  const agentUsesStandaloneFile = !activeLocalFile && !activeRepoPath
+  const agentUsesStandaloneFile = hasOpenDocument && !activeLocalFile && !activeRepoPath
   const agentLocalRepository = agentUsesLocalRepository ? localGitState.repositories.find((repository) => repository.id === activeLocalFile?.repositoryId) : undefined
   const agentLocalFiles = agentLocalRepository && localAgentContext.repositoryId === agentLocalRepository.id ? localAgentContext.files : []
   const agentWorkspaceKey = agentUsesStandaloneFile ? `file:${activeDocumentTab?.sourceKey || activeTabId}` : agentUsesLocalRepository && agentLocalRepository ? `local:${agentLocalRepository.id}` : githubConfig ? `remote:${repoKeyOf(githubConfig)}` : 'remote:unbound'
@@ -3598,13 +3626,13 @@ ${documentRenderConfig.style}
       {documentRenderConfig.style && <style>{documentRenderConfig.style}</style>}
       <header className="topbar">
         <div className="brand-area" ref={desktopMenuRef}>{desktopApi() && <button type="button" className="desktop-menu-trigger" aria-label="应用菜单" title="应用菜单" aria-expanded={desktopMenuOpen} onClick={() => setDesktopMenuOpen((value) => !value)}><Icon name="menu" /></button>}<div className="brand" aria-label="markmap++"><span className="brand-mark"><img src={brandIconUrl} alt="" /></span><span className="brand-name">markmap<span>++</span></span></div>{desktopMenuOpen && <div className="desktop-app-menu" role="menu" aria-label="markmap++ 应用菜单"><nav><button className={desktopMenuSection === 'file' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('file')} onClick={() => setDesktopMenuSection('file')}>文件<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'edit' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('edit')} onClick={() => setDesktopMenuSection('edit')}>编辑<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'view' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('view')} onClick={() => setDesktopMenuSection('view')}>视图<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'help' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('help')} onClick={() => setDesktopMenuSection('help')}>帮助<Icon name="chevron-right" /></button></nav><section>{desktopMenuSection === 'file' ? <><button onClick={() => { setDesktopMenuOpen(false); createBlankDocumentTab() }}><span>新建标签页</span><kbd>Ctrl+T</kbd></button><button onClick={() => { setDesktopMenuOpen(false); void chooseMarkdownFile() }}><span>打开文件…</span><kbd>Ctrl+O</kbd></button><button onClick={() => { setDesktopMenuOpen(false); void openLocalGitFolder() }}><span>打开本地文件夹…</span></button><hr/><button disabled={Boolean(activeRepoPath) || !activeTabUnsaved} onClick={() => { setDesktopMenuOpen(false); if (activeLocalFile) void saveActiveLocalDocument(); else void saveStandaloneDocument() }}><span>保存</span><kbd>Ctrl+S</kbd></button><button onClick={() => { setDesktopMenuOpen(false); setExportError(''); setExportFormat('md'); setExportTab('file'); setActivePanel('export') }}><span>另存 / 导出…</span></button><hr/><button onClick={() => { setDesktopMenuOpen(false); closeDocumentTab(activeTabId) }}><span>关闭标签页</span><kbd>Ctrl+W</kbd></button></> : desktopMenuSection === 'edit' ? <><button disabled={!canUndo} onClick={() => { setDesktopMenuOpen(false); undoLastChange() }}><span>撤销上次修改</span><kbd>Ctrl+Z</kbd></button><button onClick={() => { setDesktopMenuOpen(false); setActivePanel('editor') }}><span>编辑器偏好设置</span></button></> : desktopMenuSection === 'view' ? <><button onClick={() => { setDesktopMenuOpen(false); setEditorView('markdown') }}><span>Markdown 编辑器</span></button><button onClick={() => { setDesktopMenuOpen(false); openGitHubPanel() }}><span>仓库</span></button><button onClick={() => { setDesktopMenuOpen(false); setEditorView('agent') }}><span>Agent</span></button><hr/><button onClick={() => { setDesktopMenuOpen(false); setActivePanel('preview') }}><span>预览设置</span></button><button onClick={() => { setDesktopMenuOpen(false); void toggleFullscreen() }}><span>{fullscreen ? '退出全屏' : '进入全屏'}</span></button></> : <><button onClick={() => { setDesktopMenuOpen(false); openHelpPanel() }}><span>使用说明</span></button><button onClick={() => { setDesktopMenuOpen(false); void desktopApi()?.openExternal('https://github.com/Jeoitim/markmap-pp') }}><span>GitHub 项目</span></button></>}</section></div>}</div>
-        <div className="document-name" title={fileName}><span className={`save-dot ${titleSyncState}`} /><span>{fileName}</span><small>{titleSyncText}</small></div>
+        <div className="document-name" title={fileName || '当前没有打开文件'}>{hasOpenDocument && <span className={`save-dot ${titleSyncState}`} />}<span>{fileName || '当前没有打开文件'}</span><small>{hasOpenDocument ? titleSyncText : '打开或新建 Markdown'}</small></div>
         <nav ref={actionsRef} className="actions" aria-label="文档操作">
           <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
           <button type="button" className="button secondary collapsible-action" onClick={() => void chooseMarkdownFile()}><Icon name="folder" /><span>打开</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={openHelpPanel}><Icon name="help" /><span>说明</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
-          <button type="button" className="button primary" onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
+          <button type="button" className="button primary" disabled={!hasOpenDocument} onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
           <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
           <button type="button" className="icon-button" aria-label={previewDarkMode ? '切换浅色模式' : '切换深色模式'} title={previewDarkMode ? '浅色模式 · 雾白背景' : '深色模式 · 深灰背景'} onClick={() => updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d')}><Icon name={previewDarkMode ? 'sun' : 'moon'} /></button>
           <button type="button" className="icon-button mobile-tabs-trigger" aria-label={`打开文档标签，共 ${documentTabs.length} 个`} title="文档标签" aria-expanded={mobileTabsOpen} onClick={() => setMobileTabsOpen(true)}><Icon name="tabs" /><b>{documentTabs.length}</b></button>
@@ -3622,6 +3650,7 @@ ${documentRenderConfig.style}
           {!editorCollapsed && <>
             <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button></div>
               {editorView === 'markdown' ? <>
+              {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>打开现有 Markdown，或新建一个空白标签。</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />新建标签</button></div></div>}
               <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span>{activeTabUnsaved && <span className="editor-unsaved"><i />{activeLocalFile ? '自动保存中' : '未保存'}</span>}<span className="editor-status-language">Markdown</span><span className="editor-status-actions">{agentUsesStandaloneFile && (!desktopApi() || Boolean(activeDocumentTab?.desktopFileId)) && <button type="button" className="editor-local-save" disabled={!activeTabUnsaved} onClick={() => void saveStandaloneDocument()} title={activeDocumentTab?.desktopFileId ? '保存到原文件' : '下载 Markdown 副本'}><Icon name="download" /><span>{activeDocumentTab?.desktopFileId ? '保存' : '下载副本'}</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
@@ -3721,6 +3750,7 @@ ${documentRenderConfig.style}
               </div>
               <button type="button" className="document-tab-new" aria-label="新建空白文档标签" title="新建标签" onClick={createBlankDocumentTab}><Icon name="plus" /></button>
             </nav>
+            {!hasOpenDocument && <div className="document-empty-state preview-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>新建或打开 Markdown 后，这里会显示思维导图。</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />新建标签</button></div></div>}
             <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>返回 Markdown</span></button><button type="button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title="预览设置" aria-label="预览设置"><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
           </>
         </section>

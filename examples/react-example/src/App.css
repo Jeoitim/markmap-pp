@@ -100,11 +100,20 @@ svg { flex: 0 0 auto; }
 
 .workspace { min-height: 0; display: grid; background: var(--border); }
 .workspace.resizing { cursor: col-resize; }
-.editor-pane, .preview-pane { min-width: 0; min-height: 0; display: grid; grid-template-rows: 43px 1fr; overflow: hidden; background: var(--panel); }
+.editor-pane, .preview-pane { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: 43px 1fr; overflow: hidden; background: var(--panel); }
 .preview-pane { grid-template-rows: 39px 1fr; }
 .editor-pane { position: relative; grid-template-rows: 43px 1fr 31px; }
 .editor-pane.repository-view { grid-template-rows: 43px 1fr; }
 .editor-pane.collapsed { visibility: hidden; }
+.document-empty-state { position: absolute; z-index: 6; inset: 43px 0 0; min-width: 0; min-height: 0; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 28px; color: var(--muted); text-align: center; background: var(--panel-soft); }
+.preview-empty-state { inset-block-start: 39px; }
+.document-empty-state > svg { width: 42px; height: 42px; padding: 10px; color: var(--accent); border: 1px solid color-mix(in srgb,var(--accent) 24%,var(--border)); border-radius: 14px; background: color-mix(in srgb,var(--accent) 8%,var(--panel)); }
+.document-empty-state > strong { color: var(--text); font-size: 14px; }
+.document-empty-state > span { max-width: 320px; font-size: 11px; line-height: 1.6; }
+.document-empty-state > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 4px; }
+.document-empty-state button { min-height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--panel); font-size: 11px; font-weight: 650; cursor: pointer; }
+.document-empty-state button.primary { color: #fff; border-color: var(--accent); background: var(--accent); }
+.document-empty-state button svg { width: 14px; height: 14px; }
 .pane-header { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 11px 0 15px; border-bottom: 1px solid var(--border); background: var(--panel); color: var(--muted); font-size: 11px; }
 .preview-floating-tools { position: absolute; z-index: 12; top: 11px; right: 11px; display: flex; align-items: center; gap: 6px; padding: 5px; border: 1px solid color-mix(in srgb,var(--border) 86%,transparent); border-radius: 11px; background: color-mix(in srgb,var(--panel) 90%,transparent); box-shadow: 0 8px 24px #0b0d131f; backdrop-filter: blur(12px); }
 .preview-floating-tools > button { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--panel); cursor: pointer; transition: .16s ease; }
