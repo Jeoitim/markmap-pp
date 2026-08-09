@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -14,6 +15,7 @@ import {
   session,
   shell,
   type IpcMainInvokeEvent,
+  type MenuItemConstructorOptions,
 } from 'electron';
 import {
   desktopChannels,
@@ -425,6 +427,33 @@ async function createWindow() {
       /* Block unknown protocols. */
     }
     return { action: 'deny' };
+  });
+  window.webContents.on('context-menu', (_event, params) => {
+    const template: MenuItemConstructorOptions[] = [];
+    if (params.isEditable) {
+      template.push(
+        { label: '撤销', role: 'undo' },
+        { label: '重做', role: 'redo' },
+        { type: 'separator' },
+        { label: '剪切', role: 'cut' },
+        { label: '复制', role: 'copy' },
+        { label: '粘贴', role: 'paste' },
+        { type: 'separator' },
+        { label: '全选', role: 'selectAll' },
+      );
+    } else if (params.selectionText.trim()) {
+      template.push(
+        { label: '复制', role: 'copy' },
+        { type: 'separator' },
+        { label: '全选', role: 'selectAll' },
+      );
+    } else if (params.linkURL) {
+      template.push({
+        label: '复制链接',
+        click: () => clipboard.writeText(params.linkURL),
+      });
+    }
+    if (template.length) Menu.buildFromTemplate(template).popup({ window });
   });
   window.webContents.on('will-navigate', (event, url) => {
     if (isTrustedUrl(url)) return;
