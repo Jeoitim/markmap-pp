@@ -13,7 +13,7 @@ import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import type { AgentSourceFile } from './agent-client'
-import { desktopApi, saveBlob, type DesktopLocalGitState } from './desktop-api'
+import { desktopApi, saveBlob, type DesktopLocalGitFile, type DesktopLocalGitGraph, type DesktopLocalGitState } from './desktop-api'
 import { inspectMarkdown } from './markdown-lint'
 import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
 import { indexRepositoryNote, repositoryLinkHref, repositoryMarkdownLink, resolveHeading, resolveRepositoryLink, rewriteRepositoryLinks } from './repository-links'
@@ -353,6 +353,21 @@ interface RepositoryRow {
   depth: number
   remote?: RemoteMarkdownFile
   cached?: CachedMarkdownFile
+  local?: DesktopLocalGitFile
+}
+
+function buildLocalRepositoryRows(files: DesktopLocalGitFile[], collapsedFolders: Set<string>): RepositoryRow[] {
+  const folders = new Set<string>()
+  files.forEach((file) => {
+    const parts = file.path.split('/')
+    for (let index = 0; index < parts.length - 1; index += 1) folders.add(parts.slice(0, index + 1).join('/'))
+  })
+  return [
+    ...Array.from(folders, (path) => ({ type: 'folder' as const, path, name: baseName(path), depth: path.split('/').length - 1 })),
+    ...files.map((local) => ({ type: 'file' as const, path: local.path, name: baseName(local.path), depth: local.path.split('/').length - 1, local })),
+  ]
+    .sort((left, right) => left.path.localeCompare(right.path) || (left.type === 'folder' ? -1 : 1))
+    .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
 type RepositoryTarget = Pick<RepositoryRow, 'type' | 'path' | 'name'> | { type: 'root'; path: ''; name: '仓库根目录' }
@@ -716,7 +731,7 @@ export default function MarkmapHooks() {
   const [localGitState, setLocalGitState] = useState<DesktopLocalGitState>({ activeId: null, repositories: [] })
   const [localAgentContext, setLocalAgentContext] = useState<{ repositoryId: string | null; files: AgentSourceFile[] }>({ repositoryId: null, files: [] })
   const [localGitBusy, setLocalGitBusy] = useState(false)
-  const [localGitActivity, setLocalGitActivity] = useState<'refresh' | 'sync' | 'commit' | 'push' | null>(null)
+  const [localGitActivity, setLocalGitActivity] = useState<'refresh' | 'sync' | 'commit' | 'push' | 'move' | 'remove' | 'discard' | 'graph' | 'switch' | null>(null)
   const [localGitError, setLocalGitError] = useState('')
   const [localGitNotice, setLocalGitNotice] = useState('')
   const [githubBusyAction, setGithubBusyAction] = useState<GitHubBusyAction | null>(null)
@@ -725,9 +740,14 @@ export default function MarkmapHooks() {
   const [githubNotice, setGithubNotice] = useState('')
   const [virtualFolders, setVirtualFolders] = useState<string[]>([])
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set())
+  const [localCollapsedFolders, setLocalCollapsedFolders] = useState<Set<string>>(() => new Set())
   const [repositorySaveCollapsedFolders, setRepositorySaveCollapsedFolders] = useState<Set<string>>(() => new Set())
   const [repositoryClipboard, setRepositoryClipboard] = useState<RepositoryClipboard | null>(null)
+  const [localRepositoryClipboard, setLocalRepositoryClipboard] = useState<RepositoryClipboard | null>(null)
   const [repositoryMenu, setRepositoryMenu] = useState<{ x: number; y: number; target: RepositoryTarget } | null>(null)
+  const [localRepositoryMenu, setLocalRepositoryMenu] = useState<{ x: number; y: number; target: RepositoryTarget } | null>(null)
+  const [localRepositoryGraph, setLocalRepositoryGraph] = useState<(DesktopLocalGitGraph & { loading: boolean; error: string }) | null>(null)
+  const [localRepositoryGraphBranchesOpen, setLocalRepositoryGraphBranchesOpen] = useState(false)
   const [repositoryHistory, setRepositoryHistory] = useState<RepositoryHistoryState | null>(null)
   const [repositoryLoadingPath, setRepositoryLoadingPath] = useState<string | null>(null)
   const [repositorySaveMode, setRepositorySaveMode] = useState(false)
@@ -736,10 +756,14 @@ export default function MarkmapHooks() {
   const [repositoryNewFolderParent, setRepositoryNewFolderParent] = useState<string | null>(null)
   const [repositoryNewFolderName, setRepositoryNewFolderName] = useState('')
   const [draggedRepositoryTarget, setDraggedRepositoryTarget] = useState<RepositoryTarget | null>(null)
+  const [draggedLocalRepositoryTarget, setDraggedLocalRepositoryTarget] = useState<RepositoryTarget | null>(null)
   const [repositoryDropFolder, setRepositoryDropFolder] = useState<string | null>(null)
+  const [localRepositoryDropFolder, setLocalRepositoryDropFolder] = useState<string | null>(null)
   const [repositoryTouchDrag, setRepositoryTouchDrag] = useState<{ target: RepositoryTarget; dropFolder: string | null; dragging: boolean; x: number; y: number } | null>(null)
   const [renamingRepositoryTarget, setRenamingRepositoryTarget] = useState<RepositoryTarget | null>(null)
   const [repositoryRenameValue, setRepositoryRenameValue] = useState('')
+  const [renamingLocalRepositoryTarget, setRenamingLocalRepositoryTarget] = useState<RepositoryTarget | null>(null)
+  const [localRepositoryRenameValue, setLocalRepositoryRenameValue] = useState('')
   const [selectionMenu, setSelectionMenu] = useState<TextSelectionTarget | null>(null)
   const [linkPickerSelection, setLinkPickerSelection] = useState<TextSelectionTarget | null>(null)
   const [linkNotice, setLinkNotice] = useState('')
@@ -1343,6 +1367,200 @@ export default function MarkmapHooks() {
       setActivePanel(null)
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '读取本地 Markdown 失败') }
     finally { setLocalGitBusy(false) }
+  }
+
+  const replaceLocalRepository = useCallback((repository: DesktopLocalGitState['repositories'][number]) => {
+    setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
+  }, [])
+
+  const rewriteOpenLocalPaths = useCallback((repositoryId: string, sourcePath: string, destinationPath: string, kind: 'file' | 'folder') => {
+    const rewrite = (path: string) => kind === 'file' ? destinationPath : path === sourcePath ? destinationPath : path.startsWith(`${sourcePath}/`) ? `${destinationPath}${path.slice(sourcePath.length)}` : path
+    const nextTabs = documentTabsRef.current.map((tab) => {
+      if (tab.localRepositoryId !== repositoryId || !tab.localPath || (kind === 'file' ? tab.localPath !== sourcePath : tab.localPath !== sourcePath && !tab.localPath.startsWith(`${sourcePath}/`))) return tab
+      const localPath = rewrite(tab.localPath)
+      return { ...tab, name: baseName(localPath), localPath, sourceKey: `local-git:${repositoryId}:${localPath}` }
+    })
+    documentTabsRef.current = nextTabs
+    setDocumentTabs(nextTabs)
+    setLocalAgentContext((current) => current.repositoryId !== repositoryId ? current : { ...current, files: current.files.map((file) => file.path === sourcePath || (kind === 'folder' && file.path.startsWith(`${sourcePath}/`)) ? { ...file, path: rewrite(file.path) } : file) })
+    if (activeLocalFile?.repositoryId === repositoryId && (activeLocalFile.path === sourcePath || (kind === 'folder' && activeLocalFile.path.startsWith(`${sourcePath}/`)))) {
+      const path = rewrite(activeLocalFile.path)
+      setActiveLocalFile({ repositoryId, path })
+      setFileName(baseName(path))
+    }
+  }, [activeLocalFile])
+
+  const pasteLocalRepositoryClipboard = async (destinationFolder: string) => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    const repository = localGitState.repositories.find((item) => item.id === repositoryId)
+    const clipboard = localRepositoryClipboard
+    if (!desktop || !repositoryId || !repository || !clipboard || clipboard.target.type === 'root') return
+    if (clipboard.mode === 'cut') {
+      await moveLocalRepositoryTarget(clipboard.target, destinationFolder)
+      setLocalRepositoryClipboard(null)
+      return
+    }
+    const occupied = new Set(buildLocalRepositoryRows(repository.files, new Set()).map((row) => row.path))
+    const extension = clipboard.target.type === 'file' ? clipboard.target.name.match(/(\.(?:md|markdown))$/i)?.[1] || '' : ''
+    const stem = extension ? clipboard.target.name.slice(0, -extension.length) : clipboard.target.name
+    let destinationName = clipboard.target.name
+    let destinationRoot = joinPath(destinationFolder, destinationName)
+    for (let index = 1; occupied.has(destinationRoot); index += 1) {
+      destinationName = `${stem} 副本${index > 1 ? ` ${index}` : ''}${extension}`
+      destinationRoot = joinPath(destinationFolder, destinationName)
+    }
+    setLocalGitBusy(true); setLocalGitActivity('move'); setLocalGitError(''); setLocalGitNotice('')
+    try {
+      const sources = clipboard.target.type === 'file'
+        ? repository.files.filter((file) => file.path === clipboard.target.path)
+        : repository.files.filter((file) => file.path.startsWith(`${clipboard.target.path}/`))
+      let nextRepository = repository
+      for (const source of sources) {
+        if (source.gitStatus === 'D') continue
+        const file = await desktop.localGit.read(repositoryId, source.path)
+        const destinationPath = clipboard.target.type === 'file' ? destinationRoot : `${destinationRoot}${source.path.slice(clipboard.target.path.length)}`
+        nextRepository = (await desktop.localGit.write(repositoryId, destinationPath, file.content)).repository
+      }
+      replaceLocalRepository(nextRepository)
+      setLocalGitNotice(`已复制 ${clipboard.target.name}`)
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '复制本地文件失败') }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
+  }
+
+  const moveLocalRepositoryTarget = async (target: RepositoryTarget, destinationFolder: string) => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || !repositoryId || target.type === 'root') return
+    const destinationPath = joinPath(destinationFolder, target.name)
+    if (destinationPath === target.path) return
+    setLocalGitBusy(true); setLocalGitActivity('move'); setLocalGitError(''); setLocalGitNotice('')
+    try {
+      const repository = await desktop.localGit.move(repositoryId, target.path, destinationPath, target.type)
+      replaceLocalRepository(repository)
+      rewriteOpenLocalPaths(repositoryId, target.path, destinationPath, target.type)
+      setLocalGitNotice(`已移动 ${target.name}`)
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '移动本地文件失败') }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null); setDraggedLocalRepositoryTarget(null); setLocalRepositoryDropFolder(null) }
+  }
+
+  const dropLocalRepositoryTarget = async (destinationFolder: string) => {
+    const target = draggedLocalRepositoryTarget
+    const normalized = target ? normalizeRepositoryDropFolder(target, destinationFolder) : null
+    if (target && normalized !== null) await moveLocalRepositoryTarget(target, normalized)
+    else { setDraggedLocalRepositoryTarget(null); setLocalRepositoryDropFolder(null) }
+  }
+
+  const openLocalRepositoryMenu = (event: React.MouseEvent, target: RepositoryTarget) => {
+    event.preventDefault(); event.stopPropagation()
+    setLocalRepositoryMenu({ x: Math.min(event.clientX, window.innerWidth - 196), y: Math.min(event.clientY, window.innerHeight - 230), target })
+  }
+
+  const startLocalRepositoryRename = (target: RepositoryTarget) => {
+    if (target.type === 'root') return
+    setRenamingLocalRepositoryTarget(target)
+    setLocalRepositoryRenameValue(target.name)
+  }
+
+  const finishLocalRepositoryRename = async () => {
+    const target = renamingLocalRepositoryTarget
+    const name = localRepositoryRenameValue.trim()
+    setRenamingLocalRepositoryTarget(null)
+    if (!target || target.type === 'root' || !name || name === target.name || name.includes('/') || name.includes('\\')) return
+    if (target.type === 'file' && !/\.(md|markdown)$/i.test(name)) { setLocalGitError('Markdown 文件名需要以 .md 或 .markdown 结尾'); return }
+    if (name !== target.name) {
+      const desktop = desktopApi()
+      const repositoryId = localGitState.activeId
+      if (!desktop || !repositoryId) return
+      setLocalGitBusy(true); setLocalGitActivity('move'); setLocalGitError('')
+      try {
+        const destinationPath = joinPath(parentPath(target.path), name)
+        const repository = await desktop.localGit.move(repositoryId, target.path, destinationPath, target.type)
+        replaceLocalRepository(repository)
+        rewriteOpenLocalPaths(repositoryId, target.path, destinationPath, target.type)
+        setLocalGitNotice(`已重命名为 ${name}`)
+      } catch (error) { setLocalGitError(error instanceof Error ? error.message : '重命名失败') }
+      finally { setLocalGitBusy(false); setLocalGitActivity(null) }
+    }
+  }
+
+  const removeLocalRepositoryTarget = async (target: RepositoryTarget) => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || !repositoryId || target.type === 'root') return
+    if (!window.confirm(`确定删除“${target.name}”吗？此操作会修改磁盘中的文件。`)) return
+    setLocalGitBusy(true); setLocalGitActivity('remove'); setLocalGitError(''); setLocalGitNotice('')
+    try {
+      const repository = await desktop.localGit.remove(repositoryId, target.path, target.type)
+      replaceLocalRepository(repository)
+      setLocalAgentContext((current) => current.repositoryId === repositoryId ? { ...current, files: current.files.filter((file) => file.path !== target.path && (target.type !== 'folder' || !file.path.startsWith(`${target.path}/`))) } : current)
+      const removed = (tab: DocumentTab) => tab.localRepositoryId === repositoryId && Boolean(tab.localPath) && (tab.localPath === target.path || (target.type === 'folder' && tab.localPath!.startsWith(`${target.path}/`)))
+      let nextTabs = documentTabsRef.current.filter((tab) => !removed(tab))
+      if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
+      documentTabsRef.current = nextTabs; setDocumentTabs(nextTabs)
+      if (activeDocumentTab && removed(activeDocumentTab)) { setActiveTabId(nextTabs[0].id); displayDocumentTab(nextTabs[0]) }
+      setLocalGitNotice(`已删除 ${target.name}`)
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '删除本地文件失败') }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
+  }
+
+  const reloadLocalRepositoryTabs = async (repositoryId: string, availablePaths: Set<string>) => {
+    const desktop = desktopApi()
+    if (!desktop) return
+    const refreshed = new Map<string, string>()
+    for (const tab of documentTabsRef.current) {
+      if (tab.localRepositoryId !== repositoryId || !tab.localPath || !availablePaths.has(tab.localPath)) continue
+      const file = await desktop.localGit.read(repositoryId, tab.localPath)
+      refreshed.set(tab.localPath, file.content)
+    }
+    let nextTabs = documentTabsRef.current
+      .filter((tab) => tab.localRepositoryId !== repositoryId || !tab.localPath || availablePaths.has(tab.localPath))
+      .map((tab) => tab.localRepositoryId === repositoryId && tab.localPath && refreshed.has(tab.localPath) ? { ...tab, content: refreshed.get(tab.localPath)!, savedContent: refreshed.get(tab.localPath)! } : tab)
+    if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
+    documentTabsRef.current = nextTabs; setDocumentTabs(nextTabs)
+    const active = nextTabs.find((tab) => tab.id === activeTabId) || nextTabs[0]
+    if (active.id !== activeTabId) setActiveTabId(active.id)
+    displayDocumentTab(active)
+  }
+
+  const discardLocalRepositoryChanges = async () => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || !repositoryId || !window.confirm('放弃所有未提交的 Markdown 修改？其他类型文件不会受到影响。')) return
+    setLocalGitBusy(true); setLocalGitActivity('discard'); setLocalGitError(''); setLocalGitNotice('')
+    try {
+      const repository = await desktop.localGit.discard(repositoryId)
+      replaceLocalRepository(repository)
+      await reloadLocalRepositoryTabs(repositoryId, new Set(repository.files.filter((file) => file.gitStatus !== 'D').map((file) => file.path)))
+      setLocalGitNotice('已放弃所有未提交的 Markdown 修改')
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '放弃本地修改失败') }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
+  }
+
+  const openLocalRepositoryGraph = async () => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || !repositoryId) return
+    setLocalRepositoryGraph({ branches: [], commits: [], loading: true, error: '' }); setLocalRepositoryGraphBranchesOpen(false)
+    setLocalGitActivity('graph')
+    try { setLocalRepositoryGraph({ ...(await desktop.localGit.graph(repositoryId)), loading: false, error: '' }) }
+    catch (error) { setLocalRepositoryGraph({ branches: [], commits: [], loading: false, error: error instanceof Error ? error.message : '读取本地提交历史失败' }) }
+    finally { setLocalGitActivity(null) }
+  }
+
+  const switchLocalRepositoryBranch = async (branch: string) => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || !repositoryId) return
+    setLocalGitBusy(true); setLocalGitActivity('switch'); setLocalGitError(''); setLocalGitNotice('')
+    try {
+      const repository = await desktop.localGit.switchBranch(repositoryId, branch)
+      replaceLocalRepository(repository)
+      await reloadLocalRepositoryTabs(repositoryId, new Set(repository.files.filter((file) => file.gitStatus !== 'D').map((file) => file.path)))
+      setLocalGitNotice(`已切换到 ${repository.branch}`)
+      setLocalRepositoryGraph({ ...(await desktop.localGit.graph(repositoryId)), loading: false, error: '' })
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '切换本地分支失败') }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
   }
 
   const loadAllLocalAgentNotes = useCallback(async () => {
@@ -2362,13 +2580,13 @@ export default function MarkmapHooks() {
   }, [githubConfig])
 
   useEffect(() => {
-    if (!repositoryMenu && !repositoryHistory) return
-    const closePopovers = () => { setRepositoryMenu(null); setRepositoryHistory(null) }
+    if (!repositoryMenu && !repositoryHistory && !localRepositoryMenu) return
+    const closePopovers = () => { setRepositoryMenu(null); setRepositoryHistory(null); setLocalRepositoryMenu(null) }
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closePopovers() }
     window.addEventListener('pointerdown', closePopovers)
     window.addEventListener('keydown', closeOnEscape)
     return () => { window.removeEventListener('pointerdown', closePopovers); window.removeEventListener('keydown', closeOnEscape) }
-  }, [repositoryMenu, repositoryHistory])
+  }, [repositoryMenu, repositoryHistory, localRepositoryMenu])
 
   useEffect(() => {
     if (!selectionMenu) return
@@ -3104,6 +3322,7 @@ ${documentRenderConfig.style}
   const repositoryDisplayCachedFiles = repositoryCommitRef ? [] : cachedFiles
   const repositoryDisplayVirtualFolders = repositoryCommitRef ? [] : virtualFolders
   const repositoryRows = buildRepositoryRows(remoteFiles, repositoryDisplayCachedFiles, repositoryDisplayVirtualFolders, collapsedFolders)
+  const localRepositoryRows = buildLocalRepositoryRows(activeLocalRepository?.files || [], localCollapsedFolders)
   const repositorySaveRows = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, repositorySaveCollapsedFolders)
   const repositoryMenuFile = repositoryMenu?.target.type === 'file' ? repositoryRows.find((row) => row.type === 'file' && row.path === repositoryMenu.target.path) : undefined
   const repositoryRefreshLoading = githubBusyAction === 'load-repository' || githubBusyAction === 'refresh' || githubBusyAction === 'switch-branch' || githubBusyAction === 'open-commit'
@@ -3189,14 +3408,38 @@ ${documentRenderConfig.style}
               <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span>{activeTabUnsaved && <span className="editor-unsaved"><i />{activeLocalFile ? '自动保存中' : '未保存'}</span>}<span className="editor-status-language">Markdown</span><span className="editor-status-actions">{agentUsesStandaloneFile && <button type="button" className="editor-local-save" disabled={!activeTabUnsaved} onClick={() => void saveStandaloneDocument()} title={activeDocumentTab?.desktopFileId ? '保存到原文件' : '下载 Markdown 副本'}><Icon name="download" /><span>{activeDocumentTab?.desktopFileId ? '保存' : '下载副本'}</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
-            </> : editorView === 'agent' ? <AgentPanel workspaceKey={agentWorkspaceKey} workspaceLabel={agentWorkspaceLabel} workspaceKind={agentUsesStandaloneFile ? 'file' : agentUsesLocalRepository ? 'local' : 'remote'} repositoryScopeEnabled={!agentUsesStandaloneFile} canCreateFiles={!agentUsesStandaloneFile} canCommit={!agentUsesStandaloneFile && (!agentUsesLocalRepository || Boolean(agentLocalRepository?.isGitRepository))} files={agentFiles} activePath={agentActivePath} onApplyChange={agentApplyChange} onCreateFile={agentCreateFile} onOpenFile={(path) => { if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else if (!agentUsesStandaloneFile) { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentCommit} getGitContext={agentGitContext} remoteFileCount={agentFileCount} remotePaths={agentPaths} repositoryBranch={agentUsesLocalRepository && agentLocalRepository?.isGitRepository ? agentLocalRepository.branch : agentUsesStandaloneFile ? undefined : githubConfig?.branch} onLoadAllFiles={loadAgentFiles} loadingFiles={agentUsesStandaloneFile ? false : agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
+            </> : editorView === 'agent' ? <AgentPanel workspaceKey={agentWorkspaceKey} workspaceLabel={agentWorkspaceLabel} workspaceKind={agentUsesStandaloneFile ? 'file' : agentUsesLocalRepository ? 'local' : 'remote'} repositoryScopeEnabled={!agentUsesStandaloneFile} canCreateFiles={!agentUsesStandaloneFile} canCommit={!agentUsesStandaloneFile && (!agentUsesLocalRepository || Boolean(agentLocalRepository?.isGitRepository))} files={agentFiles} activePath={agentActivePath} onApplyChange={agentApplyChange} onCreateFile={agentCreateFile} onOpenFile={(path) => { if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else if (!agentUsesStandaloneFile) { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentCommit} getGitContext={agentGitContext} remoteFileCount={agentFileCount} remotePaths={agentPaths} repositoryBranch={agentUsesLocalRepository && agentLocalRepository?.isGitRepository ? agentLocalRepository.branch : agentUsesStandaloneFile ? undefined : githubConfig?.branch} onLoadAllFiles={loadAgentFiles} loadingFiles={agentUsesStandaloneFile ? false : agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize, fontFamily: previewFonts[settings.editorFont].family, fontWeight: settings.editorWeight }}>
               {repositorySource === 'local' ? !activeLocalRepository ? <div className="repository-unbound"><Icon name="folder" /><strong>尚未打开本地文件夹</strong><span>{desktopApi() ? 'Git 仓库和普通文件夹都可以打开并编辑 Markdown。' : '网页端不能直接访问本地文件夹，请使用桌面应用。'}</span><button onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}>管理本地文件夹</button></div> : <>
-                <div className="repository-toolbar local-repository-toolbar"><div><strong>{activeLocalRepository.name}</strong><small>{activeLocalRepository.isGitRepository ? `${activeLocalRepository.branch} · ${activeLocalRepository.remoteLabel || '仅本地'} · ${activeLocalRepository.head || '暂无提交'}` : '普通本地文件夹 · 自动保存'}</small></div><button className="repository-icon-button" title="文件夹设置" aria-label="文件夹设置" onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title={activeLocalRepository.isGitRepository ? '检查本地与远端状态' : '刷新文件树'} aria-label={activeLocalRepository.isGitRepository ? '检查本地与远端状态' : '刷新文件树'} onClick={() => void refreshLocalGitState()} disabled={localGitBusy}><i><Icon name="refresh" className={localGitActivity === 'refresh' ? 'loading-icon' : undefined} /></i></button>{activeLocalRepository.isGitRepository && <button className={`repository-icon-button local-source-action ${localRepositoryAction}`} title={localRepositoryActionTitle} aria-label={localRepositoryActionTitle} onClick={() => { if (localRepositoryAction === 'sync') void syncLocalRepository(); else if (localRepositoryAction === 'push') void pushLocalRepository(); else if (localRepositoryAction === 'commit') void commitLocalRepository() }} disabled={localGitBusy || localRepositoryAction === 'clean' || (localRepositoryAction === 'sync' && activeTabUnsaved)}><i><Icon name={localRepositoryAction === 'sync' ? 'download' : localRepositoryAction === 'push' ? 'sync' : 'check'} className={localGitActivity && localGitActivity !== 'refresh' ? 'loading-icon' : undefined} /></i>{localRepositoryAction === 'sync' && <b>{activeLocalRepository.behindCount}</b>}{localRepositoryAction === 'push' && activeLocalRepository.aheadCount > 0 && <b>{activeLocalRepository.aheadCount}</b>}</button>}</div>
+                <div className="repository-toolbar local-repository-toolbar"><div><strong>{activeLocalRepository.name}</strong><small>{activeLocalRepository.isGitRepository ? `${activeLocalRepository.branch} · ${activeLocalRepository.remoteLabel || '仅本地'} · ${activeLocalRepository.head || '暂无提交'}` : '普通本地文件夹 · 自动保存'}</small></div>{activeLocalRepository.isGitRepository && <button className="discard-button" title="放弃所有未提交的 Markdown 修改" onClick={() => void discardLocalRepositoryChanges()} disabled={localGitBusy || !activeLocalRepository.markdownChangedCount}><Icon name="undo" className={localGitActivity === 'discard' ? 'loading-icon' : undefined} /><span>放弃</span></button>}<button className="repository-icon-button" title="文件夹设置" aria-label="文件夹设置" onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title={activeLocalRepository.isGitRepository ? '检查本地与远端状态' : '刷新文件树'} aria-label={activeLocalRepository.isGitRepository ? '检查本地与远端状态' : '刷新文件树'} onClick={() => void refreshLocalGitState()} disabled={localGitBusy}><i><Icon name="refresh" className={localGitActivity === 'refresh' ? 'loading-icon' : undefined} /></i></button>{activeLocalRepository.isGitRepository && <button className={`repository-icon-button local-source-action ${localRepositoryAction}`} title={localRepositoryActionTitle} aria-label={localRepositoryActionTitle} onClick={() => { if (localRepositoryAction === 'sync') void syncLocalRepository(); else if (localRepositoryAction === 'push') void pushLocalRepository(); else if (localRepositoryAction === 'commit') void commitLocalRepository() }} disabled={localGitBusy || localRepositoryAction === 'clean' || (localRepositoryAction === 'sync' && activeTabUnsaved)}><i><Icon name={localRepositoryAction === 'sync' ? 'download' : localRepositoryAction === 'push' ? 'sync' : 'check'} className={localGitActivity === localRepositoryAction ? 'loading-icon' : undefined} /></i>{localRepositoryAction === 'sync' && <b>{activeLocalRepository.behindCount}</b>}{localRepositoryAction === 'push' && activeLocalRepository.aheadCount > 0 && <b>{activeLocalRepository.aheadCount}</b>}</button>}</div>
                 {localGitError && <div className="repository-error"><Icon name="warning" />{localGitError}</div>}
                 {localGitNotice && <div className="repository-notice"><Icon name="check" />{localGitNotice}</div>}
                 {!activeLocalRepository.isGitRepository && <div className="repository-warning"><Icon name="warning" /><span><strong>这不是 Git 仓库</strong><small>可以浏览、编辑并自动保存文件，但不能提交、推送或查看版本历史。</small></span></div>}
-                <div className="repository-tree local-repository-tree" role="tree" aria-label="本地 Markdown 文件树">{activeLocalRepository.files.length ? activeLocalRepository.files.map((file) => <button type="button" className={`local-repository-file ${activeLocalFile?.repositoryId === activeLocalRepository.id && activeLocalFile.path === file.path ? 'active' : ''}`} role="treeitem" key={file.path} onClick={() => void openLocalRepositoryFile(activeLocalRepository.id, file.path)}><Icon name="map" /><span>{file.path}</span><small>{file.size < 1024 ? `${file.size} B` : `${Math.ceil(file.size / 1024)} KB`}</small></button>) : <div className="github-empty">文件夹中没有 Markdown 文件</div>}</div>
-                <footer className="repository-status"><span className={activeLocalRepository.isGitRepository && (activeLocalRepository.changedCount || activeLocalRepository.aheadCount || activeLocalRepository.behindCount) ? 'dirty' : 'clean'} /><span className="repository-status-label">{!activeLocalRepository.isGitRepository ? '普通本地文件夹 · 文档自动保存' : activeLocalRepository.behindCount ? `远端有 ${activeLocalRepository.behindCount} 个新提交 · 请先同步` : activeLocalRepository.markdownChangedCount ? `${activeLocalRepository.markdownChangedCount} 个 Markdown 变更 · 已自动保存` : activeLocalRepository.changedCount ? `${activeLocalRepository.changedCount} 个非 Markdown 变更 · 不会由应用提交` : activeLocalRepository.aheadCount ? `${activeLocalRepository.aheadCount} 个本地提交待推送` : 'Git 工作区干净 · 文档自动保存'}</span>{activeLocalRepository.isGitRepository && <button className="repository-branch-button" disabled><Icon name="branch" /><span>{activeLocalRepository.branch}</span></button>}</footer>
+                <div className={`repository-tree ${localRepositoryDropFolder === '' ? 'drop-root' : ''}`} role="tree" aria-label="本地 Markdown 文件树" data-repository-type="root" data-repository-path="" onContextMenu={(event) => openLocalRepositoryMenu(event, { type: 'root', path: '', name: '仓库根目录' })} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; const target = draggedLocalRepositoryTarget; setLocalRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, '') : null) }} onDrop={(event) => { event.preventDefault(); void dropLocalRepositoryTarget('') }}>
+                  {localRepositoryRows.length ? localRepositoryRows.map((row) => {
+                    const isRenaming = renamingLocalRepositoryTarget?.type === row.type && renamingLocalRepositoryTarget.path === row.path
+                    const isDropZone = localRepositoryDropFolder !== null && localRepositoryDropFolder !== '' && (row.path === localRepositoryDropFolder || row.path.startsWith(`${localRepositoryDropFolder}/`))
+                    if (row.type === 'folder') return <div className={`tree-folder ${isDropZone ? 'drop-zone' : ''}`} role="treeitem" aria-expanded={!localCollapsedFolders.has(row.path)} data-repository-type="folder" data-repository-path={row.path} draggable={!isRenaming && !localGitBusy} key={`local-folder:${row.path}`} style={{ paddingLeft: 8 + row.depth * 16 }} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', row.path); event.dataTransfer.setData('application/x-markmap-local-path', row.path); setDraggedLocalRepositoryTarget(row); setLocalRepositoryDropFolder(null) }} onDragEnd={() => { setDraggedLocalRepositoryTarget(null); setLocalRepositoryDropFolder(null) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; const target = draggedLocalRepositoryTarget; setLocalRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, row.path) : null) }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropLocalRepositoryTarget(row.path) }} onContextMenu={(event) => openLocalRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-inline-edit"><Icon name="folder" /><input autoFocus value={localRepositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setLocalRepositoryRenameValue(event.target.value)} onBlur={() => void finishLocalRepositoryRename()} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenamingLocalRepositoryTarget(null) }} /></div> : <button onClick={() => setLocalCollapsedFolders((current) => { const next = new Set(current); if (next.has(row.path)) next.delete(row.path); else next.add(row.path); return next })}><Icon name={localCollapsedFolders.has(row.path) ? 'chevron-right' : 'chevron-down'} /><Icon name="folder" /><span>{row.name}</span></button>}</div>
+                    const destination = parentPath(row.path)
+                    const status = row.local?.gitStatus
+                    return <div className={`tree-file ${activeLocalFile?.repositoryId === activeLocalRepository.id && activeLocalFile.path === row.path ? 'active' : ''} ${status === 'D' ? 'deleted' : ''} ${isDropZone ? 'drop-zone' : ''}`} role="treeitem" data-repository-type="file" data-repository-path={row.path} draggable={!isRenaming && !localGitBusy && status !== 'D'} key={`local-file:${row.path}`} style={{ paddingLeft: 12 + row.depth * 16 }} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', row.path); event.dataTransfer.setData('application/x-markmap-local-path', row.path); setDraggedLocalRepositoryTarget(row); setLocalRepositoryDropFolder(null) }} onDragEnd={() => { setDraggedLocalRepositoryTarget(null); setLocalRepositoryDropFolder(null) }} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; const target = draggedLocalRepositoryTarget; setLocalRepositoryDropFolder(target ? normalizeRepositoryDropFolder(target, destination) : null) }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropLocalRepositoryTarget(destination) }} onContextMenu={(event) => openLocalRepositoryMenu(event, row)}><span className="tree-indent-guides" aria-hidden="true" style={{ width: row.depth * 16 }} />{isRenaming ? <div className="tree-open tree-inline-edit"><Icon name="map" /><input autoFocus value={localRepositoryRenameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setLocalRepositoryRenameValue(event.target.value)} onBlur={() => void finishLocalRepositoryRename()} onContextMenu={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenamingLocalRepositoryTarget(null) }} /></div> : <button className="tree-open" disabled={status === 'D'} onClick={() => void openLocalRepositoryFile(activeLocalRepository.id, row.path)}><Icon name="map" /><span>{row.name}</span></button>}{activeLocalRepository.isGitRepository ? status ? <b title={status === '?' ? '未跟踪' : status === 'M' ? '已修改' : status === 'A' ? '已添加' : status === 'D' ? '已删除' : status === 'R' ? '已重命名' : '存在冲突'}>{status === '?' ? 'U' : status}</b> : <i className="cached" title="Git 工作区干净" /> : null}</div>
+                  }) : <div className="github-empty">文件夹中没有 Markdown 文件</div>}
+                </div>
+                <footer className="repository-status"><span className={activeLocalRepository.isGitRepository && (activeLocalRepository.changedCount || activeLocalRepository.aheadCount || activeLocalRepository.behindCount) ? 'dirty' : 'clean'} /><span className="repository-status-label">{!activeLocalRepository.isGitRepository ? '普通本地文件夹 · 文档自动保存' : activeLocalRepository.behindCount ? `远端有 ${activeLocalRepository.behindCount} 个新提交 · 请先同步` : activeLocalRepository.markdownChangedCount ? `${activeLocalRepository.markdownChangedCount} 个 Markdown 变更 · 已自动保存` : activeLocalRepository.changedCount ? `${activeLocalRepository.changedCount} 个非 Markdown 变更 · 不会由应用提交` : activeLocalRepository.aheadCount ? `${activeLocalRepository.aheadCount} 个本地提交待推送` : 'Git 工作区干净 · 文档自动保存'}</span>{activeLocalRepository.isGitRepository && <button className="repository-branch-button" title={`查看分支与提交历史${activeLocalRepository.aheadCount || activeLocalRepository.behindCount ? ` · 本地 ↑${activeLocalRepository.aheadCount} ↓${activeLocalRepository.behindCount}` : ''}`} aria-label="查看本地仓库分支与提交历史" aria-expanded={Boolean(localRepositoryGraph)} onClick={() => { if (localRepositoryGraph) setLocalRepositoryGraph(null); else void openLocalRepositoryGraph() }}><Icon name="branch" /><span>{activeLocalRepository.branch}{activeLocalRepository.aheadCount || activeLocalRepository.behindCount ? ` ↑${activeLocalRepository.aheadCount} ↓${activeLocalRepository.behindCount}` : ''}</span></button>}</footer>
+                {localRepositoryGraph && <div className="repository-graph-popover local-repository-graph" onMouseDown={(event) => event.stopPropagation()}>
+                  <header><div><strong>本地提交历史</strong><small>{activeLocalRepository.name} · {activeLocalRepository.branch}{activeLocalRepository.upstream ? ` ↔ ${activeLocalRepository.upstream}` : ''}</small></div><button className="header-icon" aria-label="关闭本地提交历史" onClick={() => setLocalRepositoryGraph(null)}><Icon name="x" /></button></header>
+                  {localRepositoryGraph.error && <div className="repository-graph-error"><Icon name="warning" /><span>{localRepositoryGraph.error}</span></div>}
+                  <button className="repository-graph-branch-toggle" aria-expanded={localRepositoryGraphBranchesOpen} onClick={() => setLocalRepositoryGraphBranchesOpen((value) => !value)}><Icon name="branch" /><span>分支</span><strong>{activeLocalRepository.branch}</strong><Icon name={localRepositoryGraphBranchesOpen ? 'chevron-down' : 'chevron-right'} /></button>
+                  {localRepositoryGraphBranchesOpen && <div className="repository-graph-branches">{localRepositoryGraph.branches.length ? localRepositoryGraph.branches.map((branch) => <button className={branch.current ? 'active' : ''} key={`${branch.remote ? 'remote' : 'local'}:${branch.name}`} disabled={localGitBusy || localRepositoryGraph.loading} onClick={() => void switchLocalRepositoryBranch(branch.name)}><Icon name="branch" /><span>{branch.name}<em>{branch.remote ? '远程' : '本地'}</em></span><small>{branch.sha.slice(0, 7)}</small></button>) : <span>没有可用分支</span>}</div>}
+                  {localRepositoryGraph.loading && !localRepositoryGraph.commits.length ? <div className="repository-graph-state"><Icon name="refresh" className="loading-icon" /><span>正在读取本地提交历史…</span></div> : localRepositoryGraph.commits.length ? <div className="repository-graph-list">{localRepositoryGraph.commits.map((commit) => <article className="repository-graph-commit local-graph-commit" key={commit.sha}><span className="repository-graph-rail"><i /></span><span className="repository-graph-commit-info"><strong title={commit.message}>{commit.message.split('\n')[0]}</strong>{commit.refs.length > 0 && <span className="local-commit-refs">{commit.refs.map((ref) => <b className={ref.includes('/') ? 'remote' : ''} key={ref}>{ref}</b>)}</span>}<small><code title={commit.sha}>{commit.sha.slice(0, 7)}</code><em> · {commit.author} · {formatCommitDate(commit.date)}</em></small></span></article>)}</div> : <div className="repository-graph-state"><Icon name="clock" /><span>没有找到提交记录</span></div>}
+                </div>}
+                {localRepositoryMenu && <div className="repository-context-menu" style={{ left: localRepositoryMenu.x, top: localRepositoryMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+                  <strong>{localRepositoryMenu.target.name}</strong>
+                  {localRepositoryMenu.target.type === 'file' && <button disabled={localRepositoryMenu.target.path.endsWith('/') || activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus === 'D'} onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void openLocalRepositoryFile(activeLocalRepository.id, target.path) }}>打开</button>}
+                  {localRepositoryMenu.target.type !== 'root' && <><button onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); startLocalRepositoryRename(target) }}>重命名</button><button onClick={() => { setLocalRepositoryClipboard({ mode: 'copy', target: localRepositoryMenu.target }); setLocalRepositoryMenu(null); setLocalGitNotice(`已复制 ${localRepositoryMenu.target.name}，请在目标文件夹右键粘贴`) }}>复制</button><button onClick={() => { setLocalRepositoryClipboard({ mode: 'cut', target: localRepositoryMenu.target }); setLocalRepositoryMenu(null); setLocalGitNotice(`已剪切 ${localRepositoryMenu.target.name}，请在目标文件夹右键粘贴`) }}>剪切</button><button onClick={() => { void navigator.clipboard.writeText(localRepositoryMenu.target.path); setLocalRepositoryMenu(null); setLocalGitNotice('已复制相对路径') }}>复制相对路径</button></>}
+                  {(localRepositoryMenu.target.type === 'folder' || localRepositoryMenu.target.type === 'root') && <><hr/><button disabled={!localRepositoryClipboard} onClick={() => { const folder = localRepositoryMenu.target.path; setLocalRepositoryMenu(null); void pasteLocalRepositoryClipboard(folder) }}>粘贴{localRepositoryClipboard ? `“${localRepositoryClipboard.target.name}”` : ''}</button></>}
+                  {localRepositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void removeLocalRepositoryTarget(target) }}>删除</button></>}
+                  {localRepositoryMenu.target.type === 'root' && <button onClick={() => { void navigator.clipboard.writeText(activeLocalRepository.root); setLocalRepositoryMenu(null); setLocalGitNotice('已复制文件夹路径') }}>复制文件夹路径</button>}
+                </div>}
               </> : !githubConfig ? <div className="repository-unbound"><Icon name="github" /><strong>尚未绑定 GitHub 仓库</strong><span>绑定后可浏览 Markdown 文件并在本地暂存修改。</span><button onClick={() => { setRepositorySettingsTab('remote'); setActivePanel('github') }}>绑定仓库</button></div> : <>
                 <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{repositoryCommitRef ? `commit ${repositoryCommitRef.slice(0, 7)}` : githubConfig.branch}</small></div><button className="discard-button" title={repositoryCommitRef ? '查看 commit 阶段时不能放弃当前分支修改' : '放弃所有本地修改'} onClick={() => void discardRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !hasRepositoryDrafts}><Icon name="undo" className={repositoryDiscardLoading ? 'loading-icon' : undefined} /><span>放弃</span></button><button className="repository-icon-button" title="仓库设置" aria-label="仓库设置" onClick={() => setActivePanel('github')}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title="刷新当前分支" aria-label="刷新当前分支" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" className={repositoryRefreshLoading ? 'loading-icon' : undefined} /></i></button><button className="repository-icon-button sync-button" title={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !changedFiles.length}><i><Icon name="sync" className={repositorySyncLoading ? 'loading-icon' : undefined} /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}
