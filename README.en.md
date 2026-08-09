@@ -1,16 +1,16 @@
 # markmap++
 
-A browser-based Markdown mind-map workspace with live editing, interactive visualization, high-resolution export, and GitHub-backed multi-device sync.
+A browser-based Markdown knowledge and mind-map workspace with live editing, an AI note agent, reviewable repository changes, high-resolution export, and GitHub-backed multi-device sync.
 
 [![Deploy to GitHub Pages](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-43853d?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[Live app](https://jeoitim.github.io/markmap-pp/) · [中文](README.md) · [Upstream project](https://github.com/Tem-man/markmap-plus)
+[Live app](https://jeoitim.github.io/markmap-pp/) · [Documentation](https://jeoitim.github.io/markmap-pp/doc/) · [Agent guide](https://jeoitim.github.io/markmap-pp/doc/agent/) · [中文](README.md) · [Upstream project](https://github.com/Tem-man/markmap-plus)
 
 ## Overview
 
-markmap++ is built on [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus). Markdown remains the single source of truth, while the rendered mind map is an editable SVG view. The app adds a complete CodeMirror editor, persistent browser drafts, an IDE-style repository tree, manual GitHub commits, display settings, and multi-format export.
+markmap++ is built on [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus). Markdown remains the single source of truth, while the rendered mind map is an editable SVG view. The app adds a complete CodeMirror editor, persistent browser drafts, an IDE-style repository tree, an AI note and repository agent, manual GitHub commits, display settings, and multi-format export.
 
 The application runs entirely in the browser. No application server or database is required.
 
@@ -25,16 +25,34 @@ The application runs entirely in the browser. No application server or database 
 - Optional dotted preview background.
 - Markdown, SVG, PNG, JPEG, and standalone HTML export with 1–4× rendering scale.
 - GitHub repository browsing, persistent local drafts, file operations, status indicators, and conflict-safe manual pushes.
+- Chat and Edit Agent modes with note retrieval, model knowledge, reviewable diffs, operation memory, and explicit Git commit approval.
+
+## AI Agent workflow
+
+- **Chat** lists, searches, and reads relevant notes on demand, then combines those sources with the model's general knowledge, reasoning, counterexamples, and cross-domain connections.
+- **Edit** reads the live file state before proposing per-file diffs. A proposal changes only the local draft after it is accepted.
+- The context bar keeps the active note, Git branch, cached note count, and local change count visible throughout the task.
+- Scope can be limited to the current file or expanded to cached repository notes; uncached Markdown can be loaded when needed.
+- Tool activity, reasoning status, applied changes, and Git commit requests appear in the conversation instead of being hidden background actions.
+- Editing an earlier question creates a switchable conversation branch. Question versions, answer versions, and the previous tail remain available.
+- Conversation history includes Chat / Edit labels, pending-review counts, search, rename, delete, per-conversation Markdown export, and complete JSON import/export.
+- Provider-specific profiles retain keys, endpoints, models, and fetched model lists when switching services.
+
+The default maximum output is 16,000 tokens, the temperature is 0.3, and changes require confirmation. The token setting limits one model response rather than the model's full context window; 4,000–8,000 is usually sufficient for ordinary questions, while complex multi-file work can keep the default.
+
+Built-in provider presets cover OpenAI, Anthropic, Google Gemini, Azure OpenAI, DeepSeek, Groq, Mistral AI, Moonshot / Kimi, Zhipu AI, Tencent Hunyuan, NVIDIA NIM, SiliconFlow, Ollama, and custom OpenAI-compatible endpoints.
+
+Agent settings and conversations remain in the current browser. Configuration JSON backups **include API keys** to support one-step migration, so treat them as sensitive files. Model requests go directly from the browser to the selected provider. See the [Agent guide](https://jeoitim.github.io/markmap-pp/doc/agent/) for the complete workflow and security notes.
 
 ## Mind-map controls
 
-| Input | Result |
-| --- | --- |
-| Single click | Select a node |
-| Double click | Edit node text |
-| Enter | Add a sibling when selected; save text while editing |
-| Tab | Add a child node |
-| Delete / Backspace | Delete the selected node |
+| Input              | Result                                               |
+| ------------------ | ---------------------------------------------------- |
+| Single click       | Select a node                                        |
+| Double click       | Edit node text                                       |
+| Enter              | Add a sibling when selected; save text while editing |
+| Tab                | Add a child node                                     |
+| Delete / Backspace | Delete the selected node                             |
 
 ## GitHub sync model
 
@@ -42,16 +60,16 @@ Remote Markdown files are downloaded into IndexedDB and remain available after a
 
 The repository tree supports collapsible folders, drag-and-drop moves, inline rename, and context-menu actions for create, copy, cut, paste, and delete.
 
-| Indicator | Meaning |
-| --- | --- |
-| Gray dot | Remote file not downloaded on this device |
-| Green dot | Local cache matches the remote revision |
-| `A` | Added locally |
-| `M` | Modified locally |
-| `R` | Renamed or moved locally |
-| `D` | Deleted locally |
+| Indicator | Meaning                                   |
+| --------- | ----------------------------------------- |
+| Gray dot  | Remote file not downloaded on this device |
+| Green dot | Local cache matches the remote revision   |
+| `A`       | Added locally                             |
+| `M`       | Modified locally                          |
+| `R`       | Renamed or moved locally                  |
+| `D`       | Deleted locally                           |
 
-Binding requires a fine-grained GitHub personal access token restricted to the target repository with **Contents: Read and write** permission. The token is stored only in the current browser's `localStorage`; it is never included in the repository, Pages build, or deployment workflow. Avoid binding repositories on shared or untrusted devices.
+Binding requires a fine-grained GitHub personal access token restricted to the target repository with **Contents: Read and write** permission. The repository binding and token are stored only in the current browser's IndexedDB settings; they are never included in the repository, Pages build, or deployment workflow. Avoid binding repositories on shared or untrusted devices.
 
 If the remote branch changes before a push, markmap++ refuses to overwrite it and asks the user to refresh. Empty folders remain local because Git does not track true empty directories.
 
@@ -92,14 +110,14 @@ No repository secret is needed to deploy the app. Tokens entered by users at run
 
 Connect the repository from **Workers & Pages → Create application → Pages → Connect to Git**. Keep the monorepo root as the build root so that the application can resolve the local workspace packages.
 
-| Setting | Value |
-| --- | --- |
-| Framework preset | React (Vite) or None |
-| Root directory | `/` |
-| Build command | `pnpm --filter markmap-plus-plus-app build` |
-| Build output directory | `examples/react-example/dist` |
-| `NODE_VERSION` | `22` |
-| `PNPM_VERSION` | `10` |
+| Setting                | Value                                       |
+| ---------------------- | ------------------------------------------- |
+| Framework preset       | React (Vite) or None                        |
+| Root directory         | `/`                                         |
+| Build command          | `pnpm --filter markmap-plus-plus-app build` |
+| Build output directory | `examples/react-example/dist`               |
+| `NODE_VERSION`         | `22`                                        |
+| `PNPM_VERSION`         | `10`                                        |
 
 Cloudflare Pages serves the project at the domain root, so do not reuse the GitHub Pages `--base "/markmap-pp/"` option. The default Vite base of `/` is correct.
 
@@ -116,15 +134,15 @@ See the official [Cloudflare Pages Git integration](https://developers.cloudflar
 
 Import the GitHub repository into [EdgeOne Pages](https://pages.edgeone.ai/), associate `main` with Production, and use these build settings:
 
-| Setting | Value |
-| --- | --- |
-| Framework preset | Vite or Custom |
-| Root directory | `./` |
-| Installation command | `pnpm install --frozen-lockfile` |
-| Build command | `pnpm --filter markmap-plus-plus-app build` |
-| Output directory | `examples/react-example/dist` |
-| Node.js version | 22 |
-| pnpm version | 9 |
+| Setting              | Value                                       |
+| -------------------- | ------------------------------------------- |
+| Framework preset     | Vite or Custom                              |
+| Root directory       | `./`                                        |
+| Installation command | `pnpm install --frozen-lockfile`            |
+| Build command        | `pnpm --filter markmap-plus-plus-app build` |
+| Output directory     | `examples/react-example/dist`               |
+| Node.js version      | 22                                          |
+| pnpm version         | 9                                           |
 
 EdgeOne's managed build environment currently supports pnpm 6–9, and pnpm 9 can read this repository's lockfile. Do not change the root to `examples/react-example`, because the application depends on `packages/*` workspace packages.
 
@@ -142,11 +160,11 @@ Store `EDGEONE_API_TOKEN` as a CI secret rather than committing it. See the offi
 
 ## Hosting comparison
 
-| Platform | Default path | Preview deployments | Additional project credential |
-| --- | --- | --- | --- |
-| GitHub Pages | `/<repository>/` | This workflow deploys `main` only | None |
-| Cloudflare Pages | Domain root `/` | Branches and pull requests | Git integration authorization |
-| EdgeOne Pages | Domain root `/` | Production and Preview environments | Git authorization; API token for CLI deploys |
+| Platform         | Default path     | Preview deployments                 | Additional project credential                |
+| ---------------- | ---------------- | ----------------------------------- | -------------------------------------------- |
+| GitHub Pages     | `/<repository>/` | This workflow deploys `main` only   | None                                         |
+| Cloudflare Pages | Domain root `/`  | Branches and pull requests          | Git integration authorization                |
+| EdgeOne Pages    | Domain root `/`  | Production and Preview environments | Git authorization; API token for CLI deploys |
 
 ## Technology
 
@@ -162,15 +180,15 @@ Store `EDGEONE_API_TOKEN` as a CI secret rather than committing it. See the offi
 ```text
 markmap-pp/
 ├─ .github/workflows/         # GitHub Pages deployment
-├─ examples/react-example/    # markmap++ web application
+├─ examples/react-example/    # markmap++ web application and Agent UI
 ├─ packages/                  # Markmap workspace packages
-├─ docs/                      # Upstream documentation
+├─ docs/                      # Usage, Agent, sync, and deployment documentation
 ├─ package.json               # Workspace commands
 └─ pnpm-workspace.yaml        # Workspace package mapping
 ```
 
 ## Upstream and license
 
-This repository is derived from [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus), which extends the original [markmap](https://github.com/markmap/markmap) renderer with editable nodes and Markdown write-back. markmap++ adds the end-user workspace and synchronization experience under `examples/react-example`.
+This repository is derived from [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus), which extends the original [markmap](https://github.com/markmap/markmap) renderer with editable nodes and Markdown write-back. markmap++ adds the end-user workspace, AI note and repository Agent, and synchronization experience under `examples/react-example`.
 
 Licensed under the [MIT License](LICENSE).

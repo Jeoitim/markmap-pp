@@ -1,16 +1,16 @@
 # markmap++
 
-一个以 Markdown 为唯一源文件、支持实时编辑、思维导图交互、高清导出和 GitHub 多端同步的浏览器工作台。
+一个以 Markdown 为唯一源文件，集实时编辑、思维导图、AI 知识问答、可审核仓库修改、高清导出和 GitHub 多端同步于一体的浏览器工作台。
 
 [![Deploy to GitHub Pages](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-43853d?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[在线使用](https://jeoitim.github.io/markmap-pp/) · [English](README.en.md) · [上游项目](https://github.com/Tem-man/markmap-plus)
+[在线使用](https://jeoitim.github.io/markmap-pp/) · [使用文档](https://jeoitim.github.io/markmap-pp/doc/) · [Agent 指南](https://jeoitim.github.io/markmap-pp/doc/agent/) · [English](README.en.md) · [上游项目](https://github.com/Tem-man/markmap-plus)
 
 ## 项目简介
 
-markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus) 开发。它保留了“Markdown → 思维导图”的工作方式，并在此基础上加入完整的本地编辑体验、可回写的节点操作、IDE 风格仓库文件树、浏览器持久缓存和手动 GitHub 提交。
+markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus) 开发。它保留了“Markdown → 思维导图”的工作方式，并在此基础上加入完整的本地编辑体验、可回写的节点操作、IDE 风格仓库文件树、浏览器持久缓存、AI Agent 和手动 GitHub 提交。
 
 应用完全运行在浏览器中，不需要数据库或自建后端。Markdown 是内容的唯一来源，Markmap 负责交互式 SVG 视图，GitHub 仓库可以作为跨设备文件存储和版本历史。
 
@@ -53,6 +53,23 @@ markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus)
 - 思源黑体、思源宋体、Inter 与 JetBrains Mono 支持可变字重。
 - 编辑器、预览和仓库文件树均跟随全局深浅色主题。
 
+### AI Agent 知识与仓库工作流
+
+- Chat 模式按需列出、搜索和读取真实笔记，同时融合模型的通用知识、推导、反例和跨领域联系回答问题。
+- Edit 模式先读取实时文件，再生成逐文件 Diff；用户接受后才写入本地草稿，避免模型直接覆盖笔记。
+- 持续显示当前文件、Git 分支、已缓存笔记数和本地修改数，并记录近期工具操作，保持任务上下文连续。
+- 支持当前文件或仓库笔记两种范围；未缓存的远程笔记可按需批量读取。
+- 对话中展示思考状态、工具调用、修改结果和 Git 提交请求，可停止生成、重试、复制回答或重新生成。
+- 修改旧问题会创建可切换的对话分支；回答版本、问题版本和原有后续内容不会丢失。
+- 对话历史支持 Chat / Edit 标签、待审核数量、搜索、重命名、删除、单个 Markdown 导出及完整 JSON 导入导出。
+- AI 配置支持多服务商独立档案、模型列表、连接测试、推理强度、Temperature、最大输出 Token 与操作许可。
+
+默认最大输出为 16,000 Token、Temperature 为 0.3、操作许可为“请求批准”。最大 Token 只限制单次模型输出，并不等同于模型的上下文窗口；普通问答可调至 4,000–8,000，复杂的跨文件整理可保留默认值。
+
+内置服务商包括 OpenAI、Anthropic、Google Gemini、Azure OpenAI、DeepSeek、Groq、Mistral AI、Moonshot / Kimi、智谱 AI、腾讯混元、NVIDIA NIM、硅基流动、Ollama 和自定义 OpenAI 兼容接口。
+
+Agent 配置和对话历史保存在当前浏览器。配置 JSON 为实现一键迁移会**包含 API 密钥**，请将备份视为敏感文件；模型请求会由浏览器直接发送给所选 AI 服务商。完整用法与安全说明见 [Agent 指南](https://jeoitim.github.io/markmap-pp/doc/agent/)。
+
 ### 多格式导出
 
 | 格式     | 用途                                 |
@@ -76,7 +93,7 @@ markmap++ 不会在每次输入时创建提交。远程 Markdown 文件被下载
 3. 令牌只需授权目标仓库，并赋予 **Contents: Read and write** 权限。
 4. 绑定完成后，点击文件树中的 Markdown 文件将其下载到本机缓存。
 
-令牌保存在当前浏览器的 `localStorage`，Markdown 草稿保存在 IndexedDB。应用会直接从浏览器请求 GitHub API，不会把令牌写入项目、构建产物或 GitHub Pages。请勿在公共或不受信任的设备上长期保存令牌。
+GitHub 绑定与令牌保存在当前浏览器的 IndexedDB 本地设置中，Markdown 草稿也保存在 IndexedDB。应用会直接从浏览器请求 GitHub API，不会把令牌写入项目、构建产物或 GitHub Pages。请勿在公共或不受信任的设备上长期保存令牌。
 
 ### 文件树与状态
 
@@ -244,21 +261,21 @@ npx edgeone pages deploy dist \
 markmap-pp/
 ├─ .github/workflows/         # GitHub Pages 自动部署
 ├─ examples/react-example/    # markmap++ Web 应用
-│  ├─ src/components/         # 编辑器、导图和 GitHub 同步
+│  ├─ src/components/         # 编辑器、导图、Agent 和 GitHub 同步
 │  └─ dist/                   # 生产构建输出
 ├─ packages/
 │  ├─ markmap-lib/            # Markdown 转换
 │  ├─ markmap-view-plus/      # 可编辑思维导图视图
 │  ├─ markmap-toolbar/        # 导图工具栏
 │  └─ ...                     # 上游 Markmap 相关包
-├─ docs/                      # 上游文档内容
+├─ docs/                      # 使用、Agent、同步与部署文档
 ├─ package.json               # 工作区命令
 └─ pnpm-workspace.yaml        # pnpm workspace 配置
 ```
 
 ## 与上游项目的关系
 
-本仓库基于 `Tem-man/markmap-plus` 修改，并继续保留其可编辑节点、增删节点、增量更新和 `toMarkdown` 回写能力。markmap++ 主要在 `examples/react-example` 中提供面向最终用户的完整工作台，并扩展本地缓存、GitHub 同步、文件管理、显示设置和多格式导出。
+本仓库基于 `Tem-man/markmap-plus` 修改，并继续保留其可编辑节点、增删节点、增量更新和 `toMarkdown` 回写能力。markmap++ 主要在 `examples/react-example` 中提供面向最终用户的完整工作台，并扩展本地缓存、Agent 知识与仓库操作、GitHub 同步、文件管理、显示设置和多格式导出。
 
 ## 许可证与鸣谢
 
