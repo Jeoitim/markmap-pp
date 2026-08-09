@@ -716,9 +716,9 @@ export default function MarkmapHooks() {
   const [localGitState, setLocalGitState] = useState<DesktopLocalGitState>({ activeId: null, repositories: [] })
   const [localAgentContext, setLocalAgentContext] = useState<{ repositoryId: string | null; files: AgentSourceFile[] }>({ repositoryId: null, files: [] })
   const [localGitBusy, setLocalGitBusy] = useState(false)
+  const [localGitActivity, setLocalGitActivity] = useState<'refresh' | 'sync' | 'commit' | 'push' | null>(null)
   const [localGitError, setLocalGitError] = useState('')
   const [localGitNotice, setLocalGitNotice] = useState('')
-  const [localCommitMessage, setLocalCommitMessage] = useState('')
   const [githubBusyAction, setGithubBusyAction] = useState<GitHubBusyAction | null>(null)
   const githubBusy = githubBusyAction !== null
   const [githubError, setGithubError] = useState('')
@@ -811,6 +811,24 @@ export default function MarkmapHooks() {
       .catch((error) => { if (!disposed) setLocalGitError(error instanceof Error ? error.message : '无法读取本地 Git 仓库') })
     return () => { disposed = true }
   }, [])
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || repositorySource !== 'local' || !repositoryId) return
+    let disposed = false
+    const checkRemote = async () => {
+      try {
+        const repository = await desktop.localGit.refresh(repositoryId)
+        if (!disposed) setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
+      } catch {
+        // 后台检查不打断编辑；手动刷新仍会显示完整错误。
+      }
+    }
+    void checkRemote()
+    const timer = window.setInterval(checkRemote, 60_000)
+    return () => { disposed = true; window.clearInterval(timer) }
+  }, [localGitState.activeId, repositorySource])
 
   useEffect(() => {
     let frame = 0
@@ -1256,10 +1274,17 @@ export default function MarkmapHooks() {
   const refreshLocalGitState = async () => {
     const desktop = desktopApi()
     if (!desktop) return
-    setLocalGitBusy(true); setLocalGitError('')
-    try { setLocalGitState(await desktop.localGit.get()) }
+    setLocalGitBusy(true); setLocalGitActivity('refresh'); setLocalGitError('')
+    try {
+      const repositoryId = localGitState.activeId
+      if (!repositoryId) setLocalGitState(await desktop.localGit.get())
+      else {
+        const repository = await desktop.localGit.refresh(repositoryId)
+        setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
+      }
+    }
     catch (error) { setLocalGitError(error instanceof Error ? error.message : '刷新本地 Git 仓库失败') }
-    finally { setLocalGitBusy(false) }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
   }
 
   const openLocalGitFolder = async () => {
@@ -1496,27 +1521,39 @@ export default function MarkmapHooks() {
     const desktop = desktopApi()
     const repositoryId = localGitState.activeId
     if (!desktop || !repositoryId) return
-    setLocalGitBusy(true); setLocalGitError(''); setLocalGitNotice('')
+    setLocalGitBusy(true); setLocalGitActivity('commit'); setLocalGitError(''); setLocalGitNotice('')
     try {
-      const repository = await desktop.localGit.commit(repositoryId, localCommitMessage)
+      const repository = await desktop.localGit.commit(repositoryId, '')
       setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
-      setLocalCommitMessage('')
       setLocalGitNotice(`已创建本地提交 ${repository.head}`)
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '创建本地提交失败') }
-    finally { setLocalGitBusy(false) }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
   }
 
   const pushLocalRepository = async () => {
     const desktop = desktopApi()
     const repositoryId = localGitState.activeId
     if (!desktop || !repositoryId) return
-    setLocalGitBusy(true); setLocalGitError(''); setLocalGitNotice('')
+    setLocalGitBusy(true); setLocalGitActivity('push'); setLocalGitError(''); setLocalGitNotice('')
     try {
       const repository = await desktop.localGit.push(repositoryId)
       setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
       setLocalGitNotice(`已推送到 ${repository.remoteLabel || repository.remoteName}`)
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '推送本地仓库失败') }
-    finally { setLocalGitBusy(false) }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
+  }
+
+  const syncLocalRepository = async () => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || !repositoryId) return
+    setLocalGitBusy(true); setLocalGitActivity('sync'); setLocalGitError(''); setLocalGitNotice('')
+    try {
+      const repository = await desktop.localGit.sync(repositoryId)
+      setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
+      setLocalGitNotice(repository.behindCount ? '仍有远端提交待同步' : '已同步远端更新，本地编辑内容保持不变')
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '同步本地仓库失败') }
+    finally { setLocalGitBusy(false); setLocalGitActivity(null) }
   }
 
   const openRepositoryFile = async (remote: RemoteMarkdownFile) => {
@@ -3020,6 +3057,24 @@ ${documentRenderConfig.style}
   const activeTabUnsaved = activeTabSnapshot ? tabHasUnsavedChanges(activeTabSnapshot) : false
   const pendingCloseTab = pendingCloseTabId ? documentTabs.find((tab) => tab.id === pendingCloseTabId) : null
   const activeLocalRepository = localGitState.repositories.find((repository) => repository.id === localGitState.activeId)
+  const localRepositoryAction = !activeLocalRepository
+    ? 'clean'
+    : activeLocalRepository.behindCount > 0
+      ? 'sync'
+      : activeLocalRepository.markdownChangedCount > 0
+        ? 'commit'
+        : activeLocalRepository.aheadCount > 0 || Boolean(activeLocalRepository.remoteName && !activeLocalRepository.upstream)
+          ? 'push'
+          : 'clean'
+  const localRepositoryActionTitle = !activeLocalRepository
+    ? 'Git 工作区干净'
+    : localRepositoryAction === 'sync'
+      ? `远端领先 ${activeLocalRepository.behindCount} 个提交，先同步后才能提交`
+      : localRepositoryAction === 'commit'
+        ? `自动生成说明并提交 ${activeLocalRepository.markdownChangedCount} 个 Markdown 变更`
+        : localRepositoryAction === 'push'
+          ? activeLocalRepository.upstream ? `推送 ${activeLocalRepository.aheadCount} 个本地提交` : '发布当前分支到远程'
+          : 'Git 工作区干净'
   const agentUsesLocalRepository = Boolean(activeLocalFile)
   const agentUsesStandaloneFile = !activeLocalFile && !activeRepoPath
   const agentLocalRepository = agentUsesLocalRepository ? localGitState.repositories.find((repository) => repository.id === activeLocalFile?.repositoryId) : undefined
@@ -3128,12 +3183,11 @@ ${documentRenderConfig.style}
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
             </> : editorView === 'agent' ? <AgentPanel workspaceKey={agentWorkspaceKey} workspaceLabel={agentWorkspaceLabel} workspaceKind={agentUsesStandaloneFile ? 'file' : agentUsesLocalRepository ? 'local' : 'remote'} repositoryScopeEnabled={!agentUsesStandaloneFile} canCreateFiles={!agentUsesStandaloneFile} canCommit={!agentUsesStandaloneFile} files={agentFiles} activePath={agentActivePath} onApplyChange={agentApplyChange} onCreateFile={agentCreateFile} onOpenFile={(path) => { if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else if (!agentUsesStandaloneFile) { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentCommit} getGitContext={agentGitContext} remoteFileCount={agentFileCount} remotePaths={agentPaths} repositoryBranch={agentUsesLocalRepository ? agentLocalRepository?.branch : agentUsesStandaloneFile ? undefined : githubConfig?.branch} onLoadAllFiles={loadAgentFiles} loadingFiles={agentUsesStandaloneFile ? false : agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {repositorySource === 'local' ? !activeLocalRepository ? <div className="repository-unbound"><Icon name="folder" /><strong>尚未打开本地 Git 仓库</strong><span>{desktopApi() ? '只接受经过 Git 校验的文件夹，普通文件夹不会加入。' : '网页端不能直接验证本地 Git 仓库，请使用桌面应用。'}</span><button onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}>管理本地仓库</button></div> : <>
-                <div className="repository-toolbar local-repository-toolbar"><div><strong>{activeLocalRepository.name}</strong><small>{activeLocalRepository.branch} · {activeLocalRepository.remoteLabel || '仅本地'} · {activeLocalRepository.head || '暂无提交'}</small></div><button className="repository-icon-button" title="仓库设置" aria-label="仓库设置" onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title="刷新本地 Git 状态" aria-label="刷新本地 Git 状态" onClick={() => void refreshLocalGitState()} disabled={localGitBusy}><i><Icon name="refresh" className={localGitBusy ? 'loading-icon' : undefined} /></i></button>{activeLocalRepository.remoteName && <button className="repository-icon-button sync-button" title={activeLocalRepository.upstream ? `Push ${activeLocalRepository.aheadCount} 个本地提交` : '发布当前分支到远程'} aria-label="推送本地 Git 仓库" onClick={() => void pushLocalRepository()} disabled={localGitBusy || activeLocalRepository.behindCount > 0}><i><Icon name="sync" className={localGitBusy ? 'loading-icon' : undefined} /></i></button>}</div>
+                <div className="repository-toolbar local-repository-toolbar"><div><strong>{activeLocalRepository.name}</strong><small>{activeLocalRepository.branch} · {activeLocalRepository.remoteLabel || '仅本地'} · {activeLocalRepository.head || '暂无提交'}</small></div><button className="repository-icon-button" title="仓库设置" aria-label="仓库设置" onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title="检查本地与远端状态" aria-label="检查本地与远端状态" onClick={() => void refreshLocalGitState()} disabled={localGitBusy}><i><Icon name="refresh" className={localGitActivity === 'refresh' ? 'loading-icon' : undefined} /></i></button><button className={`repository-icon-button local-source-action ${localRepositoryAction}`} title={localRepositoryActionTitle} aria-label={localRepositoryActionTitle} onClick={() => { if (localRepositoryAction === 'sync') void syncLocalRepository(); else if (localRepositoryAction === 'push') void pushLocalRepository(); else if (localRepositoryAction === 'commit') void commitLocalRepository() }} disabled={localGitBusy || localRepositoryAction === 'clean' || (localRepositoryAction === 'sync' && activeTabUnsaved)}><i><Icon name={localRepositoryAction === 'sync' ? 'download' : localRepositoryAction === 'push' ? 'sync' : 'check'} className={localGitActivity && localGitActivity !== 'refresh' ? 'loading-icon' : undefined} /></i>{localRepositoryAction === 'sync' && <b>{activeLocalRepository.behindCount}</b>}{localRepositoryAction === 'push' && activeLocalRepository.aheadCount > 0 && <b>{activeLocalRepository.aheadCount}</b>}</button></div>
                 {localGitError && <div className="repository-error"><Icon name="warning" />{localGitError}</div>}
                 {localGitNotice && <div className="repository-notice"><Icon name="check" />{localGitNotice}</div>}
                 <div className="repository-tree local-repository-tree" role="tree" aria-label="本地 Git Markdown 文件树">{activeLocalRepository.files.length ? activeLocalRepository.files.map((file) => <button type="button" className={`local-repository-file ${activeLocalFile?.repositoryId === activeLocalRepository.id && activeLocalFile.path === file.path ? 'active' : ''}`} role="treeitem" key={file.path} onClick={() => void openLocalRepositoryFile(activeLocalRepository.id, file.path)}><Icon name="map" /><span>{file.path}</span><small>{file.size < 1024 ? `${file.size} B` : `${Math.ceil(file.size / 1024)} KB`}</small></button>) : <div className="github-empty">仓库中没有 Markdown 文件</div>}</div>
-                <div className="local-commit-bar"><label><span>提交说明</span><input value={localCommitMessage} maxLength={160} placeholder="更新思维导图文档" onChange={(event) => setLocalCommitMessage(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void commitLocalRepository() }} /></label><button type="button" disabled={localGitBusy || !localCommitMessage.trim() || !activeLocalRepository.changedCount} onClick={() => void commitLocalRepository()}><Icon name="check" />提交</button></div>
-                <footer className="repository-status"><span className={activeLocalRepository.changedCount || activeLocalRepository.aheadCount ? 'dirty' : 'clean'} /><span className="repository-status-label">{activeLocalRepository.behindCount ? `远程领先 ${activeLocalRepository.behindCount} 个提交，请先在其他 Git 工具中拉取` : activeLocalRepository.changedCount ? `${activeLocalRepository.changedCount} 个工作区变更 · 仅提交 Markdown` : activeLocalRepository.aheadCount ? `${activeLocalRepository.aheadCount} 个本地提交待 Push` : 'Git 工作区干净'}</span><button className="repository-branch-button" disabled><Icon name="branch" /><span>{activeLocalRepository.branch}</span></button></footer>
+                <footer className="repository-status"><span className={activeLocalRepository.changedCount || activeLocalRepository.aheadCount || activeLocalRepository.behindCount ? 'dirty' : 'clean'} /><span className="repository-status-label">{activeLocalRepository.behindCount ? `远端有 ${activeLocalRepository.behindCount} 个新提交 · 请先同步` : activeLocalRepository.markdownChangedCount ? `${activeLocalRepository.markdownChangedCount} 个 Markdown 变更 · 已自动保存` : activeLocalRepository.changedCount ? `${activeLocalRepository.changedCount} 个非 Markdown 变更 · 不会由应用提交` : activeLocalRepository.aheadCount ? `${activeLocalRepository.aheadCount} 个本地提交待推送` : 'Git 工作区干净 · 文档自动保存'}</span><button className="repository-branch-button" disabled><Icon name="branch" /><span>{activeLocalRepository.branch}</span></button></footer>
               </> : !githubConfig ? <div className="repository-unbound"><Icon name="github" /><strong>尚未绑定 GitHub 仓库</strong><span>绑定后可浏览 Markdown 文件并在本地暂存修改。</span><button onClick={() => { setRepositorySettingsTab('remote'); setActivePanel('github') }}>绑定仓库</button></div> : <>
                 <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{repositoryCommitRef ? `commit ${repositoryCommitRef.slice(0, 7)}` : githubConfig.branch}</small></div><button className="discard-button" title={repositoryCommitRef ? '查看 commit 阶段时不能放弃当前分支修改' : '放弃所有本地修改'} onClick={() => void discardRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !hasRepositoryDrafts}><Icon name="undo" className={repositoryDiscardLoading ? 'loading-icon' : undefined} /><span>放弃</span></button><button className="repository-icon-button" title="仓库设置" aria-label="仓库设置" onClick={() => setActivePanel('github')}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title="刷新当前分支" aria-label="刷新当前分支" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" className={repositoryRefreshLoading ? 'loading-icon' : undefined} /></i></button><button className="repository-icon-button sync-button" title={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !changedFiles.length}><i><Icon name="sync" className={repositorySyncLoading ? 'loading-icon' : undefined} /></i></button></div>
                 {githubError && <div className="repository-error"><Icon name="warning" />{githubError}</div>}
@@ -3190,7 +3244,7 @@ ${documentRenderConfig.style}
               </div>
               <button type="button" className="document-tab-new" aria-label="新建空白文档标签" title="新建标签" onClick={createBlankDocumentTab}><Icon name="plus" /></button>
             </nav>
-            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>Markdown</span></button><button type="button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title="预览设置" aria-label="预览设置"><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
+            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>返回 Markdown</span></button><button type="button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title="预览设置" aria-label="预览设置"><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
           </>
         </section>
       </section>

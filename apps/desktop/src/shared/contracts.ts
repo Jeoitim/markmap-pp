@@ -37,6 +37,7 @@ export interface DesktopLocalGitRepository {
   branch: string;
   head: string;
   changedCount: number;
+  markdownChangedCount: number;
   remoteName: string | null;
   remoteLabel: string | null;
   upstream: string | null;

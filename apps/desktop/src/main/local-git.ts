@@ -141,6 +141,17 @@ async function listMarkdownFiles(root: string) {
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
+async function listChangedMarkdownPaths(root: string) {
+  const [unstaged, staged, untracked] = await Promise.all([
+    runGit(root, ['diff', '--name-only', '--relative', '--', '*.md', '*.markdown']),
+    runGit(root, ['diff', '--cached', '--name-only', '--relative', '--', '*.md', '*.markdown']),
+    runGit(root, ['ls-files', '--others', '--exclude-standard', '--', '*.md', '*.markdown']),
+  ]);
+  return Array.from(new Set(
+    [unstaged, staged, untracked].flatMap((value) => value.split(/\r?\n/)).filter(Boolean),
+  ));
+}
+
 async function inspectRepository(
   root: string,
 ): Promise<DesktopLocalGitRepository> {
@@ -155,6 +166,7 @@ async function inspectRepository(
     '--short',
     '--untracked-files=all',
   ]);
+  const changedMarkdownPaths = await listChangedMarkdownPaths(gitRoot);
   const remoteNames = (await runGit(gitRoot, ['remote']))
     .split(/\r?\n/)
     .filter(Boolean);
@@ -192,6 +204,7 @@ async function inspectRepository(
     branch,
     head,
     changedCount: status ? status.split(/\r?\n/).filter(Boolean).length : 0,
+    markdownChangedCount: changedMarkdownPaths.length,
     remoteName,
     remoteLabel: remoteUrl ? safeRemoteLabel(remoteUrl) : null,
     upstream: upstream || null,
@@ -388,31 +401,19 @@ export async function syncLocalGitRepository(id: string) {
 
 export async function commitLocalGitMarkdown(id: string, message: string) {
   const trimmed = message.trim();
-  if (!trimmed || trimmed.length > 160) throw new Error('请输入 1–160 字的提交说明');
-  const { repository } = await resolveStoredRepository(id);
-  const files = await runGit(repository.root, [
-    'ls-files',
-    '-co',
-    '--exclude-standard',
-    '--',
-    '*.md',
-    '*.markdown',
-  ]);
-  const deleted = await runGit(repository.root, [
-    'ls-files',
-    '--deleted',
-    '--',
-    '*.md',
-    '*.markdown',
-  ]);
-  const paths = Array.from(
-    new Set([...files.split(/\r?\n/), ...deleted.split(/\r?\n/)].filter(Boolean)),
-  );
+  if (trimmed.length > 160) throw new Error('提交说明不能超过 160 字');
+  const repository = await refreshLocalGitRepository(id);
+  if (repository.behindCount)
+    throw new Error(`远端领先 ${repository.behindCount} 个提交，请先同步远端更新再提交`);
+  const paths = await listChangedMarkdownPaths(repository.root);
   if (!paths.length) throw new Error('仓库中没有可提交的 Markdown 变更');
   if (paths.length > 300)
     throw new Error('Markdown 变更超过 300 个，请先使用专业 Git 工具分批提交');
+  const commitMessage = (trimmed || (paths.length === 1
+    ? `docs: update ${paths[0]}`
+    : `docs: update ${paths.length} markdown files`)).slice(0, 160);
   await runGit(repository.root, ['add', '-A', '--', ...paths]);
-  await runGit(repository.root, ['commit', '-m', trimmed, '--', ...paths]);
+  await runGit(repository.root, ['commit', '-m', commitMessage, '--', ...paths]);
   return inspectRepository(repository.root);
 }
 

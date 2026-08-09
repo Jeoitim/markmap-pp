@@ -552,9 +552,11 @@ svg { flex: 0 0 auto; }
 .repository-toolbar strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; }
 .repository-toolbar small { color: var(--muted); font: 9px "JetBrains Mono Variable",monospace; }
 .repository-toolbar button, .repository-status button { height: 28px; padding: 0 9px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); background: var(--panel); font-size: 10px; cursor: pointer; }
-.repository-toolbar .repository-icon-button { width: 30px; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 0; }
+.repository-toolbar .repository-icon-button { position: relative; width: 30px; height: 28px; display: flex; align-items: center; justify-content: center; padding: 0; border-radius: 6px; line-height: 0; }
 .repository-icon-button > i { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; margin: 0; font-style: normal; line-height: 0; }
 .repository-icon-button svg { display: block; width: 15px; height: 15px; margin: 0; }
+.repository-toolbar .local-source-action.commit, .repository-toolbar .local-source-action.push, .repository-toolbar .local-source-action.sync { color: #fff; border-color: var(--accent); background: var(--accent); }
+.repository-toolbar .local-source-action > b { position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; display: grid; place-items: center; padding: 0 4px; border: 2px solid var(--panel-soft); border-radius: 8px; color: #fff; background: #d8872d; font: 700 8px "Inter Variable",sans-serif; line-height: 1; }
 .loading-icon { transform-box: fill-box; transform-origin: center; animation: repository-icon-spin .8s linear infinite; }
 .repository-toolbar .sync-button { color: #fff; border-color: var(--accent); background: var(--accent); }
 .repository-toolbar .discard-button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 7px; color: #cf4d4d; border-color: #cf4d4d45; background: #cf4d4d0b; }
@@ -567,14 +569,6 @@ svg { flex: 0 0 auto; }
 .local-repository-file svg { width: 14px; height: 14px; }
 .local-repository-file span { min-width: 0; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .local-repository-file small { color: var(--muted); font-size: 8px; }
-.local-commit-bar { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 8px; padding: 9px 10px; border-top: 1px solid var(--border); background: var(--panel); }
-.local-commit-bar label { min-width: 0; display: grid; gap: 4px; }
-.local-commit-bar label > span { color: var(--muted); font-size: 8px; }
-.local-commit-bar input { min-width: 0; height: 31px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; outline: 0; color: var(--text); background: var(--panel-soft); font-size: 10px; }
-.local-commit-bar input:focus { border-color: color-mix(in srgb,var(--accent) 60%,var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent); }
-.local-commit-bar > button { height: 31px; display: flex; align-items: center; gap: 5px; padding: 0 10px; border: 0; border-radius: 7px; color: #fff; background: var(--accent); font-size: 10px; cursor: pointer; }
-.local-commit-bar > button:disabled { opacity: .42; cursor: not-allowed; }
-.local-commit-bar > button svg { width: 13px; height: 13px; }
 .repository-save-name { min-width: 0; display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; }
 .repository-save-name > span { flex: 0 0 auto; white-space: nowrap; color: var(--text); font-size: 12px; font-weight: 650; }
 .repository-save-name input { min-width: 0; flex: 1 1 auto; width: auto; height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; outline: none; color: var(--text); background: var(--panel); font-size: 13px; }
@@ -841,7 +835,7 @@ svg { flex: 0 0 auto; }
   .editor-pane, .preview-pane { height: 100%; }
   .preview-pane { grid-template-rows: 1fr; }
   .preview-floating-tools { top: 9px; right: 9px; }
-  .preview-floating-tools > .mobile-pane-switch { display: inline-flex; }
+  .preview-floating-tools > .mobile-pane-switch { width: auto; min-width: max-content; display: inline-flex; flex: 0 0 auto; padding: 0 10px; white-space: nowrap; }
   .workspace.mobile-editor .preview-pane, .workspace.mobile-preview .editor-pane { display: none; }
   .split-handle { display: none; }
   .preview-tip { display: none; }
