@@ -105,6 +105,8 @@ export const desktopChannels = {
   localGitForget: 'desktop:local-git-forget',
   localGitRead: 'desktop:local-git-read',
   localGitHistory: 'desktop:local-git-history',
+  localGitFileHistory: 'desktop:local-git-file-history',
+  localGitReadVersion: 'desktop:local-git-read-version',
   localGitWrite: 'desktop:local-git-write',
   localGitInspect: 'desktop:local-git-inspect',
   localGitWatch: 'desktop:local-git-watch',

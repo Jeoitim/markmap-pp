@@ -30,7 +30,7 @@ interface StoredRepositoryState {
   repositories: StoredRepository[];
 }
 
-function runGit(root: string, args: string[], nonInteractive = false) {
+function runGit(root: string, args: string[], nonInteractive = false, preserveOutput = false) {
   return new Promise<string>((resolve, reject) => {
     execFile(
       'git',
@@ -54,7 +54,7 @@ function runGit(root: string, args: string[], nonInteractive = false) {
         }
         // Git porcelain output intentionally starts with a space for unstaged
         // changes. Trimming the whole string corrupts the first status entry.
-        resolve(stdout.replace(/(?:\r?\n)+$/, ''));
+        resolve(preserveOutput ? stdout : stdout.replace(/(?:\r?\n)+$/, ''));
       },
     );
   });
@@ -454,6 +454,47 @@ export async function readLocalGitHistory(id: string, relativePaths: string[]) {
     '--pretty=format:%h | %an | %ad | %s',
     ...(paths.length ? ['--', ...paths] : []),
   ]).catch(() => '');
+}
+
+export async function readLocalGitFileHistory(id: string, relativePath: string) {
+  const { repository } = await resolveStoredRepository(id);
+  if (!repository.isGitRepository)
+    throw new Error('当前文件夹不是 Git 仓库，无法查看文件历史');
+  const relative = safeRelativeMarkdownPath(relativePath);
+  const output = await runGit(repository.root, [
+    'log',
+    '--max-count=50',
+    '--date=iso-strict',
+    '--pretty=format:%H%x1f%P%x1f%an%x1f%aI%x1f%D%x1f%s',
+    '--',
+    relative,
+  ]).catch(() => '');
+  return output.split(/\r?\n/).filter(Boolean).map((line): DesktopLocalGitCommit => {
+    const [sha = '', parents = '', author = '', date = '', decorations = '', message = ''] = line.split('\x1f');
+    return {
+      sha,
+      parents: parents.split(' ').filter(Boolean),
+      author,
+      date,
+      message,
+      refs: decorations.split(',').map((value) => value.trim().replace(/^HEAD -> /, '')).filter(Boolean),
+    };
+  });
+}
+
+export async function readLocalGitMarkdownVersion(
+  id: string,
+  relativePath: string,
+  commitSha: string,
+) {
+  const { repository } = await resolveStoredRepository(id);
+  if (!repository.isGitRepository)
+    throw new Error('当前文件夹不是 Git 仓库，无法读取历史版本');
+  const relative = safeRelativeMarkdownPath(relativePath);
+  if (!/^[0-9a-f]{7,40}$/i.test(commitSha)) throw new Error('提交标识无效');
+  const content = await runGit(repository.root, ['show', `${commitSha}:${relative}`], false, true)
+    .catch(() => { throw new Error('该提交中找不到此文件，文件可能在更早版本使用了其他名称'); });
+  return { path: relative, commitSha, content };
 }
 
 export async function writeLocalGitMarkdown(

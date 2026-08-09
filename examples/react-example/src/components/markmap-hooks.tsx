@@ -13,7 +13,7 @@ import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import type { AgentSourceFile } from './agent-client'
-import { desktopApi, saveBlob, type DesktopLocalGitFile, type DesktopLocalGitGraph, type DesktopLocalGitState } from './desktop-api'
+import { desktopApi, saveBlob, type DesktopLocalGitCommit, type DesktopLocalGitFile, type DesktopLocalGitGraph, type DesktopLocalGitState } from './desktop-api'
 import { inspectMarkdown } from './markdown-lint'
 import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
 import { indexRepositoryNote, repositoryLinkHref, repositoryMarkdownLink, resolveHeading, resolveRepositoryLink, rewriteRepositoryLinks } from './repository-links'
@@ -405,6 +405,7 @@ type RepositoryHistoryState = {
   loading: boolean
   error: string
 }
+type LocalRepositoryHistoryState = Omit<RepositoryHistoryState, 'commits'> & { commits: DesktopLocalGitCommit[] }
 type RepositoryGraphState = {
   branches: GitHubBranch[]
   commits: GitHubRepositoryCommit[]
@@ -775,6 +776,7 @@ export default function MarkmapHooks() {
   const [localRepositoryMenu, setLocalRepositoryMenu] = useState<{ x: number; y: number; target: RepositoryTarget } | null>(null)
   const [localRepositoryGraph, setLocalRepositoryGraph] = useState<(DesktopLocalGitGraph & { loading: boolean; error: string }) | null>(null)
   const [localRepositoryGraphBranchesOpen, setLocalRepositoryGraphBranchesOpen] = useState(false)
+  const [localRepositoryHistory, setLocalRepositoryHistory] = useState<LocalRepositoryHistoryState | null>(null)
   const [repositoryHistory, setRepositoryHistory] = useState<RepositoryHistoryState | null>(null)
   const [repositoryLoadingPath, setRepositoryLoadingPath] = useState<string | null>(null)
   const [repositorySaveMode, setRepositorySaveMode] = useState(false)
@@ -1635,6 +1637,43 @@ export default function MarkmapHooks() {
     try { setLocalRepositoryGraph({ ...(await desktop.localGit.graph(repositoryId)), loading: false, error: '' }) }
     catch (error) { setLocalRepositoryGraph({ branches: [], commits: [], loading: false, error: error instanceof Error ? error.message : '读取本地提交历史失败' }) }
     finally { setLocalGitActivity(null) }
+  }
+
+  const openLocalRepositoryHistory = async (target: RepositoryTarget, x: number, y: number) => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || !repositoryId || target.type !== 'file') return
+    const state: LocalRepositoryHistoryState = {
+      target,
+      x: Math.max(8, Math.min(x, window.innerWidth - 428)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 568)),
+      commits: [],
+      loading: true,
+      error: '',
+    }
+    setLocalRepositoryMenu(null)
+    setLocalRepositoryHistory(state)
+    try {
+      const commits = await desktop.localGit.fileHistory(repositoryId, target.path)
+      setLocalRepositoryHistory((current) => current?.target.path === target.path ? { ...current, commits, loading: false } : current)
+    } catch (error) {
+      setLocalRepositoryHistory((current) => current?.target.path === target.path ? { ...current, loading: false, error: error instanceof Error ? error.message : '读取本地文件历史失败' } : current)
+    }
+  }
+
+  const openLocalRepositoryHistoryVersion = async (commit: DesktopLocalGitCommit) => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    const history = localRepositoryHistory
+    if (!desktop || !repositoryId || !history || history.target.type !== 'file') return
+    setLocalRepositoryHistory((current) => current ? { ...current, loading: true, error: '' } : current)
+    try {
+      const file = await desktop.localGit.readVersion(repositoryId, history.target.path, commit.sha)
+      openDocumentTab(historicalFileName(file.path, commit.sha), file.content, `local-history:${repositoryId}:${commit.sha}:${file.path}`)
+      setLocalRepositoryHistory(null)
+    } catch (error) {
+      setLocalRepositoryHistory((current) => current ? { ...current, loading: false, error: error instanceof Error ? error.message : '打开本地历史版本失败' } : current)
+    }
   }
 
   const switchLocalRepositoryBranch = async (branch: string) => {
@@ -2673,13 +2712,13 @@ export default function MarkmapHooks() {
   }, [githubConfig])
 
   useEffect(() => {
-    if (!repositoryMenu && !repositoryHistory && !localRepositoryMenu) return
-    const closePopovers = () => { setRepositoryMenu(null); setRepositoryHistory(null); setLocalRepositoryMenu(null) }
+    if (!repositoryMenu && !repositoryHistory && !localRepositoryMenu && !localRepositoryHistory) return
+    const closePopovers = () => { setRepositoryMenu(null); setRepositoryHistory(null); setLocalRepositoryMenu(null); setLocalRepositoryHistory(null) }
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closePopovers() }
     window.addEventListener('pointerdown', closePopovers)
     window.addEventListener('keydown', closeOnEscape)
     return () => { window.removeEventListener('pointerdown', closePopovers); window.removeEventListener('keydown', closeOnEscape) }
-  }, [repositoryMenu, repositoryHistory, localRepositoryMenu])
+  }, [repositoryMenu, repositoryHistory, localRepositoryMenu, localRepositoryHistory])
 
   useEffect(() => {
     if (!selectionMenu) return
@@ -3540,10 +3579,16 @@ ${documentRenderConfig.style}
                 {localRepositoryMenu && <div className="repository-context-menu" style={{ left: localRepositoryMenu.x, top: localRepositoryMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
                   <strong>{localRepositoryMenu.target.name}</strong>
                   {localRepositoryMenu.target.type === 'file' && <button disabled={localRepositoryMenu.target.path.endsWith('/') || activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus === 'D'} onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void openLocalRepositoryFile(activeLocalRepository.id, target.path) }}>打开</button>}
+                  {activeLocalRepository.isGitRepository && localRepositoryMenu.target.type === 'file' && <button disabled={['?', 'A'].includes(activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus || '')} title={['?', 'A'].includes(activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus || '') ? '新增文件还没有提交历史' : '查看该文件的历史提交'} onClick={() => { const menu = localRepositoryMenu; if (menu) void openLocalRepositoryHistory(menu.target, menu.x, menu.y) }}>查看历史提交</button>}
                   {localRepositoryMenu.target.type !== 'root' && <><button onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); startLocalRepositoryRename(target) }}>重命名</button><button onClick={() => { setLocalRepositoryClipboard({ mode: 'copy', target: localRepositoryMenu.target }); setLocalRepositoryMenu(null); setLocalGitNotice(`已复制 ${localRepositoryMenu.target.name}，请在目标文件夹右键粘贴`) }}>复制</button><button onClick={() => { setLocalRepositoryClipboard({ mode: 'cut', target: localRepositoryMenu.target }); setLocalRepositoryMenu(null); setLocalGitNotice(`已剪切 ${localRepositoryMenu.target.name}，请在目标文件夹右键粘贴`) }}>剪切</button><button onClick={() => { void navigator.clipboard.writeText(localRepositoryMenu.target.path); setLocalRepositoryMenu(null); setLocalGitNotice('已复制相对路径') }}>复制相对路径</button></>}
                   {(localRepositoryMenu.target.type === 'folder' || localRepositoryMenu.target.type === 'root') && <><hr/><button disabled={!localRepositoryClipboard} onClick={() => { const folder = localRepositoryMenu.target.path; setLocalRepositoryMenu(null); void pasteLocalRepositoryClipboard(folder) }}>粘贴{localRepositoryClipboard ? `“${localRepositoryClipboard.target.name}”` : ''}</button></>}
                   {localRepositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void removeLocalRepositoryTarget(target) }}>删除</button></>}
                   {localRepositoryMenu.target.type === 'root' && <button onClick={() => { void navigator.clipboard.writeText(activeLocalRepository.root); setLocalRepositoryMenu(null); setLocalGitNotice('已复制文件夹路径') }}>复制文件夹路径</button>}
+                </div>}
+                {localRepositoryHistory && <div className="repository-history-popover" style={{ left: localRepositoryHistory.x, top: localRepositoryHistory.y }} onPointerDown={(event) => event.stopPropagation()}>
+                  <header><div><strong>文件历史</strong><small title={localRepositoryHistory.target.path}>{localRepositoryHistory.target.path}</small></div><button className="header-icon" aria-label="关闭历史记录" onClick={() => setLocalRepositoryHistory(null)}><Icon name="x" /></button></header>
+                  {localRepositoryHistory.error && <div className="repository-history-error"><Icon name="warning" /><span>{localRepositoryHistory.error}</span></div>}
+                  {localRepositoryHistory.loading && !localRepositoryHistory.commits.length ? <div className="repository-history-state"><Icon name="refresh" className="loading-icon" /><span>正在读取提交历史…</span></div> : localRepositoryHistory.commits.length ? <div className="repository-history-list" role="list">{localRepositoryHistory.commits.map((commit) => <button className="repository-history-item" key={commit.sha} disabled={localRepositoryHistory.loading} onClick={() => void openLocalRepositoryHistoryVersion(commit)}><Icon name="clock" className={localRepositoryHistory.loading ? 'loading-icon' : undefined} /><span><strong>{formatCommitDate(commit.date)}</strong><small><code title={commit.sha}>{commit.sha.slice(0, 7)}</code><em> · {activeLocalRepository.branch} · {commit.author}</em></small><b title={commit.message}>{commit.message.split('\n')[0]}</b></span><Icon name="chevron-right" /></button>)}</div> : <div className="repository-history-state"><Icon name="clock" /><span>没有找到该文件的提交记录</span></div>}
                 </div>}
               </> : !githubConfig ? <div className="repository-unbound"><Icon name="github" /><strong>尚未绑定 GitHub 仓库</strong><span>绑定后可浏览 Markdown 文件并在本地暂存修改。</span><button onClick={() => { setRepositorySettingsTab('remote'); setActivePanel('github') }}>绑定仓库</button></div> : <>
                 <div className="repository-toolbar"><div><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{repositoryCommitRef ? `commit ${repositoryCommitRef.slice(0, 7)}` : githubConfig.branch}</small></div><button className="discard-button" title={repositoryCommitRef ? '查看 commit 阶段时不能放弃当前分支修改' : '放弃所有本地修改'} onClick={() => void discardRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !hasRepositoryDrafts}><Icon name="undo" className={repositoryDiscardLoading ? 'loading-icon' : undefined} /><span>放弃</span></button><button className="repository-icon-button" title="仓库设置" aria-label="仓库设置" onClick={() => setActivePanel('github')}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title="刷新当前分支" aria-label="刷新当前分支" onClick={() => void refreshRepositoryView()} disabled={githubBusy}><i><Icon name="refresh" className={repositoryRefreshLoading ? 'loading-icon' : undefined} /></i></button><button className="repository-icon-button sync-button" title={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} aria-label={repositoryCommitRef ? '查看 commit 阶段时不能同步' : changedFiles.length ? `同步 ${changedFiles.length} 个修改` : '没有待同步修改'} onClick={() => void pushRepositoryChanges()} disabled={githubBusy || Boolean(repositoryCommitRef) || !changedFiles.length}><i><Icon name="sync" className={repositorySyncLoading ? 'loading-icon' : undefined} /></i></button></div>

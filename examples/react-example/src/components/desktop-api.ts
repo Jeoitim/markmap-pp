@@ -77,6 +77,8 @@ export interface MarkmapDesktopApi {
     forget(id: string): Promise<DesktopLocalGitState>
     read(id: string, relativePath: string): Promise<{ path: string; content: string }>
     history(id: string, relativePaths: string[]): Promise<string>
+    fileHistory(id: string, relativePath: string): Promise<DesktopLocalGitCommit[]>
+    readVersion(id: string, relativePath: string, commitSha: string): Promise<{ path: string; commitSha: string; content: string }>
     write(id: string, relativePath: string, content: string): Promise<{ path: string; repository: DesktopLocalGitRepository }>
     inspect(id: string): Promise<DesktopLocalGitRepository>
     watch(id: string | null): Promise<boolean>

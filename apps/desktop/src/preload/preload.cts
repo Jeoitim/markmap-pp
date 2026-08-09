@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DesktopAppInfo, DesktopLocalGitGraph, DesktopLocalGitRepository, DesktopLocalGitState, DesktopOpenedFile, DesktopSaveRequest, DesktopSaveResult, DesktopUpdateState } from '../shared/contracts.js'
+import type { DesktopAppInfo, DesktopLocalGitCommit, DesktopLocalGitGraph, DesktopLocalGitRepository, DesktopLocalGitState, DesktopOpenedFile, DesktopSaveRequest, DesktopSaveResult, DesktopUpdateState } from '../shared/contracts.js'
 
 const desktopChannels = {
   appInfo: 'desktop:app-info',
@@ -14,6 +14,8 @@ const desktopChannels = {
   localGitForget: 'desktop:local-git-forget',
   localGitRead: 'desktop:local-git-read',
   localGitHistory: 'desktop:local-git-history',
+  localGitFileHistory: 'desktop:local-git-file-history',
+  localGitReadVersion: 'desktop:local-git-read-version',
   localGitWrite: 'desktop:local-git-write',
   localGitInspect: 'desktop:local-git-inspect',
   localGitWatch: 'desktop:local-git-watch',
@@ -54,6 +56,8 @@ const api = {
     forget: (id: string) => ipcRenderer.invoke(desktopChannels.localGitForget, id) as Promise<DesktopLocalGitState>,
     read: (id: string, relativePath: string) => ipcRenderer.invoke(desktopChannels.localGitRead, id, relativePath) as Promise<{ path: string; content: string }>,
     history: (id: string, relativePaths: string[]) => ipcRenderer.invoke(desktopChannels.localGitHistory, id, relativePaths) as Promise<string>,
+    fileHistory: (id: string, relativePath: string) => ipcRenderer.invoke(desktopChannels.localGitFileHistory, id, relativePath) as Promise<DesktopLocalGitCommit[]>,
+    readVersion: (id: string, relativePath: string, commitSha: string) => ipcRenderer.invoke(desktopChannels.localGitReadVersion, id, relativePath, commitSha) as Promise<{ path: string; commitSha: string; content: string }>,
     write: (id: string, relativePath: string, content: string) => ipcRenderer.invoke(desktopChannels.localGitWrite, id, relativePath, content) as Promise<{ path: string; repository: DesktopLocalGitRepository }>,
     inspect: (id: string) => ipcRenderer.invoke(desktopChannels.localGitInspect, id) as Promise<DesktopLocalGitRepository>,
     watch: (id: string | null) => ipcRenderer.invoke(desktopChannels.localGitWatch, id) as Promise<boolean>,

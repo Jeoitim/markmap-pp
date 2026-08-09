@@ -37,9 +37,11 @@ import {
   openLocalGitRepository,
   pushLocalGitRepository,
   readLocalGitGraph,
+  readLocalGitFileHistory,
   refreshLocalGitRepository,
   readLocalGitHistory,
   readLocalGitMarkdown,
+  readLocalGitMarkdownVersion,
   selectLocalGitRepository,
   moveLocalWorkspaceTarget,
   removeLocalWorkspaceTarget,
@@ -329,6 +331,16 @@ function registerIpc() {
       return readLocalGitHistory(id, relativePaths);
     },
   );
+  ipcMain.handle(desktopChannels.localGitFileHistory, async (event, id: unknown, relativePath: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string' || typeof relativePath !== 'string') throw new Error('文件历史参数无效');
+    return readLocalGitFileHistory(id, relativePath);
+  });
+  ipcMain.handle(desktopChannels.localGitReadVersion, async (event, id: unknown, relativePath: unknown, commitSha: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string' || typeof relativePath !== 'string' || typeof commitSha !== 'string') throw new Error('历史版本参数无效');
+    return readLocalGitMarkdownVersion(id, relativePath, commitSha);
+  });
   ipcMain.handle(desktopChannels.localGitInspect, async (event, id: unknown) => {
     assertTrusted(event);
     if (typeof id !== 'string') throw new Error('仓库标识无效');
