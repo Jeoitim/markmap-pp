@@ -17,10 +17,10 @@ pnpm --filter markmap-plus-plus-desktop make:linux
 
 Release output is written to `apps/desktop/release/`:
 
-- `markmap++-<version>-windows-x64-setup.exe` is the Windows NSIS installer.
-- `markmap++-<version>-windows-x64-portable.7z` is the Windows portable archive.
-- `markmap++-<version>-macos-x64.dmg` is the macOS disk image.
-- `markmap++-<version>-linux-x64.AppImage` is the Linux AppImage.
+- `markmap-plus-plus-<version>-windows-x64-setup.exe` is the Windows NSIS installer.
+- `markmap-plus-plus-<version>-windows-x64-portable.7z` is the Windows portable archive.
+- `markmap-plus-plus-<version>-macos-x64.dmg` is the macOS disk image.
+- `markmap-plus-plus-<version>-linux-x64.AppImage` is the Linux AppImage.
 
 Pushing any new Git tag runs the three native builds and creates a GitHub Release with these four files. The builds are not triggered by normal branch pushes.
 

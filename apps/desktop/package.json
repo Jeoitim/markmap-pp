@@ -1,6 +1,7 @@
 {
   "name": "markmap-plus-plus-desktop",
   "productName": "markmap++",
+  "desktopName": "io.github.jeoitim.markmap-plus-plus.desktop",
   "version": "1.0.0",
   "description": "Markdown mind-map workspace with GitHub sync and AI assistance",
   "author": "Jeoitim",
@@ -38,6 +39,8 @@
   },
   "build": {
     "appId": "io.github.jeoitim.markmap-plus-plus",
+    "productName": "markmap-plus-plus",
+    "executableName": "markmap-plus-plus",
     "directories": {
       "buildResources": "resources",
       "output": "release"
@@ -69,6 +72,7 @@
       ],
       "icon": "resources/icon.png",
       "category": "Office",
+      "syncDesktopName": true,
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     },
     "win": {
