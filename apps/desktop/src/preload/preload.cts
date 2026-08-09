@@ -6,6 +6,7 @@ const desktopChannels = {
   openExternal: 'desktop:open-external',
   openMarkdown: 'desktop:open-markdown',
   openedMarkdown: 'desktop:opened-markdown',
+  saveOpenedMarkdown: 'desktop:save-opened-markdown',
   saveFile: 'desktop:save-file',
   localGitGet: 'desktop:local-git-get',
   localGitOpen: 'desktop:local-git-open',
@@ -29,6 +30,7 @@ const api = {
   getAppInfo: () => ipcRenderer.invoke(desktopChannels.appInfo) as Promise<DesktopAppInfo>,
   openExternal: (url: string) => ipcRenderer.invoke(desktopChannels.openExternal, url) as Promise<boolean>,
   openMarkdown: () => ipcRenderer.invoke(desktopChannels.openMarkdown) as Promise<DesktopOpenedFile | null>,
+  saveOpenedMarkdown: (id: string, content: string) => ipcRenderer.invoke(desktopChannels.saveOpenedMarkdown, id, content) as Promise<DesktopOpenedFile>,
   saveFile: (request: DesktopSaveRequest) => ipcRenderer.invoke(desktopChannels.saveFile, request) as Promise<DesktopSaveResult>,
   onOpenedMarkdown: (listener: (file: DesktopOpenedFile) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, file: DesktopOpenedFile) => listener(file)

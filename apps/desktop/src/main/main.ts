@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -49,6 +50,7 @@ const maxOpenFileBytes = 20 * 1024 * 1024;
 const maxSaveFileBytes = 200 * 1024 * 1024;
 const allowedExternalProtocols = new Set(['https:', 'mailto:']);
 let mainWindow: BrowserWindow | null = null;
+const openedMarkdownFiles = new Map<string, string>();
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -172,7 +174,10 @@ async function openMarkdownDialog(
   const stat = await fs.stat(filePath);
   if (stat.size > maxOpenFileBytes)
     throw new Error('文件超过 20 MB，无法直接打开');
+  const id = randomUUID();
+  openedMarkdownFiles.set(id, filePath);
   return {
+    id,
     name: path.basename(filePath),
     path: filePath,
     content: await fs.readFile(filePath, 'utf8'),
@@ -205,6 +210,23 @@ function registerIpc() {
     if (!window) return null;
     return openMarkdownDialog(window);
   });
+  ipcMain.handle(
+    desktopChannels.saveOpenedMarkdown,
+    async (event, id: unknown, content: unknown) => {
+      assertTrusted(event);
+      if (typeof id !== 'string' || typeof content !== 'string')
+        throw new Error('保存参数无效');
+      const filePath = openedMarkdownFiles.get(id);
+      if (!filePath) throw new Error('文件授权已失效，请重新打开该文件');
+      if (Buffer.byteLength(content, 'utf8') > maxOpenFileBytes)
+        throw new Error('Markdown 文件不能超过 20 MB');
+      const stat = await fs.lstat(filePath);
+      if (!stat.isFile() || stat.isSymbolicLink())
+        throw new Error('目标文件已变化，请重新打开后再保存');
+      await fs.writeFile(filePath, content, 'utf8');
+      return { id, name: path.basename(filePath), path: filePath, content };
+    },
+  );
   ipcMain.handle(
     desktopChannels.saveFile,
     async (event, request: DesktopSaveRequest) => {

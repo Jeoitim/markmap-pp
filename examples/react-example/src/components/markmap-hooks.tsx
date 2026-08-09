@@ -496,11 +496,16 @@ interface DocumentTab {
   repositoryPath: string | null
   localRepositoryId: string | null
   localPath: string | null
+  savedContent: string | null
+  desktopFileId: string | null
+  desktopPath: string | null
 }
+
+type DocumentTabPersistence = Pick<DocumentTab, 'savedContent' | 'desktopFileId' | 'desktopPath'>
 
 let documentTabSequence = 0
 
-function createDocumentTab(name: string, content: string, sourceKey?: string, repositoryPath: string | null = null, localRepositoryId: string | null = null, localPath: string | null = null): DocumentTab {
+function createDocumentTab(name: string, content: string, sourceKey?: string, repositoryPath: string | null = null, localRepositoryId: string | null = null, localPath: string | null = null, persistence: Partial<DocumentTabPersistence> = {}): DocumentTab {
   documentTabSequence += 1
   return {
     id: `document-${Date.now().toString(36)}-${documentTabSequence.toString(36)}`,
@@ -510,7 +515,15 @@ function createDocumentTab(name: string, content: string, sourceKey?: string, re
     repositoryPath,
     localRepositoryId,
     localPath,
+    savedContent: 'savedContent' in persistence ? persistence.savedContent ?? null : content,
+    desktopFileId: persistence.desktopFileId ?? null,
+    desktopPath: persistence.desktopPath ?? null,
   }
+}
+
+function tabHasUnsavedChanges(tab: DocumentTab) {
+  if (tab.repositoryPath) return false
+  return tab.savedContent === null || tab.content !== tab.savedContent
 }
 
 function loadSettings(): AppSettings {
@@ -655,6 +668,7 @@ export default function MarkmapHooks() {
   const [markdown, setMarkdown] = useState(() => documentTabs[0].content)
   const [renderedMarkdown, setRenderedMarkdown] = useState(markdown)
   const [fileName, setFileName] = useState(() => documentTabs[0].name)
+  const activeDocumentTab = documentTabs.find((tab) => tab.id === activeTabId) || documentTabs[0]
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
   const [editorView, setEditorView] = useState<'markdown' | 'repository' | 'agent'>('markdown')
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
@@ -909,12 +923,18 @@ export default function MarkmapHooks() {
     return nextTabs
   }, [activeLocalFile, activeRepoPath, activeTabId, fileName])
 
-  const openDocumentTab = useCallback((name: string, content: string, sourceKey?: string, repositoryPath: string | null = null, localRepositoryId: string | null = null, localPath: string | null = null) => {
+  const markActiveDocumentSaved = useCallback((content: string) => {
+    const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId ? { ...tab, content, savedContent: content } : tab)
+    documentTabsRef.current = nextTabs
+    setDocumentTabs(nextTabs)
+  }, [activeTabId])
+
+  const openDocumentTab = useCallback((name: string, content: string, sourceKey?: string, repositoryPath: string | null = null, localRepositoryId: string | null = null, localPath: string | null = null, persistence: Partial<DocumentTabPersistence> = {}) => {
     const savedTabs = persistActiveDocumentTab()
     const existing = sourceKey ? savedTabs.find((tab) => tab.sourceKey === sourceKey) : undefined
     const tab = existing
-      ? { ...existing, name, content, repositoryPath, localRepositoryId, localPath }
-      : createDocumentTab(name, content, sourceKey, repositoryPath, localRepositoryId, localPath)
+      ? { ...existing, name, content, repositoryPath, localRepositoryId, localPath, ...persistence }
+      : createDocumentTab(name, content, sourceKey, repositoryPath, localRepositoryId, localPath, persistence)
     const nextTabs = existing ? savedTabs.map((item) => item.id === tab.id ? tab : item) : [...savedTabs, tab]
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
@@ -936,7 +956,9 @@ export default function MarkmapHooks() {
     const closingIndex = savedTabs.findIndex((tab) => tab.id === tabId)
     if (closingIndex < 0) return
     let nextTabs = savedTabs.filter((tab) => tab.id !== tabId)
-    if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n')]
+    const closing = savedTabs[closingIndex]
+    if (closing && tabHasUnsavedChanges(closing) && !window.confirm(`“${closing.name}”有未保存的修改，仍要关闭吗？`)) return
+    if (!nextTabs.length) nextTabs = [createDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })]
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
     if (tabId !== activeTabId) return
@@ -946,7 +968,7 @@ export default function MarkmapHooks() {
   }, [activeTabId, displayDocumentTab, persistActiveDocumentTab])
 
   const createBlankDocumentTab = useCallback(() => {
-    openDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n')
+    openDocumentTab('未命名.md', '# 新思维导图\n\n- 开始输入内容\n', undefined, null, null, null, { savedContent: null })
   }, [openDocumentTab])
 
   const updateMarkdown = useCallback((value: string, source = 'editor') => {
@@ -963,11 +985,11 @@ export default function MarkmapHooks() {
     setSaveState('saving')
     setMarkdown(value)
   }, [])
-  const applyOpenedMarkdown = useCallback((name: string, content: string, sourceKey?: string) => {
-    openDocumentTab(name, content, sourceKey)
+  const applyOpenedMarkdown = useCallback((name: string, content: string, sourceKey?: string, persistence: Partial<DocumentTabPersistence> = {}) => {
+    openDocumentTab(name, content, sourceKey, null, null, null, persistence)
   }, [openDocumentTab])
 
-  useEffect(() => desktopApi()?.onOpenedMarkdown((file) => applyOpenedMarkdown(file.name, file.content, `desktop:${file.path}`)), [applyOpenedMarkdown])
+  useEffect(() => desktopApi()?.onOpenedMarkdown((file) => applyOpenedMarkdown(file.name, file.content, `desktop:${file.id}`, { desktopFileId: file.id, desktopPath: file.path, savedContent: file.content })), [applyOpenedMarkdown])
 
 
   const applyAgentChange = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
@@ -1267,14 +1289,28 @@ export default function MarkmapHooks() {
       const result = await desktop.localGit.write(repositoryId, path, content)
       setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === result.repository.id ? result.repository : item) }))
       setLocalAgentContext((current) => ({ ...current, files: current.files.map((file) => file.path === path ? { ...file, content, status: 'modified' } : file) }))
-      if (activeLocalFile?.repositoryId === repositoryId && activeLocalFile.path === path) updateMarkdown(content, 'agent')
+      if (activeLocalFile?.repositoryId === repositoryId && activeLocalFile.path === path) {
+        updateMarkdown(content, 'agent')
+        markActiveDocumentSaved(content)
+      }
       return { ok: true }
     } catch (error) {
       const message = error instanceof Error ? error.message : '写入本地仓库失败'
       setLocalGitError(message)
       return { ok: false, error: message }
     }
-  }, [activeLocalFile, localAgentContext.repositoryId, localGitState.activeId, updateMarkdown])
+  }, [activeLocalFile, localAgentContext.repositoryId, localGitState.activeId, markActiveDocumentSaved, updateMarkdown])
+
+  const applyStandaloneAgentChange = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
+    if (path !== fileName) return { ok: false, error: '单文件模式只能修改当前文件。' }
+    updateMarkdown(content, 'agent')
+    return { ok: true }
+  }, [fileName, updateMarkdown])
+
+  const rejectStandaloneAgentCreate = useCallback(async (): Promise<AgentMutationResult> => ({ ok: false, error: '单文件模式不能新建其他文件，请先打开 Git 仓库。' }), [])
+  const rejectStandaloneAgentCommit = useCallback(async (): Promise<AgentCommitResult> => ({ ok: false, error: '当前文件不属于 Git 仓库，无法提交。' }), [])
+  const emptyAgentGitContext = useCallback(async () => '', [])
+  const noopLoadAgentFiles = useCallback(async () => {}, [])
 
   const createLocalAgentFile = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
     const desktop = desktopApi()
@@ -1326,10 +1362,49 @@ export default function MarkmapHooks() {
       const result = await desktop.localGit.write(activeLocalFile.repositoryId, activeLocalFile.path, markdownRef.current)
       setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === result.repository.id ? result.repository : item) }))
       setLocalGitNotice(`已保存 ${activeLocalFile.path}`)
+      markActiveDocumentSaved(markdownRef.current)
       setSaveState('saved')
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '保存本地 Markdown 失败') }
     finally { setLocalGitBusy(false) }
   }
+
+  const saveStandaloneDocument = useCallback(async () => {
+    const tab = documentTabsRef.current.find((item) => item.id === activeTabId)
+    if (!tab || tab.repositoryPath || tab.localRepositoryId) return
+    const desktop = desktopApi()
+    try {
+      if (desktop && tab.desktopFileId) {
+        await desktop.saveOpenedMarkdown(tab.desktopFileId, markdownRef.current)
+        markActiveDocumentSaved(markdownRef.current)
+        setLocalGitNotice(`已保存 ${tab.name}`)
+        return
+      }
+      const result = await saveBlob(new Blob([markdownRef.current], { type: 'text/markdown;charset=utf-8' }), tab.name)
+      if (!result.canceled) {
+        markActiveDocumentSaved(markdownRef.current)
+        setLocalGitNotice(`已下载 ${tab.name} 的副本`)
+      }
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '保存 Markdown 失败') }
+  }, [activeTabId, markActiveDocumentSaved])
+
+  useEffect(() => {
+    const hasUnsaved = documentTabs.some((tab) => tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab))
+    if (!hasUnsaved) return
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [activeTabId, documentTabs, markdown])
+
+  useEffect(() => {
+    const saveWithShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase() !== 's') return
+      event.preventDefault()
+      if (activeLocalFile) void saveActiveLocalDocument()
+      else if (!activeRepoPath) void saveStandaloneDocument()
+    }
+    window.addEventListener('keydown', saveWithShortcut)
+    return () => window.removeEventListener('keydown', saveWithShortcut)
+  }, [activeLocalFile, activeRepoPath, saveStandaloneDocument])
 
   const commitLocalRepository = async () => {
     const desktop = desktopApi()
@@ -2346,7 +2421,7 @@ export default function MarkmapHooks() {
       return
     }
     const file = await desktop.openMarkdown()
-    if (file) applyOpenedMarkdown(file.name, file.content, `desktop:${file.path}`)
+    if (file) applyOpenedMarkdown(file.name, file.content, `desktop:${file.id}`, { desktopFileId: file.id, desktopPath: file.path, savedContent: file.content })
   }
 
   const toggleFullscreen = async () => {
@@ -2829,12 +2904,25 @@ ${documentRenderConfig.style}
   const gridColumns = editorCollapsed ? '0 18px 1fr' : `${editorWidth}% 18px 1fr`
   const lineCount = markdown.split('\n').length
   const activeCachedFile = activeRepoPath ? cachedFiles.find((file) => file.path === activeRepoPath) : undefined
+  const activeTabSnapshot = activeDocumentTab ? { ...activeDocumentTab, name: fileName, content: markdown } : null
+  const activeTabUnsaved = activeTabSnapshot ? tabHasUnsavedChanges(activeTabSnapshot) : false
   const activeLocalRepository = localGitState.repositories.find((repository) => repository.id === localGitState.activeId)
   const agentUsesLocalRepository = Boolean(activeLocalFile)
+  const agentUsesStandaloneFile = !activeLocalFile && !activeRepoPath
   const agentLocalRepository = agentUsesLocalRepository ? localGitState.repositories.find((repository) => repository.id === activeLocalFile?.repositoryId) : undefined
   const agentLocalFiles = agentLocalRepository && localAgentContext.repositoryId === agentLocalRepository.id ? localAgentContext.files : []
-  const agentWorkspaceKey = agentUsesLocalRepository && agentLocalRepository ? `local:${agentLocalRepository.id}` : githubConfig ? `remote:${repoKeyOf(githubConfig)}` : 'remote:unbound'
-  const agentWorkspaceLabel = agentUsesLocalRepository && agentLocalRepository ? agentLocalRepository.name : githubConfig ? `${githubConfig.owner}/${githubConfig.repo}` : '未绑定远程仓库'
+  const agentWorkspaceKey = agentUsesStandaloneFile ? `file:${activeDocumentTab?.sourceKey || activeTabId}` : agentUsesLocalRepository && agentLocalRepository ? `local:${agentLocalRepository.id}` : githubConfig ? `remote:${repoKeyOf(githubConfig)}` : 'remote:unbound'
+  const agentWorkspaceLabel = agentUsesStandaloneFile ? fileName : agentUsesLocalRepository && agentLocalRepository ? agentLocalRepository.name : githubConfig ? `${githubConfig.owner}/${githubConfig.repo}` : '未绑定远程仓库'
+  const standaloneAgentFiles: AgentSourceFile[] = agentUsesStandaloneFile ? [{ path: fileName, content: markdown, status: activeTabUnsaved ? 'modified' : 'clean' }] : []
+  const agentFiles = agentUsesStandaloneFile ? standaloneAgentFiles : agentUsesLocalRepository ? agentLocalFiles : cachedFiles.filter((file) => file.status !== 'deleted')
+  const agentActivePath = agentUsesStandaloneFile ? fileName : agentUsesLocalRepository ? activeLocalFile?.path || null : activeRepoPath
+  const agentApplyChange = agentUsesStandaloneFile ? applyStandaloneAgentChange : agentUsesLocalRepository ? applyLocalAgentChange : applyAgentChange
+  const agentCreateFile = agentUsesStandaloneFile ? rejectStandaloneAgentCreate : agentUsesLocalRepository ? createLocalAgentFile : createAgentFile
+  const agentCommit = agentUsesStandaloneFile ? rejectStandaloneAgentCommit : agentUsesLocalRepository ? commitLocalAgentChanges : pushRepositoryChanges
+  const agentGitContext = agentUsesStandaloneFile ? emptyAgentGitContext : agentUsesLocalRepository ? getLocalAgentGitContext : getAgentGitContext
+  const agentFileCount = agentUsesStandaloneFile ? 1 : agentUsesLocalRepository ? agentLocalRepository?.files.length || 0 : remoteFiles.length
+  const agentPaths = agentUsesStandaloneFile ? [fileName] : agentUsesLocalRepository ? agentLocalRepository?.files.map((file) => file.path) || [] : remoteFiles.map((file) => file.path)
+  const loadAgentFiles = agentUsesStandaloneFile ? noopLoadAgentFiles : agentUsesLocalRepository ? loadAllLocalAgentNotes : loadAllRepositoryNotes
   const changedFiles = cachedFiles.filter((file) => file.status !== 'clean')
   const hasRepositoryDrafts = changedFiles.length > 0 || virtualFolders.length > 0
   const repositoryDisplayCachedFiles = repositoryCommitRef ? [] : cachedFiles
@@ -2845,8 +2933,8 @@ ${documentRenderConfig.style}
   const repositoryRefreshLoading = githubBusyAction === 'load-repository' || githubBusyAction === 'refresh' || githubBusyAction === 'switch-branch' || githubBusyAction === 'open-commit'
   const repositoryDiscardLoading = githubBusyAction === 'discard'
   const repositorySyncLoading = githubBusyAction === 'sync'
-  const titleSyncState = activeCachedFile ? githubBusy ? 'syncing' : activeCachedFile.status === 'clean' ? 'synced' : 'dirty' : saveState
-  const titleSyncText = activeCachedFile ? githubBusy ? '同步中' : activeCachedFile.status === 'clean' ? '已同步' : '已暂存但未推送' : saveState === 'saved' ? '当前内容已更新' : '正在更新预览…'
+  const titleSyncState = activeTabUnsaved ? 'dirty' : activeCachedFile ? githubBusy ? 'syncing' : activeCachedFile.status === 'clean' ? 'synced' : 'dirty' : saveState
+  const titleSyncText = activeTabUnsaved ? '未保存' : activeCachedFile ? githubBusy ? '同步中' : activeCachedFile.status === 'clean' ? '已同步' : '已暂存但未推送' : activeDocumentTab?.desktopFileId || activeLocalFile ? '已保存到磁盘' : saveState === 'saved' ? '当前内容已更新' : '正在更新预览…'
   const helpTips = [
     {
       kicker: 'TIP 01 · START',
@@ -2920,7 +3008,7 @@ ${documentRenderConfig.style}
       <nav className="document-tabs-bar" aria-label="打开的文档">
         <div className="document-tabs-scroll" role="tablist">
           {documentTabs.map((tab) => <div className={`document-tab ${tab.id === activeTabId ? 'active' : ''}`} key={tab.id}>
-            <button type="button" className="document-tab-select" role="tab" aria-selected={tab.id === activeTabId} title={tab.name} onClick={() => activateDocumentTab(tab.id)}><Icon name="map" /><span>{tab.name}</span>{(tab.repositoryPath || tab.localPath) && <i title="Git 仓库文档" />}</button>
+            <button type="button" className="document-tab-select" role="tab" aria-selected={tab.id === activeTabId} title={tab.name} onClick={() => activateDocumentTab(tab.id)}><Icon name="map" /><span>{tab.name}</span>{tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab) ? <i className="dirty" title="有未保存的修改" /> : (tab.repositoryPath || tab.localPath || tab.desktopFileId) && <i title={tab.repositoryPath || tab.localPath ? 'Git 仓库文档' : '已保存到磁盘'} />}</button>
             <button type="button" className="document-tab-close" aria-label={`关闭 ${tab.name}`} title="关闭标签" onClick={() => closeDocumentTab(tab.id)}><Icon name="x" /></button>
           </div>)}
         </div>
@@ -2933,9 +3021,9 @@ ${documentRenderConfig.style}
             <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button></div>
             {editorView === 'markdown' ? <>
               <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
-              <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span><span className="editor-status-language">Markdown</span><span className="editor-status-actions">{activeLocalFile && <button type="button" className="editor-local-save" disabled={localGitBusy} onClick={() => void saveActiveLocalDocument()} title="保存到本地 Git 仓库"><Icon name="sync" /><span>保存本地</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
+              <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span>{activeTabUnsaved && <span className="editor-unsaved"><i />未保存</span>}<span className="editor-status-language">Markdown</span><span className="editor-status-actions">{activeLocalFile && <button type="button" className="editor-local-save" disabled={localGitBusy || !activeTabUnsaved} onClick={() => void saveActiveLocalDocument()} title="保存到本地 Git 仓库"><Icon name="sync" /><span>保存</span></button>}{agentUsesStandaloneFile && <button type="button" className="editor-local-save" disabled={!activeTabUnsaved} onClick={() => void saveStandaloneDocument()} title={activeDocumentTab?.desktopFileId ? '保存到原文件' : '下载 Markdown 副本'}><Icon name="download" /><span>{activeDocumentTab?.desktopFileId ? '保存' : '下载副本'}</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
-            </> : editorView === 'agent' ? <AgentPanel workspaceKey={agentWorkspaceKey} workspaceLabel={agentWorkspaceLabel} workspaceKind={agentUsesLocalRepository ? 'local' : 'remote'} files={agentUsesLocalRepository ? agentLocalFiles : cachedFiles.filter((file) => file.status !== 'deleted')} activePath={agentUsesLocalRepository ? activeLocalFile?.path || null : activeRepoPath} onApplyChange={agentUsesLocalRepository ? applyLocalAgentChange : applyAgentChange} onCreateFile={agentUsesLocalRepository ? createLocalAgentFile : createAgentFile} onOpenFile={(path) => { if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentUsesLocalRepository ? commitLocalAgentChanges : pushRepositoryChanges} getGitContext={agentUsesLocalRepository ? getLocalAgentGitContext : getAgentGitContext} remoteFileCount={agentUsesLocalRepository ? agentLocalRepository?.files.length || 0 : remoteFiles.length} remotePaths={agentUsesLocalRepository ? agentLocalRepository?.files.map((file) => file.path) || [] : remoteFiles.map((file) => file.path)} repositoryBranch={agentUsesLocalRepository ? agentLocalRepository?.branch : githubConfig?.branch} onLoadAllFiles={agentUsesLocalRepository ? loadAllLocalAgentNotes : loadAllRepositoryNotes} loadingFiles={agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
+            </> : editorView === 'agent' ? <AgentPanel workspaceKey={agentWorkspaceKey} workspaceLabel={agentWorkspaceLabel} workspaceKind={agentUsesStandaloneFile ? 'file' : agentUsesLocalRepository ? 'local' : 'remote'} repositoryScopeEnabled={!agentUsesStandaloneFile} canCreateFiles={!agentUsesStandaloneFile} canCommit={!agentUsesStandaloneFile} files={agentFiles} activePath={agentActivePath} onApplyChange={agentApplyChange} onCreateFile={agentCreateFile} onOpenFile={(path) => { if (agentUsesStandaloneFile) setEditorView('markdown'); else if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentCommit} getGitContext={agentGitContext} remoteFileCount={agentFileCount} remotePaths={agentPaths} repositoryBranch={agentUsesLocalRepository ? agentLocalRepository?.branch : agentUsesStandaloneFile ? undefined : githubConfig?.branch} onLoadAllFiles={loadAgentFiles} loadingFiles={agentUsesStandaloneFile ? false : agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {repositorySource === 'local' ? !activeLocalRepository ? <div className="repository-unbound"><Icon name="folder" /><strong>尚未打开本地 Git 仓库</strong><span>{desktopApi() ? '只接受经过 Git 校验的文件夹，普通文件夹不会加入。' : '网页端不能直接验证本地 Git 仓库，请使用桌面应用。'}</span><button onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}>管理本地仓库</button></div> : <>
                 <div className="repository-toolbar local-repository-toolbar"><div><strong>{activeLocalRepository.name}</strong><small>{activeLocalRepository.branch} · {activeLocalRepository.remoteLabel || '仅本地'} · {activeLocalRepository.head || '暂无提交'}</small></div><button className="repository-icon-button" title="仓库设置" aria-label="仓库设置" onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title="刷新本地 Git 状态" aria-label="刷新本地 Git 状态" onClick={() => void refreshLocalGitState()} disabled={localGitBusy}><i><Icon name="refresh" className={localGitBusy ? 'loading-icon' : undefined} /></i></button>{activeLocalRepository.remoteName && <button className="repository-icon-button sync-button" title={activeLocalRepository.upstream ? `Push ${activeLocalRepository.aheadCount} 个本地提交` : '发布当前分支到远程'} aria-label="推送本地 Git 仓库" onClick={() => void pushLocalRepository()} disabled={localGitBusy || activeLocalRepository.behindCount > 0}><i><Icon name="sync" className={localGitBusy ? 'loading-icon' : undefined} /></i></button>}</div>
                 {localGitError && <div className="repository-error"><Icon name="warning" />{localGitError}</div>}
@@ -2999,8 +3087,8 @@ ${documentRenderConfig.style}
       {mobileTabsOpen && <div className="mobile-tabs-backdrop" onMouseDown={() => setMobileTabsOpen(false)}>
         <section className="mobile-tabs-sheet" role="dialog" aria-modal="true" aria-label="文档标签" onMouseDown={(event) => event.stopPropagation()}>
           <header><div><strong>文档标签</strong><small>{documentTabs.length} 个打开的文档</small></div><button type="button" className="header-icon" aria-label="关闭文档标签" onClick={() => setMobileTabsOpen(false)}><Icon name="x" /></button></header>
-          <div className="mobile-tabs-list" role="tablist">{documentTabs.map((tab, index) => <article className={tab.id === activeTabId ? 'active' : ''} key={tab.id}>
-            <button type="button" className="mobile-tab-select" role="tab" aria-selected={tab.id === activeTabId} onClick={() => activateDocumentTab(tab.id)}><span><Icon name="map" /><b>{index + 1}</b></span><span><strong>{tab.name}</strong><small>{tab.repositoryPath || tab.localPath ? 'Git 仓库文档' : tab.id === activeTabId ? '当前文档' : 'Markdown 文档'}</small></span></button>
+          <div className="mobile-tabs-list" role="tablist">{documentTabs.map((tab, index) => <article className={`${tab.id === activeTabId ? 'active' : ''} ${tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab) ? 'dirty' : ''}`} key={tab.id}>
+            <button type="button" className="mobile-tab-select" role="tab" aria-selected={tab.id === activeTabId} onClick={() => activateDocumentTab(tab.id)}><span><Icon name="map" /><b>{index + 1}</b></span><span><strong>{tab.name}</strong><small>{tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab) ? '未保存的修改' : tab.repositoryPath || tab.localPath ? 'Git 仓库文档' : tab.desktopFileId ? '已保存到磁盘' : tab.id === activeTabId ? '当前文档' : 'Markdown 文档'}</small></span></button>
             <button type="button" className="mobile-tab-close" aria-label={`关闭 ${tab.name}`} onClick={() => closeDocumentTab(tab.id)}><Icon name="x" /></button>
           </article>)}</div>
           <footer><button type="button" onClick={() => { setMobileTabsOpen(false); void chooseMarkdownFile() }}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />新建标签</button></footer>

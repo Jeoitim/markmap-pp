@@ -1,4 +1,5 @@
 export interface DesktopOpenedFile {
+  id: string
   name: string
   path: string
   content: string
@@ -41,6 +42,7 @@ export interface MarkmapDesktopApi {
   }>
   openExternal(url: string): Promise<boolean>
   openMarkdown(): Promise<DesktopOpenedFile | null>
+  saveOpenedMarkdown(id: string, content: string): Promise<DesktopOpenedFile>
   saveFile(request: { suggestedName: string; mimeType: string; bytes: Uint8Array }): Promise<{ canceled: boolean; path?: string }>
   onOpenedMarkdown(listener: (file: DesktopOpenedFile) => void): () => void
   localGit: {

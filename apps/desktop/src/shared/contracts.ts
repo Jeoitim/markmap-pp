@@ -7,6 +7,7 @@ export interface DesktopAppInfo {
 }
 
 export interface DesktopOpenedFile {
+  id: string;
   name: string;
   path: string;
   content: string;
@@ -71,6 +72,7 @@ export const desktopChannels = {
   openExternal: 'desktop:open-external',
   openMarkdown: 'desktop:open-markdown',
   openedMarkdown: 'desktop:opened-markdown',
+  saveOpenedMarkdown: 'desktop:save-opened-markdown',
   saveFile: 'desktop:save-file',
   localGitGet: 'desktop:local-git-get',
   localGitOpen: 'desktop:local-git-open',
