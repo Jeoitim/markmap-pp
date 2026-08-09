@@ -9,9 +9,11 @@ import '@fontsource-variable/jetbrains-mono'
 import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
-import MarkdownEditor, { type HighlightScheme } from './markdown-editor'
+import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { inspectMarkdown } from './markdown-lint'
+import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
+import { indexRepositoryNote, repositoryLinkHref, repositoryMarkdownLink, resolveHeading, resolveRepositoryLink, rewriteRepositoryLinks } from './repository-links'
 import {
   downloadMarkdown,
   downloadMarkdownAtCommit,
@@ -146,11 +148,28 @@ console.log(message)
 `
 
 type Pane = 'editor' | 'preview'
-type Panel = Pane | 'export' | 'github' | 'help' | null
+type Panel = Pane | 'export' | 'github' | 'help' | 'links' | null
 const HELP_TIP_COUNT = 5
 type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html'
 type ExportTextTheme = 'auto' | 'light' | 'dark'
 type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
+
+type TextSelectionTarget = ({ source: 'editor' } & MarkdownEditorSelection) | {
+  source: 'preview'
+  x: number
+  y: number
+  text: string
+  range: Range
+  nodePath: string
+  contentElement: HTMLElement
+  anchor?: HTMLAnchorElement
+}
+
+interface PendingRepositoryNavigation {
+  path: string
+  fragment: string
+  line?: number
+}
 
 interface AppSettings {
   editorFontSize: number
@@ -652,9 +671,15 @@ export default function MarkmapHooks() {
   const [repositoryTouchDrag, setRepositoryTouchDrag] = useState<{ target: RepositoryTarget; dropFolder: string | null; dragging: boolean; x: number; y: number } | null>(null)
   const [renamingRepositoryTarget, setRenamingRepositoryTarget] = useState<RepositoryTarget | null>(null)
   const [repositoryRenameValue, setRepositoryRenameValue] = useState('')
+  const [selectionMenu, setSelectionMenu] = useState<TextSelectionTarget | null>(null)
+  const [linkPickerSelection, setLinkPickerSelection] = useState<TextSelectionTarget | null>(null)
+  const [linkNotice, setLinkNotice] = useState('')
+  const [pendingRepositoryNavigation, setPendingRepositoryNavigation] = useState<PendingRepositoryNavigation | null>(null)
   const initialMarkdownRef = useRef(markdown)
+  const markdownEditorRef = useRef<MarkdownEditorHandle | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const mmRef = useRef<Markmap | null>(null)
+  const previewNativeContextMenuOnceRef = useRef(false)
   const imageRelayoutTimerRef = useRef<number | null>(null)
   const suppressRepositoryClickRef = useRef(false)
   const repositoryTouchGestureRef = useRef<{
@@ -673,6 +698,8 @@ export default function MarkmapHooks() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const actionsRef = useRef<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
+  const settingsPanelRef = useRef<HTMLElement | null>(null)
+  const panelReturnFocusRef = useRef<HTMLElement | null>(null)
   const resizeWidthRef = useRef(editorWidth)
   const markdownRef = useRef(markdown)
   const historyRef = useRef<string[]>([])
@@ -722,6 +749,30 @@ export default function MarkmapHooks() {
   }, [])
 
   const diagnostics = useMemo(() => inspectMarkdown(markdown), [markdown])
+  const repositoryPaths = useMemo(() => Array.from(new Set([
+    ...remoteFiles.map((file) => file.path),
+    ...cachedFiles.filter((file) => file.status !== 'deleted').map((file) => file.path),
+  ])).sort((first, second) => first.localeCompare(second)), [cachedFiles, remoteFiles])
+  const repositoryIndexes = useMemo(() => cachedFiles
+    .filter((file) => file.status !== 'deleted')
+    .map((file) => indexRepositoryNote(file.path, file.path === activeRepoPath ? markdown : file.content)), [activeRepoPath, cachedFiles, markdown])
+  const repositoryIndexByPath = useMemo(() => new Map(repositoryIndexes.map((index) => [index.path, index])), [repositoryIndexes])
+  const activeRepositoryIndex = activeRepoPath ? repositoryIndexByPath.get(activeRepoPath) : undefined
+  const backlinks = useMemo<BacklinkEntry[]>(() => activeRepoPath ? repositoryIndexes.flatMap((index) => index.path !== activeRepoPath ? index.links.flatMap((link) => link.resolution.kind === 'internal' && link.resolution.path === activeRepoPath
+    ? [{ sourcePath: index.path, line: link.line, label: link.label }]
+    : []) : []) : [], [activeRepoPath, repositoryIndexes])
+  const outgoingLinks = useMemo<OutgoingLinkEntry[]>(() => {
+    const entries: OutgoingLinkEntry[] = []
+    for (const link of activeRepositoryIndex?.links || []) {
+      if (link.resolution.kind === 'external') continue
+      if (link.resolution.kind === 'invalid') { entries.push({ label: link.label, href: link.href, line: link.line, broken: true, reason: link.resolution.reason }); continue }
+      const targetIndex = repositoryIndexByPath.get(link.resolution.path)
+      const missingPath = !repositoryPaths.includes(link.resolution.path)
+      const missingHeading = Boolean(link.resolution.fragment && targetIndex && !resolveHeading(targetIndex, link.resolution.fragment))
+      entries.push({ label: link.label, href: link.href, line: link.line, targetPath: link.resolution.path, broken: missingPath || missingHeading, reason: missingPath ? '目标笔记不存在' : missingHeading ? '目标标题不存在' : undefined })
+    }
+    return entries
+  }, [activeRepositoryIndex, repositoryIndexByPath, repositoryPaths])
   const documentRenderConfig = useMemo(() => buildDocumentRenderConfig(renderedMarkdown), [renderedMarkdown])
   const codeFont = documentRenderConfig.font
   const selectedFontFamily = previewFonts[settings.previewFont].family
@@ -986,6 +1037,133 @@ export default function MarkmapHooks() {
     } finally { setRepositoryLoadingPath(null); setGithubBusyAction(null) }
   }
 
+  const openRepositoryLink = async (href: string, sourcePath = activeRepoPath || fileName) => {
+    const resolution = resolveRepositoryLink(href, sourcePath)
+    if (resolution.kind === 'external') {
+      window.open(resolution.href, '_blank', 'noopener,noreferrer')
+      return
+    }
+    if (resolution.kind === 'invalid') { setLinkNotice(resolution.reason); return }
+    const local = cachedFilesRef.current.find((file) => file.status !== 'deleted' && file.path === resolution.path)
+    const remote = remoteFiles.find((file) => file.path === resolution.path)
+    if (!local && !remote) { setLinkNotice(`找不到仓库笔记：${resolution.path}`); return }
+    setPendingRepositoryNavigation({ path: resolution.path, fragment: resolution.fragment })
+    if (local) activateCachedFile(local)
+    else if (remote) await openRepositoryFile(remote)
+  }
+
+  const openRepositoryLocation = async (path: string, line: number) => {
+    const local = cachedFilesRef.current.find((file) => file.status !== 'deleted' && file.path === path)
+    const remote = remoteFiles.find((file) => file.path === path)
+    if (!local && !remote) { setLinkNotice(`找不到仓库笔记：${path}`); return }
+    setPendingRepositoryNavigation({ path, fragment: '', line })
+    if (local) activateCachedFile(local)
+    else if (remote) await openRepositoryFile(remote)
+  }
+
+  const handlePreviewContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.shiftKey || previewNativeContextMenuOnceRef.current) {
+      previewNativeContextMenuOnceRef.current = false
+      return
+    }
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return
+    const range = selection.getRangeAt(0).cloneRange()
+    const common = range.commonAncestorContainer instanceof HTMLElement ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement
+    const nodeGroup = common?.closest<SVGGElement>('g.markmap-node')
+    const contentElement = nodeGroup?.querySelector<HTMLElement>('foreignObject > div > div')
+    const nodePath = nodeGroup?.dataset.path
+    const text = selection.toString().trim()
+    if (!contentElement || !nodePath || !text || !contentElement.contains(range.commonAncestorContainer)) return
+    event.preventDefault()
+    setSelectionMenu({ source: 'preview', x: event.clientX, y: event.clientY, text, range, nodePath, contentElement, anchor: common?.closest<HTMLAnchorElement>('a') || undefined })
+  }
+
+  const handlePreviewLinkClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null
+    if (!target || !activeRepoPath) return
+    const resolution = resolveRepositoryLink(target.getAttribute('href') || '', activeRepoPath)
+    if (resolution.kind !== 'internal') return
+    event.preventDefault()
+    event.stopPropagation()
+    void openRepositoryLink(target.getAttribute('href') || '', activeRepoPath)
+  }
+
+  const syncPreviewSelection = (selection: Extract<TextSelectionTarget, { source: 'preview' }>) => {
+    const root = mmRef.current?.getData()
+    if (!root) return
+    const update = (node: typeof root): boolean => {
+      if (node.state.path === selection.nodePath) { node.content = selection.contentElement.innerHTML; return true }
+      return node.children.some(update)
+    }
+    if (update(root)) syncFromMap()
+  }
+
+  const copySelection = async (selection: TextSelectionTarget) => {
+    try { await navigator.clipboard.writeText(selection.text); setLinkNotice('已复制所选文字') }
+    catch { setLinkNotice('浏览器未允许读取剪贴板，请使用 Ctrl+C') }
+    setSelectionMenu(null)
+  }
+
+  const cutSelection = async (selection: TextSelectionTarget) => {
+    try { await navigator.clipboard.writeText(selection.text) } catch { setLinkNotice('无法写入剪贴板') }
+    if (selection.source === 'editor') markdownEditorRef.current?.replaceRange(selection.from, selection.to, '')
+    else {
+      selection.range.deleteContents()
+      syncPreviewSelection(selection)
+    }
+    setSelectionMenu(null)
+  }
+
+  const pasteSelection = async (selection: TextSelectionTarget) => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (selection.source === 'editor') markdownEditorRef.current?.replaceRange(selection.from, selection.to, text)
+      else {
+        selection.range.deleteContents()
+        selection.range.insertNode(document.createTextNode(text))
+        syncPreviewSelection(selection)
+      }
+    } catch { setLinkNotice('浏览器未允许读取剪贴板，请使用 Ctrl+V') }
+    setSelectionMenu(null)
+  }
+
+  const removeSelectionLink = (selection: TextSelectionTarget) => {
+    if (selection.source === 'editor') {
+      if (selection.link) markdownEditorRef.current?.replaceRange(selection.link.from, selection.link.to, selection.link.label)
+    } else if (selection.anchor) {
+      selection.anchor.replaceWith(...Array.from(selection.anchor.childNodes))
+      syncPreviewSelection(selection)
+    }
+    setSelectionMenu(null)
+  }
+
+  const chooseRepositoryLink = (selection: TextSelectionTarget, target: LinkTarget) => {
+    const href = repositoryLinkHref(target.path, target.heading?.slug)
+    if (selection.source === 'editor') {
+      if (selection.link) markdownEditorRef.current?.replaceRange(selection.link.destinationFrom, selection.link.destinationTo, href)
+      else markdownEditorRef.current?.replaceRange(selection.from, selection.to, repositoryMarkdownLink(selection.text, target.path, target.heading?.slug))
+    } else if (selection.anchor) {
+      selection.anchor.setAttribute('href', href)
+      syncPreviewSelection(selection)
+    } else {
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.append(selection.range.extractContents())
+      selection.range.insertNode(anchor)
+      syncPreviewSelection(selection)
+    }
+    setLinkPickerSelection(null)
+    setLinkNotice(target.heading ? `已链接到 ${target.path} › ${target.heading.text}` : `已链接到 ${target.path}`)
+  }
+
+  const allowNativeSelectionMenu = (selection: TextSelectionTarget) => {
+    if (selection.source === 'editor') markdownEditorRef.current?.allowNativeContextMenuOnce()
+    else previewNativeContextMenuOnceRef.current = true
+    setSelectionMenu(null)
+    setLinkNotice('已切换到浏览器菜单，请在原位置再次右键；也可按住 Shift 右键直接打开。')
+  }
+
   const cancelRepositorySave = () => {
     setRepositorySaveMode(false)
     setRepositorySaveFolder('')
@@ -1071,7 +1249,9 @@ export default function MarkmapHooks() {
     if (downloaded.length) setCachedFiles((current) => {
       const merged = new Map(current.map((file) => [file.id, file]))
       downloaded.forEach((file) => merged.set(file.id, file))
-      return Array.from(merged.values()).sort((a, b) => a.path.localeCompare(b.path))
+      const files = Array.from(merged.values()).sort((a, b) => a.path.localeCompare(b.path))
+      cachedFilesRef.current = files
+      return files
     })
     return rows.map((row) => ({ sourcePath: row.path, file: downloaded.find((file) => file.path === row.path || file.originalPath === row.remote?.path) })).filter((item): item is { sourcePath: string; file: CachedMarkdownFile } => Boolean(item.file))
   }
@@ -1094,15 +1274,44 @@ export default function MarkmapHooks() {
         const added = file.status === 'added'
         return { previous: file, next: { ...file, id: `${file.repoKey}:${nextPath}`, path: nextPath, originalPath: added ? nextPath : file.originalPath, status: added ? 'added' as const : 'renamed' as const, updatedAt: Date.now() } }
       })
-      await Promise.all(changes.flatMap(({ previous, next }) => [previous ? removeCachedFile(previous.id) : Promise.resolve(), putCachedFile(next)]))
-      setCachedFiles((current) => {
-        const removed = new Set(changes.flatMap(({ previous }) => previous ? [previous.id] : []))
-        return [...current.filter((file) => !removed.has(file.id) && !changes.some(({ next }) => next.id === file.id)), ...changes.map(({ next }) => next)].sort((a, b) => a.path.localeCompare(b.path))
-      })
+      const removed = new Set(changes.flatMap(({ previous }) => previous ? [previous.id] : []))
+      const available = new Map(cachedFilesRef.current.map((file) => [file.id, file]))
+      sources.forEach(({ file }) => available.set(file.id, file))
+      const baseFiles = [...Array.from(available.values()).filter((file) => !removed.has(file.id) && !changes.some(({ next }) => next.id === file.id)), ...changes.map(({ next }) => next)]
+      const sourceBefore = new Map(changes.map(({ previous, next }, index) => [next.id, previous?.path || sources[index].sourcePath]))
+      const mappings = copy ? [] : changes.map(({ previous, next }, index) => ({ oldPath: previous?.path || sources[index].sourcePath, newPath: next.path }))
+      let updatedReferenceCount = 0
+      const nextFiles = baseFiles.map((file) => {
+        let content = file.content
+        let sourcePath = sourceBefore.get(file.id) || file.path
+        if (sourcePath !== file.path) {
+          const rewritten = rewriteRepositoryLinks(content, sourcePath, '__relocated_source__', '__relocated_source__', file.path)
+          content = rewritten.content
+          updatedReferenceCount += rewritten.count
+          sourcePath = file.path
+        }
+        for (const mapping of mappings) {
+          const rewritten = rewriteRepositoryLinks(content, sourcePath, mapping.oldPath, mapping.newPath, file.path)
+          content = rewritten.content
+          updatedReferenceCount += rewritten.count
+          sourcePath = file.path
+        }
+        if (content === file.content) return file
+        return { ...file, content, status: (file.status === 'clean' ? 'modified' : file.status) as CachedMarkdownFile['status'], updatedAt: Date.now() }
+      }).sort((a, b) => a.path.localeCompare(b.path))
+      await Promise.all([
+        ...changes.flatMap(({ previous }) => previous ? [removeCachedFile(previous.id)] : []),
+        ...nextFiles.filter((file) => !available.has(file.id) || available.get(file.id)?.content !== file.content || changes.some(({ next }) => next.id === file.id)).map(putCachedFile),
+      ])
+      cachedFilesRef.current = nextFiles
+      setCachedFiles(nextFiles)
       if (!copy && activeRepoPath && (activeRepoPath === target.path || activeRepoPath.startsWith(`${target.path}/`))) {
         const nextActivePath = `${nextRoot}${activeRepoPath.slice(target.path.length)}`
         setActiveRepoPath(nextActivePath); setFileName(nextActivePath)
       }
+      const activeAfterMove = !copy && activeRepoPath && (activeRepoPath === target.path || activeRepoPath.startsWith(`${target.path}/`)) ? `${nextRoot}${activeRepoPath.slice(target.path.length)}` : activeRepoPath
+      const activeFile = nextFiles.find((file) => file.path === activeAfterMove)
+      if (activeFile && activeFile.content !== markdownRef.current) updateMarkdown(activeFile.content, 'repository-link-rewrite')
       if (target.type === 'folder') {
         const folderPaths = new Set([target.path, ...virtualFolders.filter((folder) => folder.startsWith(`${target.path}/`))])
         visibleRows.filter((row) => row.type === 'folder' && row.path.startsWith(`${target.path}/`)).forEach((row) => folderPaths.add(row.path))
@@ -1110,7 +1319,7 @@ export default function MarkmapHooks() {
         const nextFolders = Array.from(new Set([...(copy ? virtualFolders : virtualFolders.filter((folder) => !folderPaths.has(folder))), ...mapped])).sort()
         setVirtualFolders(nextFolders); saveVirtualFolders(repoKeyOf(githubConfig), nextFolders)
       }
-      setGithubNotice(copy ? '已复制到本地暂存区' : '已移动到本地暂存区')
+      setGithubNotice(`${copy ? '已复制' : '已移动'}到本地暂存区${updatedReferenceCount ? `，并更新 ${updatedReferenceCount} 处笔记链接` : ''}`)
     } catch (error) {
       setGithubError(error instanceof Error ? error.message : '文件操作失败')
     } finally { setGithubBusyAction(null) }
@@ -1575,6 +1784,23 @@ export default function MarkmapHooks() {
   }, [activePanel])
 
   useEffect(() => {
+    if (!activePanel) return
+    panelReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const frame = window.requestAnimationFrame(() => settingsPanelRef.current?.focus())
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (repositorySaveMode) cancelRepositorySave()
+      setActivePanel(null)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('keydown', closeOnEscape)
+      panelReturnFocusRef.current?.focus()
+    }
+  }, [activePanel, repositorySaveMode])
+
+  useEffect(() => {
     if (!githubConfig) return
     const key = repoKeyOf(githubConfig)
     void listCachedFiles(key).then((files) => {
@@ -1592,6 +1818,53 @@ export default function MarkmapHooks() {
     window.addEventListener('keydown', closeOnEscape)
     return () => { window.removeEventListener('pointerdown', closePopovers); window.removeEventListener('keydown', closeOnEscape) }
   }, [repositoryMenu, repositoryHistory])
+
+  useEffect(() => {
+    if (!selectionMenu) return
+    const closeMenu = () => setSelectionMenu(null)
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeMenu() }
+    window.addEventListener('pointerdown', closeMenu)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => { window.removeEventListener('pointerdown', closeMenu); window.removeEventListener('keydown', closeOnEscape) }
+  }, [selectionMenu])
+
+  useEffect(() => {
+    if (!linkNotice) return
+    const timer = window.setTimeout(() => setLinkNotice(''), 4200)
+    return () => window.clearTimeout(timer)
+  }, [linkNotice])
+
+  useEffect(() => {
+    if (!pendingRepositoryNavigation || activeRepoPath !== pendingRepositoryNavigation.path) return
+    let disposed = false
+    const timer = window.setTimeout(() => {
+      if (disposed) return
+      const currentIndex = indexRepositoryNote(activeRepoPath, markdown)
+      const line = pendingRepositoryNavigation.line || resolveHeading(currentIndex, pendingRepositoryNavigation.fragment)?.line || 1
+      markdownEditorRef.current?.revealLine(line)
+      const root = mmRef.current?.getData()
+      if (root) {
+        let target: typeof root | undefined
+        let targetAncestors: Array<typeof root> = []
+        const sourceLine = line - 1
+        const visit = (node: typeof root, ancestors: Array<typeof root>) => {
+          if (node.content.includes(`data-lines="${sourceLine},`)) { target = node; targetAncestors = ancestors; return }
+          for (const child of node.children || []) { if (!target) visit(child, [...ancestors, node]) }
+        }
+        visit(root, [])
+        if (target) {
+          targetAncestors.forEach((node) => { if (node.payload?.fold) node.payload.fold = 0 })
+          void mmRef.current?.renderData().then(async () => {
+            if (!target) return
+            await mmRef.current?.setHighlight(target)
+            await mmRef.current?.centerNode(target, { left: 48, right: 48, top: 48, bottom: 48 })
+          })
+        }
+      }
+      setPendingRepositoryNavigation(null)
+    }, 280)
+    return () => { disposed = true; window.clearTimeout(timer) }
+  }, [activeRepoPath, markdown, pendingRepositoryNavigation])
 
   useEffect(() => {
     if (!activeRepoPath) return
@@ -2284,9 +2557,9 @@ ${documentRenderConfig.style}
       <section ref={workspaceRef} className={`workspace mobile-${mobilePane}`} style={{ gridTemplateColumns: gridColumns }}>
         <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' || editorView === 'agent' ? 'repository-view' : ''}`} aria-label="Markdown 编辑器">
           {!editorCollapsed && <>
-            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button></div>
+            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div>{editorView === 'markdown' && activeRepoPath && <button type="button" className="header-icon note-links-button" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="branch" />{backlinks.length > 0 && <b>{backlinks.length}</b>}</button>}<button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button></div>
             {editorView === 'markdown' ? <>
-              <MarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} />
+              <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span><span className="editor-status-language">Markdown</span><button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
             </> : editorView === 'agent' ? <AgentPanel files={cachedFiles.filter((file) => file.status !== 'deleted')} activePath={activeRepoPath} onApplyChange={applyAgentChange} onCreateFile={createAgentFile} onOpenFile={(path) => { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) }} onCommit={pushRepositoryChanges} getGitContext={getAgentGitContext} remoteFileCount={remoteFiles.length} remotePaths={remoteFiles.map((file) => file.path)} repositoryBranch={githubConfig?.branch} onLoadAllFiles={loadAllRepositoryNotes} loadingFiles={githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
@@ -2338,14 +2611,18 @@ ${documentRenderConfig.style}
         <section className="preview-pane" aria-label="思维导图预览">
           <>
             <div className="pane-header"><div><span className="status-light purple" />思维导图</div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>Markdown</span></button><button type="button" className="fit-button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button className="header-icon" onClick={() => setActivePanel('preview')} title="预览设置"><Icon name="settings" /></button></div>
-            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
+            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClick={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
           </>
         </section>
       </section>
 
+      {selectionMenu && <SelectionActionMenu x={selectionMenu.x} y={selectionMenu.y} text={selectionMenu.text} hasLink={selectionMenu.source === 'editor' ? Boolean(selectionMenu.link) : Boolean(selectionMenu.anchor)} onCopy={() => void copySelection(selectionMenu)} onCut={() => void cutSelection(selectionMenu)} onPaste={() => void pasteSelection(selectionMenu)} onLink={() => { setLinkPickerSelection(selectionMenu); setSelectionMenu(null) }} onRemoveLink={() => removeSelectionLink(selectionMenu)} onNativeMenu={() => allowNativeSelectionMenu(selectionMenu)} />}
+      {linkPickerSelection && <RepositoryLinkPicker selectionText={linkPickerSelection.text} paths={repositoryPaths} indexes={repositoryIndexes} onChoose={(target) => chooseRepositoryLink(linkPickerSelection, target)} onCreate={async (path) => (await createAgentFile(path, `# ${linkPickerSelection.text}\n`)).ok} onClose={() => setLinkPickerSelection(null)} />}
+      {linkNotice && <div className="link-notice" role="status" aria-live="polite">{linkNotice}</div>}
+
       {activePanel && <div className="panel-backdrop" onMouseDown={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }}>
-        <section className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><strong>{activePanel === 'editor' ? '编辑器设置' : activePanel === 'preview' ? '预览设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : exportTab === 'repository' ? '另存到 Git 仓库' : '导出思维导图'}</strong>{activePanel !== 'help' && <small>{activePanel === 'export' ? exportTab === 'repository' ? '选择仓库位置并暂存当前 Markdown' : '选择格式与清晰度' : activePanel === 'github' ? '本地暂存，确认后一次提交并推送' : '更改会立即生效'}</small>}</div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />恢复默认设置</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label="关闭"><Icon name="x" /></button></div></header>
+        <section ref={settingsPanelRef} tabIndex={-1} className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><strong>{activePanel === 'editor' ? '编辑器设置' : activePanel === 'preview' ? '预览设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'links' ? '笔记链接' : exportTab === 'repository' ? '另存到 Git 仓库' : '导出思维导图'}</strong>{activePanel !== 'help' && <small>{activePanel === 'export' ? exportTab === 'repository' ? '选择仓库位置并暂存当前 Markdown' : '选择格式与清晰度' : activePanel === 'github' ? '本地暂存，确认后一次提交并推送' : activePanel === 'links' ? '反向链接、出站链接与失效目标' : '更改会立即生效'}</small>}</div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />恢复默认设置</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label="关闭"><Icon name="x" /></button></div></header>
           {activePanel === 'github' && <div className="github-body">
             {!githubConfig ? <div className="github-bind-form">
               <label className="field"><span>仓库</span><input type="text" value={repositoryInput} onChange={(event) => setRepositoryInput(event.target.value)} placeholder="owner/repository" /></label>
@@ -2362,6 +2639,7 @@ ${documentRenderConfig.style}
               <button className="github-unbind" type="button" onClick={() => { cancelRepositorySave(); saveGitHubConfig(null); setGithubConfig(null); setRemoteFiles([]); setRemoteHead(''); setEditorView('markdown'); setGithubNotice('') }}>解除仓库绑定</button>
             </div>}
           </div>}
+          {activePanel === 'links' && activeRepoPath && <NoteLinksPanel embedded activePath={activeRepoPath} backlinks={backlinks} outgoing={outgoingLinks} indexedCount={repositoryIndexes.length} totalCount={repositoryPaths.length} loading={githubBusyAction === 'load-repository'} onOpenBacklink={(entry) => { setActivePanel(null); void openRepositoryLocation(entry.sourcePath, entry.line) }} onOpenOutgoing={(entry) => { if (!entry.broken) { setActivePanel(null); void openRepositoryLink(entry.href) } }} onIndexAll={() => void loadAllRepositoryNotes()} />}
           {activePanel === 'help' && <div className="help-body">
             <div className="help-tip-stage" role="region" aria-roledescription="carousel" aria-label="使用说明提示卡片" onTouchStart={startHelpSwipe} onTouchEnd={endHelpSwipe}>
               <button type="button" className="help-tip-nav" onClick={() => moveHelpTip(-1)} aria-label="上一条说明"><Icon name="chevron-left" /></button>

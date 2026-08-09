@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { indentWithTab } from '@codemirror/commands'
 import { Compartment } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
@@ -8,6 +8,7 @@ import { EditorView, keymap } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import { inspectMarkdown } from './markdown-lint'
+import { findMarkdownLinkAt, type ParsedMarkdownLink } from './repository-links'
 
 export type HighlightScheme = 'violet' | 'github' | 'solarized'
 
@@ -60,17 +61,73 @@ interface MarkdownEditorProps {
   fontFamily: string
   fontWeight: number
   scheme: HighlightScheme
+  onSelectionContextMenu?: (selection: MarkdownEditorSelection) => void
+  onOpenLink?: (href: string) => void
 }
 
-export default function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, scheme }: MarkdownEditorProps) {
+export interface MarkdownEditorSelection {
+  x: number
+  y: number
+  from: number
+  to: number
+  text: string
+  link?: ParsedMarkdownLink
+}
+
+export interface MarkdownEditorHandle {
+  allowNativeContextMenuOnce: () => void
+  focus: () => void
+  getSelection: () => { from: number; to: number; text: string }
+  replaceRange: (from: number, to: number, insert: string) => void
+  replaceSelection: (insert: string) => void
+  revealLine: (line: number) => void
+}
+
+const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, scheme, onSelectionContextMenu, onOpenLink }, ref) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
+  const onSelectionContextMenuRef = useRef(onSelectionContextMenu)
+  const onOpenLinkRef = useRef(onOpenLink)
+  const nativeContextMenuOnceRef = useRef(false)
   const themeCompartment = useRef(new Compartment())
   const externalUpdate = useRef(false)
   const initialConfigRef = useRef({ value, dark, fontSize, fontFamily, fontWeight, scheme })
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
+  useEffect(() => { onSelectionContextMenuRef.current = onSelectionContextMenu }, [onSelectionContextMenu])
+  useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
+
+  useImperativeHandle(ref, () => ({
+    allowNativeContextMenuOnce: () => { nativeContextMenuOnceRef.current = true },
+    focus: () => viewRef.current?.focus(),
+    getSelection: () => {
+      const view = viewRef.current
+      if (!view) return { from: 0, to: 0, text: '' }
+      const { from, to } = view.state.selection.main
+      return { from, to, text: view.state.sliceDoc(from, to) }
+    },
+    replaceRange: (from, to, insert) => {
+      const view = viewRef.current
+      if (!view) return
+      view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, scrollIntoView: true })
+      view.focus()
+    },
+    replaceSelection: (insert) => {
+      const view = viewRef.current
+      if (!view) return
+      const { from, to } = view.state.selection.main
+      view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, scrollIntoView: true })
+      view.focus()
+    },
+    revealLine: (lineNumber) => {
+      const view = viewRef.current
+      if (!view) return
+      const line = view.state.doc.line(Math.max(1, Math.min(lineNumber, view.state.doc.lines)))
+      view.dispatch({ selection: { anchor: line.from, head: line.to }, effects: EditorView.scrollIntoView(line.from, { y: 'center' }) })
+      view.focus()
+    },
+  }), [])
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -85,6 +142,30 @@ export default function MarkdownEditor({ value, onChange, dark, fontSize, fontFa
         EditorView.lineWrapping,
         keymap.of([indentWithTab]),
         EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: 'false' }),
+        EditorView.domEventHandlers({
+          contextmenu: (event, editor) => {
+            if (event.shiftKey || nativeContextMenuOnceRef.current) {
+              nativeContextMenuOnceRef.current = false
+              return false
+            }
+            const { from, to } = editor.state.selection.main
+            if (from === to) return false
+            event.preventDefault()
+            const markdownValue = editor.state.doc.toString()
+            onSelectionContextMenuRef.current?.({ x: event.clientX, y: event.clientY, from, to, text: editor.state.sliceDoc(from, to), link: findMarkdownLinkAt(markdownValue, from) })
+            return true
+          },
+          click: (event, editor) => {
+            if (!event.metaKey && !event.ctrlKey) return false
+            const position = editor.posAtCoords({ x: event.clientX, y: event.clientY })
+            if (position === null) return false
+            const link = findMarkdownLinkAt(editor.state.doc.toString(), position)
+            if (!link) return false
+            event.preventDefault()
+            onOpenLinkRef.current?.(link.href)
+            return true
+          },
+        }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !externalUpdate.current) onChangeRef.current(update.state.doc.toString())
         }),
@@ -111,4 +192,6 @@ export default function MarkdownEditor({ value, onChange, dark, fontSize, fontFa
   }, [dark, fontSize, fontFamily, fontWeight, scheme])
 
   return <div className="code-editor" ref={hostRef} />
-}
+})
+
+export default MarkdownEditor
