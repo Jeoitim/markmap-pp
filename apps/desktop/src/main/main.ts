@@ -26,11 +26,20 @@ import {
   installUpdate,
 } from './updates.js';
 import {
-  getWorkspaceInfo,
-  readWorkspaceMarkdown,
-  selectWorkspace,
-  writeWorkspaceMarkdown,
-} from './workspace.js';
+  commitLocalGitMarkdown,
+  forgetLocalGitRepository,
+  getLocalGitState,
+  openLocalGitRepository,
+  pushLocalGitRepository,
+  readLocalGitMarkdown,
+  selectLocalGitRepository,
+  writeLocalGitMarkdown,
+} from './local-git.js';
+import {
+  getSecureValue,
+  removeSecureValue,
+  setSecureValue,
+} from './secure-store.js';
 
 const appScheme = 'markmap';
 const appHost = 'app';
@@ -220,30 +229,95 @@ function registerIpc() {
       return { canceled: false, path: result.filePath };
     },
   );
-  ipcMain.handle(desktopChannels.workspaceGet, async (event) => {
+  ipcMain.handle(desktopChannels.localGitGet, async (event) => {
     assertTrusted(event);
-    return getWorkspaceInfo();
+    return getLocalGitState();
   });
-  ipcMain.handle(desktopChannels.workspaceSelect, async (event) => {
+  ipcMain.handle(desktopChannels.localGitOpen, async (event) => {
     assertTrusted(event);
     const window = BrowserWindow.fromWebContents(event.sender);
-    return window ? selectWorkspace(window) : null;
+    return window ? openLocalGitRepository(window) : null;
   });
   ipcMain.handle(
-    desktopChannels.workspaceRead,
-    async (event, relativePath: unknown) => {
+    desktopChannels.localGitSelect,
+    async (event, id: unknown) => {
       assertTrusted(event);
-      if (typeof relativePath !== 'string') throw new Error('文件路径无效');
-      return readWorkspaceMarkdown(relativePath);
+      if (typeof id !== 'string') throw new Error('仓库标识无效');
+      return selectLocalGitRepository(id);
     },
   );
   ipcMain.handle(
-    desktopChannels.workspaceWrite,
-    async (event, relativePath: unknown, content: unknown) => {
+    desktopChannels.localGitForget,
+    async (event, id: unknown) => {
       assertTrusted(event);
-      if (typeof relativePath !== 'string' || typeof content !== 'string')
+      if (typeof id !== 'string') throw new Error('仓库标识无效');
+      return forgetLocalGitRepository(id);
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.localGitRead,
+    async (event, id: unknown, relativePath: unknown) => {
+      assertTrusted(event);
+      if (typeof id !== 'string' || typeof relativePath !== 'string')
+        throw new Error('文件路径无效');
+      return readLocalGitMarkdown(id, relativePath);
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.localGitWrite,
+    async (
+      event,
+      id: unknown,
+      relativePath: unknown,
+      content: unknown,
+    ) => {
+      assertTrusted(event);
+      if (
+        typeof id !== 'string' ||
+        typeof relativePath !== 'string' ||
+        typeof content !== 'string'
+      )
         throw new Error('写入参数无效');
-      return writeWorkspaceMarkdown(relativePath, content);
+      return writeLocalGitMarkdown(id, relativePath, content);
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.localGitCommit,
+    async (event, id: unknown, message: unknown) => {
+      assertTrusted(event);
+      if (typeof id !== 'string' || typeof message !== 'string')
+        throw new Error('提交参数无效');
+      return commitLocalGitMarkdown(id, message);
+    },
+  );
+  ipcMain.handle(desktopChannels.localGitPush, async (event, id: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string') throw new Error('仓库标识无效');
+    return pushLocalGitRepository(id);
+  });
+  ipcMain.handle(
+    desktopChannels.secureCacheGet,
+    async (event, key: unknown) => {
+      assertTrusted(event);
+      if (typeof key !== 'string') throw new Error('安全缓存键无效');
+      return getSecureValue(key);
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.secureCacheSet,
+    async (event, key: unknown, value: unknown) => {
+      assertTrusted(event);
+      if (typeof key !== 'string' || typeof value !== 'string')
+        throw new Error('安全缓存参数无效');
+      await setSecureValue(key, value);
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.secureCacheRemove,
+    async (event, key: unknown) => {
+      assertTrusted(event);
+      if (typeof key !== 'string') throw new Error('安全缓存键无效');
+      await removeSecureValue(key);
     },
   );
   ipcMain.handle(desktopChannels.updateGetState, (event) => {

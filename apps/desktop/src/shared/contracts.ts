@@ -23,15 +23,31 @@ export interface DesktopSaveResult {
   path?: string;
 }
 
-export interface DesktopWorkspaceEntry {
+export interface DesktopLocalGitFile {
   path: string;
   size: number;
   updatedAt: number;
 }
 
-export interface DesktopWorkspaceInfo {
-  root: string | null;
-  files: DesktopWorkspaceEntry[];
+export interface DesktopLocalGitRepository {
+  id: string;
+  name: string;
+  root: string;
+  branch: string;
+  head: string;
+  changedCount: number;
+  remoteName: string | null;
+  remoteLabel: string | null;
+  upstream: string | null;
+  aheadCount: number;
+  behindCount: number;
+  files: DesktopLocalGitFile[];
+  lastOpenedAt: number;
+}
+
+export interface DesktopLocalGitState {
+  activeId: string | null;
+  repositories: DesktopLocalGitRepository[];
 }
 
 export type DesktopUpdateStatus =
@@ -56,10 +72,17 @@ export const desktopChannels = {
   openMarkdown: 'desktop:open-markdown',
   openedMarkdown: 'desktop:opened-markdown',
   saveFile: 'desktop:save-file',
-  workspaceGet: 'desktop:workspace-get',
-  workspaceSelect: 'desktop:workspace-select',
-  workspaceRead: 'desktop:workspace-read',
-  workspaceWrite: 'desktop:workspace-write',
+  localGitGet: 'desktop:local-git-get',
+  localGitOpen: 'desktop:local-git-open',
+  localGitSelect: 'desktop:local-git-select',
+  localGitForget: 'desktop:local-git-forget',
+  localGitRead: 'desktop:local-git-read',
+  localGitWrite: 'desktop:local-git-write',
+  localGitCommit: 'desktop:local-git-commit',
+  localGitPush: 'desktop:local-git-push',
+  secureCacheGet: 'desktop:secure-cache-get',
+  secureCacheSet: 'desktop:secure-cache-set',
+  secureCacheRemove: 'desktop:secure-cache-remove',
   updateGetState: 'desktop:update-get-state',
   updateCheck: 'desktop:update-check',
   updateInstall: 'desktop:update-install',

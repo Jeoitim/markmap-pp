@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DesktopAppInfo, DesktopOpenedFile, DesktopSaveRequest, DesktopSaveResult, DesktopUpdateState, DesktopWorkspaceInfo } from '../shared/contracts.js'
+import type { DesktopAppInfo, DesktopLocalGitRepository, DesktopLocalGitState, DesktopOpenedFile, DesktopSaveRequest, DesktopSaveResult, DesktopUpdateState } from '../shared/contracts.js'
 
 const desktopChannels = {
   appInfo: 'desktop:app-info',
@@ -7,10 +7,17 @@ const desktopChannels = {
   openMarkdown: 'desktop:open-markdown',
   openedMarkdown: 'desktop:opened-markdown',
   saveFile: 'desktop:save-file',
-  workspaceGet: 'desktop:workspace-get',
-  workspaceSelect: 'desktop:workspace-select',
-  workspaceRead: 'desktop:workspace-read',
-  workspaceWrite: 'desktop:workspace-write',
+  localGitGet: 'desktop:local-git-get',
+  localGitOpen: 'desktop:local-git-open',
+  localGitSelect: 'desktop:local-git-select',
+  localGitForget: 'desktop:local-git-forget',
+  localGitRead: 'desktop:local-git-read',
+  localGitWrite: 'desktop:local-git-write',
+  localGitCommit: 'desktop:local-git-commit',
+  localGitPush: 'desktop:local-git-push',
+  secureCacheGet: 'desktop:secure-cache-get',
+  secureCacheSet: 'desktop:secure-cache-set',
+  secureCacheRemove: 'desktop:secure-cache-remove',
   updateGetState: 'desktop:update-get-state',
   updateCheck: 'desktop:update-check',
   updateInstall: 'desktop:update-install',
@@ -27,11 +34,20 @@ const api = {
     ipcRenderer.on(desktopChannels.openedMarkdown, handler)
     return () => ipcRenderer.removeListener(desktopChannels.openedMarkdown, handler)
   },
-  workspace: {
-    get: () => ipcRenderer.invoke(desktopChannels.workspaceGet) as Promise<DesktopWorkspaceInfo>,
-    select: () => ipcRenderer.invoke(desktopChannels.workspaceSelect) as Promise<DesktopWorkspaceInfo | null>,
-    read: (relativePath: string) => ipcRenderer.invoke(desktopChannels.workspaceRead, relativePath) as Promise<{ path: string; content: string }>,
-    write: (relativePath: string, content: string) => ipcRenderer.invoke(desktopChannels.workspaceWrite, relativePath, content) as Promise<{ path: string }>,
+  localGit: {
+    get: () => ipcRenderer.invoke(desktopChannels.localGitGet) as Promise<DesktopLocalGitState>,
+    open: () => ipcRenderer.invoke(desktopChannels.localGitOpen) as Promise<DesktopLocalGitState | null>,
+    select: (id: string) => ipcRenderer.invoke(desktopChannels.localGitSelect, id) as Promise<DesktopLocalGitState>,
+    forget: (id: string) => ipcRenderer.invoke(desktopChannels.localGitForget, id) as Promise<DesktopLocalGitState>,
+    read: (id: string, relativePath: string) => ipcRenderer.invoke(desktopChannels.localGitRead, id, relativePath) as Promise<{ path: string; content: string }>,
+    write: (id: string, relativePath: string, content: string) => ipcRenderer.invoke(desktopChannels.localGitWrite, id, relativePath, content) as Promise<{ path: string; repository: DesktopLocalGitRepository }>,
+    commit: (id: string, message: string) => ipcRenderer.invoke(desktopChannels.localGitCommit, id, message) as Promise<DesktopLocalGitRepository>,
+    push: (id: string) => ipcRenderer.invoke(desktopChannels.localGitPush, id) as Promise<DesktopLocalGitRepository>,
+  },
+  secureCache: {
+    get: (key: string) => ipcRenderer.invoke(desktopChannels.secureCacheGet, key) as Promise<string | null>,
+    set: (key: string, value: string) => ipcRenderer.invoke(desktopChannels.secureCacheSet, key, value) as Promise<void>,
+    remove: (key: string) => ipcRenderer.invoke(desktopChannels.secureCacheRemove, key) as Promise<void>,
   },
   updates: {
     getState: () => ipcRenderer.invoke(desktopChannels.updateGetState) as Promise<DesktopUpdateState>,

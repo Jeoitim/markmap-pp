@@ -4,15 +4,31 @@ export interface DesktopOpenedFile {
   content: string
 }
 
-export interface DesktopWorkspaceEntry {
+export interface DesktopLocalGitFile {
   path: string
   size: number
   updatedAt: number
 }
 
-export interface DesktopWorkspaceInfo {
-  root: string | null
-  files: DesktopWorkspaceEntry[]
+export interface DesktopLocalGitRepository {
+  id: string
+  name: string
+  root: string
+  branch: string
+  head: string
+  changedCount: number
+  remoteName: string | null
+  remoteLabel: string | null
+  upstream: string | null
+  aheadCount: number
+  behindCount: number
+  files: DesktopLocalGitFile[]
+  lastOpenedAt: number
+}
+
+export interface DesktopLocalGitState {
+  activeId: string | null
+  repositories: DesktopLocalGitRepository[]
 }
 
 export interface MarkmapDesktopApi {
@@ -27,11 +43,20 @@ export interface MarkmapDesktopApi {
   openMarkdown(): Promise<DesktopOpenedFile | null>
   saveFile(request: { suggestedName: string; mimeType: string; bytes: Uint8Array }): Promise<{ canceled: boolean; path?: string }>
   onOpenedMarkdown(listener: (file: DesktopOpenedFile) => void): () => void
-  workspace: {
-    get(): Promise<DesktopWorkspaceInfo>
-    select(): Promise<DesktopWorkspaceInfo | null>
-    read(relativePath: string): Promise<{ path: string; content: string }>
-    write(relativePath: string, content: string): Promise<{ path: string }>
+  localGit: {
+    get(): Promise<DesktopLocalGitState>
+    open(): Promise<DesktopLocalGitState | null>
+    select(id: string): Promise<DesktopLocalGitState>
+    forget(id: string): Promise<DesktopLocalGitState>
+    read(id: string, relativePath: string): Promise<{ path: string; content: string }>
+    write(id: string, relativePath: string, content: string): Promise<{ path: string; repository: DesktopLocalGitRepository }>
+    commit(id: string, message: string): Promise<DesktopLocalGitRepository>
+    push(id: string): Promise<DesktopLocalGitRepository>
+  }
+  secureCache: {
+    get(key: string): Promise<string | null>
+    set(key: string, value: string): Promise<void>
+    remove(key: string): Promise<void>
   }
   updates: {
     getState(): Promise<{

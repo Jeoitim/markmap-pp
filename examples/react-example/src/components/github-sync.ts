@@ -5,6 +5,12 @@ export interface GitHubConfig {
   token: string
 }
 
+export interface GitHubRepositoryProfile {
+  id: string
+  config: GitHubConfig
+  updatedAt: number
+}
+
 export interface RemoteMarkdownFile {
   path: string
   sha: string
@@ -62,6 +68,10 @@ export function repoKeyOf(config: GitHubConfig) {
   return `${config.owner}/${config.repo}@${config.branch}`
 }
 
+export function repositoryProfileId(config: GitHubConfig) {
+  return `${config.owner}/${config.repo}`.toLowerCase()
+}
+
 export function loadGitHubConfig(): GitHubConfig | null {
   try {
     const value = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null') as GitHubConfig | null
@@ -72,6 +82,12 @@ export function loadGitHubConfig(): GitHubConfig | null {
 }
 
 export function saveGitHubConfig(config: GitHubConfig | null) {
+  const secureCache = window.markmapDesktop?.secureCache
+  if (secureCache) {
+    void (config ? secureCache.set('github-config', JSON.stringify(config)) : secureCache.remove('github-config'))
+    try { localStorage.removeItem(CONFIG_KEY) } catch { /* storage may be disabled */ }
+    return
+  }
   void saveLocalSetting('github-config', config).then(() => {
     try { localStorage.removeItem(CONFIG_KEY) } catch { /* storage may be disabled */ }
   })
@@ -137,13 +153,50 @@ export async function saveLocalSetting<T>(id: string, value: T | null) {
 
 /** Reads the IndexedDB value and migrates the legacy localStorage token once. */
 export async function loadStoredGitHubConfig(): Promise<GitHubConfig | null> {
+  const secureCache = window.markmapDesktop?.secureCache
+  if (secureCache) {
+    const serialized = await secureCache.get('github-config')
+    if (serialized) {
+      const stored = JSON.parse(serialized) as GitHubConfig
+      if (stored?.owner && stored.repo && stored.branch && stored.token) return stored
+    }
+  }
   const stored = await loadLocalSetting<GitHubConfig>('github-config')
-  if (stored?.owner && stored.repo && stored.branch && stored.token) return stored
+  if (stored?.owner && stored.repo && stored.branch && stored.token) {
+    if (secureCache) {
+      await secureCache.set('github-config', JSON.stringify(stored))
+      await saveLocalSetting('github-config', null)
+    }
+    return stored
+  }
   const legacy = loadGitHubConfig()
   if (!legacy) return null
-  await saveLocalSetting('github-config', legacy)
+  if (secureCache) await secureCache.set('github-config', JSON.stringify(legacy))
+  else await saveLocalSetting('github-config', legacy)
   try { localStorage.removeItem(CONFIG_KEY) } catch { /* storage may be disabled */ }
   return legacy
+}
+
+export async function loadStoredGitHubProfiles(): Promise<GitHubRepositoryProfile[]> {
+  const secureCache = window.markmapDesktop?.secureCache
+  const serialized = secureCache
+    ? await secureCache.get('github-profiles')
+    : await loadLocalSetting<string>('github-profiles')
+  try {
+    const profiles = JSON.parse(serialized || '[]') as GitHubRepositoryProfile[]
+    return profiles
+      .filter((profile) => profile?.id && profile.config?.owner && profile.config.repo && profile.config.branch && profile.config.token)
+      .slice(0, 20)
+  } catch {
+    return []
+  }
+}
+
+export async function saveStoredGitHubProfiles(profiles: GitHubRepositoryProfile[]) {
+  const serialized = JSON.stringify(profiles.slice(0, 20))
+  const secureCache = window.markmapDesktop?.secureCache
+  if (secureCache) await secureCache.set('github-profiles', serialized)
+  else await saveLocalSetting('github-profiles', serialized)
 }
 
 async function cacheTransaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason?: unknown) => void) => void) {
