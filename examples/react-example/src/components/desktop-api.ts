@@ -15,6 +15,7 @@ export interface DesktopLocalGitRepository {
   id: string
   name: string
   root: string
+  isGitRepository: boolean
   branch: string
   head: string
   changedCount: number

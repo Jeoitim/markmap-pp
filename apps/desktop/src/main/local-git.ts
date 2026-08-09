@@ -156,7 +156,28 @@ async function inspectRepository(
   root: string,
 ): Promise<DesktopLocalGitRepository> {
   const realRoot = await fs.realpath(root);
-  const gitRoot = await fs.realpath(await runGit(realRoot, ['rev-parse', '--show-toplevel']));
+  const gitRoot = await runGit(realRoot, ['rev-parse', '--show-toplevel'])
+    .then((value) => fs.realpath(value))
+    .catch(() => null);
+  if (!gitRoot) {
+    return {
+      id: repositoryId(realRoot),
+      name: path.basename(realRoot),
+      root: realRoot,
+      isGitRepository: false,
+      branch: '',
+      head: '',
+      changedCount: 0,
+      markdownChangedCount: 0,
+      remoteName: null,
+      remoteLabel: null,
+      upstream: null,
+      aheadCount: 0,
+      behindCount: 0,
+      files: await listMarkdownFiles(realRoot),
+      lastOpenedAt: Date.now(),
+    };
+  }
   const branch = (await runGit(gitRoot, ['branch', '--show-current'])) || 'HEAD';
   const head = await runGit(gitRoot, ['rev-parse', '--short', 'HEAD']).catch(
     () => '',
@@ -201,6 +222,7 @@ async function inspectRepository(
     id: repositoryId(gitRoot),
     name: path.basename(gitRoot),
     root: gitRoot,
+    isGitRepository: true,
     branch,
     head,
     changedCount: status ? status.split(/\r?\n/).filter(Boolean).length : 0,
@@ -269,18 +291,11 @@ export async function getLocalGitState(): Promise<DesktopLocalGitState> {
 export async function openLocalGitRepository(window: BrowserWindow) {
   const result = await dialog.showOpenDialog(window, {
     properties: ['openDirectory'],
-    title: '打开本地 Git 仓库',
-    buttonLabel: '打开 Git 仓库',
+    title: '打开本地文件夹',
+    buttonLabel: '打开文件夹',
   });
   if (result.canceled || !result.filePaths[0]) return null;
-  let repository: DesktopLocalGitRepository;
-  try {
-    repository = await inspectRepository(result.filePaths[0]);
-  } catch (error) {
-    if (error instanceof Error && /ENOENT|not found/i.test(error.message))
-      throw new Error('未检测到 Git 命令，无法进行 Git 版本管理操作');
-    throw new Error('所选文件夹不是 Git 仓库，无法进行 Git 版本管理操作');
-  }
+  const repository = await inspectRepository(result.filePaths[0]);
   const state = await readRepositoryState();
   const stored = {
     id: repository.id,
@@ -326,6 +341,8 @@ export async function readLocalGitMarkdown(id: string, relativePath: string) {
 
 export async function readLocalGitHistory(id: string, relativePaths: string[]) {
   const { repository } = await resolveStoredRepository(id);
+  if (!repository.isGitRepository)
+    throw new Error('当前文件夹不是 Git 仓库，无法查看历史提交记录');
   const paths = relativePaths.slice(0, 20).map(safeRelativeMarkdownPath);
   return runGit(repository.root, [
     'log',
@@ -362,6 +379,7 @@ export async function writeLocalGitMarkdown(
 
 export async function refreshLocalGitRepository(id: string) {
   const { repository } = await resolveStoredRepository(id);
+  if (!repository.isGitRepository) return repository;
   if (!repository.remoteName) return repository;
   try {
     await runGit(repository.root, ['fetch', '--prune', repository.remoteName], true);
@@ -376,6 +394,8 @@ export async function refreshLocalGitRepository(id: string) {
 
 export async function syncLocalGitRepository(id: string) {
   const repository = await refreshLocalGitRepository(id);
+  if (!repository.isGitRepository)
+    throw new Error('当前文件夹不是 Git 仓库，无法同步版本记录');
   if (!repository.remoteName)
     throw new Error('当前本地仓库没有配置远程地址，无法同步');
   if (repository.branch === 'HEAD')
@@ -403,6 +423,8 @@ export async function commitLocalGitMarkdown(id: string, message: string) {
   const trimmed = message.trim();
   if (trimmed.length > 160) throw new Error('提交说明不能超过 160 字');
   const repository = await refreshLocalGitRepository(id);
+  if (!repository.isGitRepository)
+    throw new Error('当前文件夹不是 Git 仓库，无法创建提交');
   if (repository.behindCount)
     throw new Error(`远端领先 ${repository.behindCount} 个提交，请先同步远端更新再提交`);
   const paths = await listChangedMarkdownPaths(repository.root);
@@ -419,6 +441,8 @@ export async function commitLocalGitMarkdown(id: string, message: string) {
 
 export async function pushLocalGitRepository(id: string) {
   const { repository } = await resolveStoredRepository(id);
+  if (!repository.isGitRepository)
+    throw new Error('当前文件夹不是 Git 仓库，无法推送');
   if (!repository.remoteName)
     throw new Error('当前本地仓库没有配置远程地址，无法推送');
   if (repository.branch === 'HEAD')
