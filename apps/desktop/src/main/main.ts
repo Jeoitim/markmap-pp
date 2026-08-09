@@ -169,56 +169,6 @@ async function openMarkdownDialog(
   };
 }
 
-async function showOpenMarkdown(window: BrowserWindow) {
-  const opened = await openMarkdownDialog(window);
-  if (opened) window.webContents.send(desktopChannels.openedMarkdown, opened);
-}
-
-function installMenu() {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: '文件',
-      submenu: [
-        {
-          label: '打开 Markdown…',
-          accelerator: 'CmdOrCtrl+O',
-          click: () => {
-            if (mainWindow) void showOpenMarkdown(mainWindow);
-          },
-        },
-        { type: 'separator' },
-        { role: 'quit', label: '退出' },
-      ],
-    },
-    {
-      label: '编辑',
-      submenu: [
-        { role: 'undo', label: '撤销' },
-        { role: 'redo', label: '重做' },
-        { type: 'separator' },
-        { role: 'cut', label: '剪切' },
-        { role: 'copy', label: '复制' },
-        { role: 'paste', label: '粘贴' },
-        { role: 'selectAll', label: '全选' },
-      ],
-    },
-    {
-      label: '视图',
-      submenu: [
-        { role: 'reload', label: '重新加载' },
-        { role: 'toggleDevTools', label: '开发者工具' },
-        { type: 'separator' },
-        { role: 'resetZoom', label: '实际大小' },
-        { role: 'zoomIn', label: '放大' },
-        { role: 'zoomOut', label: '缩小' },
-        { type: 'separator' },
-        { role: 'togglefullscreen', label: '全屏' },
-      ],
-    },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
-
 function registerIpc() {
   ipcMain.handle(desktopChannels.appInfo, (event) => {
     assertTrusted(event);
@@ -346,6 +296,7 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 640,
     show: true,
+    autoHideMenuBar: true,
     backgroundColor: '#15181d',
     title: 'markmap++',
     webPreferences: {
@@ -356,6 +307,7 @@ async function createWindow() {
       webSecurity: true,
     },
   });
+  window.setMenuBarVisibility(false);
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {
       void shell.openExternal(safeExternalUrl(url));
@@ -398,7 +350,7 @@ if (!squirrelStartup) {
         await registerAppProtocol();
         configureSession();
         registerIpc();
-        installMenu();
+        Menu.setApplicationMenu(null);
         mainWindow = await createWindow();
         await configureUpdates(() => mainWindow);
         app.on('activate', async () => {
