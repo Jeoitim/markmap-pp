@@ -1094,7 +1094,7 @@ export default function MarkmapHooks() {
     const savedTabs = persistActiveDocumentTab()
     const closingIndex = savedTabs.findIndex((tab) => tab.id === tabId)
     if (closingIndex < 0) return
-    let nextTabs = savedTabs.filter((tab) => tab.id !== tabId)
+    const nextTabs = savedTabs.filter((tab) => tab.id !== tabId)
     const closing = savedTabs[closingIndex]
     if (closing && tabHasUnsavedChanges(closing) && !discardUnsaved) {
       if (closing.localRepositoryId && closing.localPath) {
