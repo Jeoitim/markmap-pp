@@ -825,6 +825,7 @@ export default function MarkmapHooks() {
   const markdownRef = useRef(markdown)
   const localAutosaveRevisionRef = useRef(new Map<string, number>())
   const localAutosaveQueueRef = useRef(new Map<string, Promise<void>>())
+  const localAutosaveTimersRef = useRef(new Map<string, number>())
   const historyRef = useRef<string[]>([])
   const lastEditRef = useRef({ source: '', time: 0 })
   const helpTouchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -835,6 +836,11 @@ export default function MarkmapHooks() {
     if (!gesture) return
     window.clearTimeout(gesture.timer)
     gesture.element.draggable = gesture.originalDraggable
+  }, [])
+
+  useEffect(() => () => {
+    localAutosaveTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+    localAutosaveTimersRef.current.clear()
   }, [])
 
   useEffect(() => { cachedFilesRef.current = cachedFiles }, [cachedFiles])
@@ -881,6 +887,35 @@ export default function MarkmapHooks() {
     void checkRemote()
     const timer = window.setInterval(checkRemote, 60_000)
     return () => { disposed = true; window.clearInterval(timer) }
+  }, [localGitState.activeId, repositorySource])
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    const repositoryId = localGitState.activeId
+    if (!desktop || repositorySource !== 'local' || !repositoryId) return
+    let disposed = false
+    let inspecting = false
+    let pending = false
+    const inspect = async () => {
+      if (inspecting) { pending = true; return }
+      inspecting = true
+      try {
+        const repository = await desktop.localGit.inspect(repositoryId)
+        if (!disposed) setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
+      } catch {
+        // 文件监听是后台状态同步；手动刷新仍负责向用户展示错误。
+      } finally {
+        inspecting = false
+        if (pending && !disposed) { pending = false; void inspect() }
+      }
+    }
+    const unsubscribe = desktop.localGit.onChanged((changedId) => { if (changedId === repositoryId) void inspect() })
+    void desktop.localGit.watch(repositoryId).catch(() => {})
+    return () => {
+      disposed = true
+      unsubscribe()
+      void desktop.localGit.watch(null).catch(() => {})
+    }
   }, [localGitState.activeId, repositorySource])
 
   useEffect(() => {
@@ -1737,7 +1772,11 @@ export default function MarkmapHooks() {
     const key = `${repositoryId}:${path}`
     const revision = (localAutosaveRevisionRef.current.get(key) || 0) + 1
     localAutosaveRevisionRef.current.set(key, revision)
+    const previousTimer = localAutosaveTimersRef.current.get(key)
+    if (previousTimer) window.clearTimeout(previousTimer)
     const timer = window.setTimeout(() => {
+      localAutosaveTimersRef.current.delete(key)
+      if (localAutosaveRevisionRef.current.get(key) !== revision) return
       const previous = localAutosaveQueueRef.current.get(key) || Promise.resolve()
       const operation = previous.catch(() => {}).then(async () => {
         const result = await desktop.localGit.write(repositoryId, path, content)
@@ -1752,7 +1791,7 @@ export default function MarkmapHooks() {
       })
       localAutosaveQueueRef.current.set(key, operation)
     }, 350)
-    return () => window.clearTimeout(timer)
+    localAutosaveTimersRef.current.set(key, timer)
   }, [activeLocalFile, activeTabId, markdown, markDocumentSaved])
 
   const saveStandaloneDocument = useCallback(async () => {

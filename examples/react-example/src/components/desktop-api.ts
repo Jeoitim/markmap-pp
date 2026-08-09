@@ -78,6 +78,9 @@ export interface MarkmapDesktopApi {
     read(id: string, relativePath: string): Promise<{ path: string; content: string }>
     history(id: string, relativePaths: string[]): Promise<string>
     write(id: string, relativePath: string, content: string): Promise<{ path: string; repository: DesktopLocalGitRepository }>
+    inspect(id: string): Promise<DesktopLocalGitRepository>
+    watch(id: string | null): Promise<boolean>
+    onChanged(listener: (id: string) => void): () => void
     refresh(id: string): Promise<DesktopLocalGitRepository>
     sync(id: string): Promise<DesktopLocalGitRepository>
     move(id: string, sourcePath: string, destinationPath: string, kind: 'file' | 'folder'): Promise<DesktopLocalGitRepository>

@@ -33,6 +33,7 @@ import {
   discardLocalGitChanges,
   forgetLocalGitRepository,
   getLocalGitState,
+  inspectLocalGitRepository,
   openLocalGitRepository,
   pushLocalGitRepository,
   readLocalGitGraph,
@@ -45,6 +46,7 @@ import {
   switchLocalGitBranch,
   syncLocalGitRepository,
   writeLocalGitMarkdown,
+  watchLocalGitRepository,
 } from './local-git.js';
 import {
   getSecureValue,
@@ -60,6 +62,7 @@ const maxSaveFileBytes = 200 * 1024 * 1024;
 const allowedExternalProtocols = new Set(['https:', 'mailto:']);
 let mainWindow: BrowserWindow | null = null;
 const openedMarkdownFiles = new Map<string, string>();
+let stopLocalGitWatcher: (() => void) | null = null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -326,6 +329,23 @@ function registerIpc() {
       return readLocalGitHistory(id, relativePaths);
     },
   );
+  ipcMain.handle(desktopChannels.localGitInspect, async (event, id: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string') throw new Error('仓库标识无效');
+    return inspectLocalGitRepository(id);
+  });
+  ipcMain.handle(desktopChannels.localGitWatch, async (event, id: unknown) => {
+    assertTrusted(event);
+    if (id !== null && typeof id !== 'string') throw new Error('仓库标识无效');
+    stopLocalGitWatcher?.();
+    stopLocalGitWatcher = null;
+    if (!id) return true;
+    const sender = event.sender;
+    stopLocalGitWatcher = await watchLocalGitRepository(id, (repositoryId) => {
+      if (!sender.isDestroyed()) sender.send(desktopChannels.localGitChanged, repositoryId);
+    });
+    return true;
+  });
   ipcMain.handle(
     desktopChannels.localGitCommit,
     async (event, id: unknown, message: unknown) => {
@@ -509,6 +529,8 @@ async function createWindow() {
     }
   });
   window.on('closed', () => {
+    stopLocalGitWatcher?.();
+    stopLocalGitWatcher = null;
     if (mainWindow === window) mainWindow = null;
   });
   const developmentUrl = process.env.VITE_DEV_SERVER_URL;

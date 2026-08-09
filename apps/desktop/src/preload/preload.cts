@@ -15,6 +15,9 @@ const desktopChannels = {
   localGitRead: 'desktop:local-git-read',
   localGitHistory: 'desktop:local-git-history',
   localGitWrite: 'desktop:local-git-write',
+  localGitInspect: 'desktop:local-git-inspect',
+  localGitWatch: 'desktop:local-git-watch',
+  localGitChanged: 'desktop:local-git-changed',
   localGitRefresh: 'desktop:local-git-refresh',
   localGitSync: 'desktop:local-git-sync',
   localGitMove: 'desktop:local-git-move',
@@ -52,6 +55,13 @@ const api = {
     read: (id: string, relativePath: string) => ipcRenderer.invoke(desktopChannels.localGitRead, id, relativePath) as Promise<{ path: string; content: string }>,
     history: (id: string, relativePaths: string[]) => ipcRenderer.invoke(desktopChannels.localGitHistory, id, relativePaths) as Promise<string>,
     write: (id: string, relativePath: string, content: string) => ipcRenderer.invoke(desktopChannels.localGitWrite, id, relativePath, content) as Promise<{ path: string; repository: DesktopLocalGitRepository }>,
+    inspect: (id: string) => ipcRenderer.invoke(desktopChannels.localGitInspect, id) as Promise<DesktopLocalGitRepository>,
+    watch: (id: string | null) => ipcRenderer.invoke(desktopChannels.localGitWatch, id) as Promise<boolean>,
+    onChanged: (listener: (id: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, id: string) => listener(id)
+      ipcRenderer.on(desktopChannels.localGitChanged, handler)
+      return () => ipcRenderer.removeListener(desktopChannels.localGitChanged, handler)
+    },
     refresh: (id: string) => ipcRenderer.invoke(desktopChannels.localGitRefresh, id) as Promise<DesktopLocalGitRepository>,
     sync: (id: string) => ipcRenderer.invoke(desktopChannels.localGitSync, id) as Promise<DesktopLocalGitRepository>,
     move: (id: string, sourcePath: string, destinationPath: string, kind: 'file' | 'folder') => ipcRenderer.invoke(desktopChannels.localGitMove, id, sourcePath, destinationPath, kind) as Promise<DesktopLocalGitRepository>,

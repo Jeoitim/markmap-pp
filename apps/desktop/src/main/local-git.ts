@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { watch as watchFileSystem } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { dialog, type BrowserWindow } from 'electron';
@@ -51,7 +52,9 @@ function runGit(root: string, args: string[], nonInteractive = false) {
           reject(new Error(stderr.trim() || error.message));
           return;
         }
-        resolve(stdout.trim());
+        // Git porcelain output intentionally starts with a space for unstaged
+        // changes. Trimming the whole string corrupts the first status entry.
+        resolve(stdout.replace(/(?:\r?\n)+$/, ''));
       },
     );
   });
@@ -139,19 +142,25 @@ async function listMarkdownGitStatus(root: string) {
     'core.quotepath=false',
     'status',
     '--porcelain=v1',
+    '-z',
     '--untracked-files=all',
-    '--',
-    '*.md',
-    '*.markdown',
   ]);
   const statuses = new Map<string, DesktopLocalGitFile['gitStatus']>();
-  for (const line of output.split(/\r?\n/).filter(Boolean)) {
-    const code = line.slice(0, 2);
-    const rawPath = line.slice(3);
-    const relative = (rawPath.includes(' -> ') ? rawPath.slice(rawPath.lastIndexOf(' -> ') + 4) : rawPath).replaceAll('\\', '/');
+  const records = output.split('\0').filter(Boolean);
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index]!;
+    const code = record.slice(0, 2);
+    const relative = record.slice(3).replaceAll('\\', '/');
     if (markdownExtension.test(relative)) statuses.set(relative, gitStatusCode(code));
+    // In -z mode a rename/copy is followed by its original path as a second
+    // NUL-delimited field. The first field is the current path shown in the tree.
+    if (/R|C/.test(code)) index += 1;
   }
   return statuses;
+}
+
+async function listChangedMarkdownPaths(root: string) {
+  return Array.from((await listMarkdownGitStatus(root)).keys());
 }
 
 async function listMarkdownFiles(root: string, gitStatuses = new Map<string, DesktopLocalGitFile['gitStatus']>()) {
@@ -192,17 +201,6 @@ async function listMarkdownFiles(root: string, gitStatuses = new Map<string, Des
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-async function listChangedMarkdownPaths(root: string) {
-  const [unstaged, staged, untracked] = await Promise.all([
-    runGit(root, ['diff', '--name-only', '--relative', '--', '*.md', '*.markdown']),
-    runGit(root, ['diff', '--cached', '--name-only', '--relative', '--', '*.md', '*.markdown']),
-    runGit(root, ['ls-files', '--others', '--exclude-standard', '--', '*.md', '*.markdown']),
-  ]);
-  return Array.from(new Set(
-    [unstaged, staged, untracked].flatMap((value) => value.split(/\r?\n/)).filter(Boolean),
-  ));
-}
-
 async function inspectRepository(
   root: string,
 ): Promise<DesktopLocalGitRepository> {
@@ -238,7 +236,6 @@ async function inspectRepository(
     '--short',
     '--untracked-files=all',
   ]);
-  const changedMarkdownPaths = await listChangedMarkdownPaths(gitRoot);
   const markdownGitStatuses = await listMarkdownGitStatus(gitRoot);
   const remoteNames = (await runGit(gitRoot, ['remote']))
     .split(/\r?\n/)
@@ -278,7 +275,7 @@ async function inspectRepository(
     branch,
     head,
     changedCount: status ? status.split(/\r?\n/).filter(Boolean).length : 0,
-    markdownChangedCount: changedMarkdownPaths.length,
+    markdownChangedCount: markdownGitStatuses.size,
     remoteName,
     remoteLabel: remoteUrl ? safeRemoteLabel(remoteUrl) : null,
     upstream: upstream || null,
@@ -286,6 +283,26 @@ async function inspectRepository(
     behindCount: Number.parseInt(behindText, 10) || 0,
     files: await listMarkdownFiles(gitRoot, markdownGitStatuses),
     lastOpenedAt: Date.now(),
+  };
+}
+
+export async function inspectLocalGitRepository(id: string) {
+  return resolveStoredRepository(id).then((value) => value.repository);
+}
+
+export async function watchLocalGitRepository(
+  id: string,
+  onChange: (repositoryId: string) => void,
+) {
+  const { repository } = await resolveStoredRepository(id);
+  let timer: NodeJS.Timeout | null = null;
+  const watcher = watchFileSystem(repository.root, { recursive: true }, () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => onChange(id), 180);
+  });
+  return () => {
+    if (timer) clearTimeout(timer);
+    watcher.close();
   };
 }
 
