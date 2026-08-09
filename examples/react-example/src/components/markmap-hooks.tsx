@@ -49,6 +49,7 @@ window.katex = katex as unknown as typeof window.katex
 const transformer = new Transformer()
 const SETTINGS_KEY = 'markmap-plus-plus:settings'
 const VIRTUAL_FOLDERS_KEY = 'markmap-plus-plus:virtual-folders'
+const DESKTOP_WORKSPACE_KEY = 'markmap-plus-plus:desktop-workspace'
 const MARKMAP_PREVIEW_ID = 'markmap-preview'
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/markmap-plus-plus-icon.png`
 
@@ -161,6 +162,30 @@ const HELP_TIP_COUNT = 5
 type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html'
 type ExportTextTheme = 'auto' | 'light' | 'dark'
 type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
+type EditorView = 'markdown' | 'repository' | 'agent'
+
+interface DesktopWorkspaceSession {
+  repositorySource: 'remote' | 'local'
+  editorView: EditorView
+  localRepositoryId: string | null
+  localPath: string | null
+  remotePath: string | null
+}
+
+function loadDesktopWorkspaceSession(): DesktopWorkspaceSession | null {
+  if (!desktopApi()) return null
+  try {
+    const value = JSON.parse(localStorage.getItem(DESKTOP_WORKSPACE_KEY) || 'null') as Partial<DesktopWorkspaceSession> | null
+    if (!value || (value.repositorySource !== 'remote' && value.repositorySource !== 'local')) return null
+    return {
+      repositorySource: value.repositorySource,
+      editorView: value.editorView === 'repository' || value.editorView === 'agent' ? value.editorView : 'markdown',
+      localRepositoryId: typeof value.localRepositoryId === 'string' ? value.localRepositoryId : null,
+      localPath: typeof value.localPath === 'string' ? value.localPath : null,
+      remotePath: typeof value.remotePath === 'string' ? value.remotePath : null,
+    }
+  } catch { return null }
+}
 
 type TextSelectionTarget = ({ source: 'editor' } & MarkdownEditorSelection) | {
   source: 'preview'
@@ -677,6 +702,7 @@ function readUserPreviewBackground(style: string) {
 }
 
 export default function MarkmapHooks() {
+  const desktopWorkspaceSessionRef = useRef(loadDesktopWorkspaceSession())
   const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [createDocumentTab('markmap++ 操作指南.md', loadDocument(), 'starter')])
   const [activeTabId, setActiveTabId] = useState(() => documentTabs[0].id)
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
@@ -689,7 +715,7 @@ export default function MarkmapHooks() {
   const [fileName, setFileName] = useState(() => documentTabs[0].name)
   const activeDocumentTab = documentTabs.find((tab) => tab.id === activeTabId) || documentTabs[0]
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
-  const [editorView, setEditorView] = useState<'markdown' | 'repository' | 'agent'>('markdown')
+  const [editorView, setEditorView] = useState<EditorView>(() => desktopWorkspaceSessionRef.current?.editorView || 'markdown')
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
   const [settings, setSettings] = useState(loadSettings)
   const [dark, setDark] = useState(() => shouldUseDarkTheme(loadSettings().previewBackgroundColor))
@@ -714,7 +740,7 @@ export default function MarkmapHooks() {
   const [githubProfiles, setGithubProfiles] = useState<GitHubRepositoryProfile[]>([])
   const [addingRemoteRepository, setAddingRemoteRepository] = useState(false)
   const [repositorySettingsTab, setRepositorySettingsTab] = useState<'remote' | 'local'>('remote')
-  const [repositorySource, setRepositorySource] = useState<'remote' | 'local'>('remote')
+  const [repositorySource, setRepositorySource] = useState<'remote' | 'local'>(() => desktopWorkspaceSessionRef.current?.repositorySource || 'remote')
   const [repositoryInput, setRepositoryInput] = useState(() => { const config = loadGitHubConfig(); return config ? `${config.owner}/${config.repo}` : '' })
   const [branchInput, setBranchInput] = useState(() => loadGitHubConfig()?.branch || 'main')
   const [tokenInput, setTokenInput] = useState(() => loadGitHubConfig()?.token || '')
@@ -729,6 +755,7 @@ export default function MarkmapHooks() {
   const [activeRepoPath, setActiveRepoPath] = useState<string | null>(null)
   const [activeLocalFile, setActiveLocalFile] = useState<{ repositoryId: string; path: string } | null>(null)
   const [localGitState, setLocalGitState] = useState<DesktopLocalGitState>({ activeId: null, repositories: [] })
+  const [localGitLoaded, setLocalGitLoaded] = useState(false)
   const [localAgentContext, setLocalAgentContext] = useState<{ repositoryId: string | null; files: AgentSourceFile[] }>({ repositoryId: null, files: [] })
   const [localGitBusy, setLocalGitBusy] = useState(false)
   const [localGitActivity, setLocalGitActivity] = useState<'refresh' | 'sync' | 'commit' | 'push' | 'move' | 'remove' | 'discard' | 'graph' | 'switch' | null>(null)
@@ -801,6 +828,7 @@ export default function MarkmapHooks() {
   const historyRef = useRef<string[]>([])
   const lastEditRef = useRef({ source: '', time: 0 })
   const helpTouchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const desktopWorkspaceRestoredRef = useRef(!desktopWorkspaceSessionRef.current)
 
   useEffect(() => () => {
     const gesture = repositoryTouchGestureRef.current
@@ -833,6 +861,7 @@ export default function MarkmapHooks() {
     void desktop.localGit.get()
       .then((state) => { if (!disposed) setLocalGitState(state) })
       .catch((error) => { if (!disposed) setLocalGitError(error instanceof Error ? error.message : '无法读取本地 Git 仓库') })
+      .finally(() => { if (!disposed) setLocalGitLoaded(true) })
     return () => { disposed = true }
   }, [])
 
@@ -1175,6 +1204,16 @@ export default function MarkmapHooks() {
     openDocumentTab(file.path, file.content, `repository:${repositoryKey}:${file.path}`, file.path)
   }, [githubConfig, openDocumentTab])
 
+  useEffect(() => {
+    const session = desktopWorkspaceSessionRef.current
+    if (desktopWorkspaceRestoredRef.current || session?.repositorySource !== 'remote') return
+    if (!session.remotePath) { desktopWorkspaceRestoredRef.current = true; return }
+    const file = cachedFiles.find((item) => item.path === session.remotePath && item.status !== 'deleted')
+    if (!file) return
+    desktopWorkspaceRestoredRef.current = true
+    activateCachedFile(file)
+  }, [activateCachedFile, cachedFiles])
+
   const activateHistoricalFile = useCallback((content: string, path: string, commitSha: string) => {
     const repositoryKey = githubConfig ? repoKeyOf(githubConfig) : 'github'
     openDocumentTab(historicalFileName(path, commitSha), content, `history:${repositoryKey}:${commitSha}:${path}`)
@@ -1368,6 +1407,21 @@ export default function MarkmapHooks() {
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '读取本地 Markdown 失败') }
     finally { setLocalGitBusy(false) }
   }
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    const session = desktopWorkspaceSessionRef.current
+    if (!desktop || !localGitLoaded || desktopWorkspaceRestoredRef.current || session?.repositorySource !== 'local') return
+    const repositoryId = session.localRepositoryId || localGitState.activeId
+    const repository = localGitState.repositories.find((item) => item.id === repositoryId)
+    desktopWorkspaceRestoredRef.current = true
+    if (!repositoryId || !repository) { setEditorView('repository'); return }
+    const restore = async () => {
+      if (localGitState.activeId !== repositoryId) setLocalGitState(await desktop.localGit.select(repositoryId))
+      if (session.localPath && repository.files.some((file) => file.path === session.localPath && file.gitStatus !== 'D')) await openLocalRepositoryFile(repositoryId, session.localPath)
+    }
+    void restore().catch((error) => { setEditorView('repository'); setLocalGitError(error instanceof Error ? error.message : '无法恢复上次打开的本地工作区') })
+  }, [localGitLoaded, localGitState.activeId, localGitState.repositories])
 
   const replaceLocalRepository = useCallback((repository: DesktopLocalGitState['repositories'][number]) => {
     setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
@@ -2712,6 +2766,18 @@ export default function MarkmapHooks() {
     svg.style.setProperty('--markmap-font', font)
     window.setTimeout(() => void mmRef.current?.setData().then(() => mmRef.current?.fit()), 50)
   }, [codeFont.shorthand, effectiveFontFamily, effectiveFontSizeCss, effectiveFontWeightCss, settings])
+
+  useEffect(() => {
+    if (!desktopApi() || !desktopWorkspaceRestoredRef.current) return
+    const session: DesktopWorkspaceSession = {
+      repositorySource,
+      editorView,
+      localRepositoryId: activeLocalFile?.repositoryId || localGitState.activeId,
+      localPath: activeLocalFile?.path || null,
+      remotePath: activeRepoPath,
+    }
+    try { localStorage.setItem(DESKTOP_WORKSPACE_KEY, JSON.stringify(session)) } catch { /* storage may be disabled */ }
+  }, [activeLocalFile, activeRepoPath, editorView, localGitState.activeId, repositorySource])
 
   useEffect(() => {
     const handleFullscreen = () => setFullscreen(Boolean(document.fullscreenElement))
