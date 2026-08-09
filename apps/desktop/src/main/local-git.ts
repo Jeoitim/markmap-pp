@@ -160,7 +160,68 @@ async function listMarkdownGitStatus(root: string) {
 }
 
 async function listChangedMarkdownPaths(root: string) {
-  return Array.from((await listMarkdownGitStatus(root)).keys());
+  const output = await runGit(root, [
+    '-c',
+    'core.quotepath=false',
+    'diff',
+    '--no-renames',
+    '--name-only',
+    '-z',
+    'HEAD',
+    '--',
+  ], false, true).catch(() => '');
+  const trackedChanges = output.split('\0').filter((relative) => markdownExtension.test(relative));
+  return Array.from(new Set([
+    ...trackedChanges,
+    ...(await listMarkdownGitStatus(root)).keys(),
+  ]));
+}
+
+async function discardMarkdownPaths(
+  repository: DesktopLocalGitRepository,
+  relativePaths: string[],
+) {
+  const paths = Array.from(new Set(relativePaths.map(safeRelativeMarkdownPath)));
+  if (!paths.length) return;
+  const headFiles = repository.head
+    ? new Set((await runGit(repository.root, [
+        'ls-tree',
+        '-r',
+        '-z',
+        '--name-only',
+        'HEAD',
+      ], false, true)).split('\0').filter((relative) => markdownExtension.test(relative)))
+    : new Set<string>();
+  const tracked = paths.filter((relative) => headFiles.has(relative));
+  const created = paths.filter((relative) => !headFiles.has(relative));
+  const batches = (values: string[]) => Array.from(
+    { length: Math.ceil(values.length / 100) },
+    (_, index) => values.slice(index * 100, index * 100 + 100),
+  );
+  for (const batch of batches(tracked)) {
+    await runGit(repository.root, [
+      'restore',
+      '--source=HEAD',
+      '--staged',
+      '--worktree',
+      '--',
+      ...batch,
+    ]);
+  }
+  for (const batch of batches(created)) {
+    await runGit(repository.root, ['rm', '--cached', '--ignore-unmatch', '--', ...batch]).catch(() => '');
+  }
+  for (const relative of created) {
+    const target = path.resolve(repository.root, ...relative.split('/'));
+    const prefix = `${repository.root}${path.sep}`;
+    if (!target.startsWith(prefix)) throw new Error('文件路径超出 Git 仓库范围');
+    await fs.lstat(target).then(async (stat) => {
+      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('仅允许移除未提交的 Markdown 文件');
+      await fs.rm(target);
+    }).catch((error) => {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    });
+  }
 }
 
 async function listMarkdownFiles(root: string, gitStatuses = new Map<string, DesktopLocalGitFile['gitStatus']>()) {
@@ -565,57 +626,16 @@ export async function discardLocalGitChanges(id: string) {
   const { repository } = await resolveStoredRepository(id);
   if (!repository.isGitRepository) throw new Error('当前文件夹不是 Git 仓库，无法放弃版本修改');
   if (!repository.head) throw new Error('仓库还没有提交记录，不能恢复到上一版本');
-  const untracked = await runGit(repository.root, [
-    'ls-files',
-    '--others',
-    '--exclude-standard',
-    '--',
-    '*.md',
-    '*.markdown',
-  ]);
-  await runGit(repository.root, [
-    'restore',
-    '--source=HEAD',
-    '--staged',
-    '--worktree',
-    '--',
-    '*.md',
-    '*.markdown',
-  ]);
-  for (const relativePath of untracked.split(/\r?\n/).filter(Boolean)) {
-    const resolved = await resolveRepositoryFile(id, relativePath);
-    const stat = await fs.lstat(resolved.target);
-    if (stat.isFile() && !stat.isSymbolicLink()) await fs.rm(resolved.target);
-  }
+  await discardMarkdownPaths(repository, await listChangedMarkdownPaths(repository.root));
   return inspectRepository(repository.root);
 }
 
 export async function discardLocalGitFile(id: string, relativePath: string) {
   const resolved = await resolveRepositoryFile(id, relativePath, true);
-  const { repository, relative, target } = resolved;
+  const { repository, relative } = resolved;
   if (!repository.isGitRepository)
     throw new Error('当前文件夹不是 Git 仓库，无法放弃版本修改');
-  const existsInHead = repository.head
-    ? await runGit(repository.root, ['cat-file', '-e', `HEAD:${relative}`]).then(() => true).catch(() => false)
-    : false;
-  if (existsInHead) {
-    await runGit(repository.root, [
-      'restore',
-      '--source=HEAD',
-      '--staged',
-      '--worktree',
-      '--',
-      relative,
-    ]);
-  } else {
-    await runGit(repository.root, ['rm', '--cached', '--ignore-unmatch', '--', relative]).catch(() => '');
-    await fs.lstat(target).then(async (stat) => {
-      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('仅允许移除未跟踪的 Markdown 文件');
-      await fs.rm(target);
-    }).catch((error) => {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
-    });
-  }
+  await discardMarkdownPaths(repository, [relative]);
   return inspectRepository(repository.root);
 }
 
