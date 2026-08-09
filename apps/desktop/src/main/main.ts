@@ -31,6 +31,7 @@ import {
   getLocalGitState,
   openLocalGitRepository,
   pushLocalGitRepository,
+  readLocalGitHistory,
   readLocalGitMarkdown,
   selectLocalGitRepository,
   writeLocalGitMarkdown,
@@ -279,6 +280,19 @@ function registerIpc() {
       )
         throw new Error('写入参数无效');
       return writeLocalGitMarkdown(id, relativePath, content);
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.localGitHistory,
+    async (event, id: unknown, relativePaths: unknown) => {
+      assertTrusted(event);
+      if (
+        typeof id !== 'string' ||
+        !Array.isArray(relativePaths) ||
+        !relativePaths.every((item) => typeof item === 'string')
+      )
+        throw new Error('Git 历史参数无效');
+      return readLocalGitHistory(id, relativePaths);
     },
   );
   ipcMain.handle(

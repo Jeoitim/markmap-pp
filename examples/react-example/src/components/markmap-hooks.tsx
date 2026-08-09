@@ -12,6 +12,7 @@ import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
+import type { AgentSourceFile } from './agent-client'
 import { desktopApi, saveBlob, type DesktopLocalGitState } from './desktop-api'
 import { inspectMarkdown } from './markdown-lint'
 import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
@@ -693,6 +694,7 @@ export default function MarkmapHooks() {
   const [activeRepoPath, setActiveRepoPath] = useState<string | null>(null)
   const [activeLocalFile, setActiveLocalFile] = useState<{ repositoryId: string; path: string } | null>(null)
   const [localGitState, setLocalGitState] = useState<DesktopLocalGitState>({ activeId: null, repositories: [] })
+  const [localAgentContext, setLocalAgentContext] = useState<{ repositoryId: string | null; files: AgentSourceFile[] }>({ repositoryId: null, files: [] })
   const [localGitBusy, setLocalGitBusy] = useState(false)
   const [localGitError, setLocalGitError] = useState('')
   const [localGitNotice, setLocalGitNotice] = useState('')
@@ -1228,12 +1230,93 @@ export default function MarkmapHooks() {
     setLocalGitBusy(true); setLocalGitError(''); setLocalGitNotice('')
     try {
       const file = await desktop.localGit.read(repositoryId, path)
+      setLocalAgentContext((current) => ({
+        repositoryId,
+        files: [...(current.repositoryId === repositoryId ? current.files.filter((item) => item.path !== file.path) : []), { path: file.path, content: file.content, status: 'clean' }].sort((left, right) => left.path.localeCompare(right.path)),
+      }))
       openDocumentTab(file.path, file.content, `local-git:${repositoryId}:${file.path}`, null, repositoryId, file.path)
       setRepositorySource('local')
       setActivePanel(null)
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '读取本地 Markdown 失败') }
     finally { setLocalGitBusy(false) }
   }
+
+  const loadAllLocalAgentNotes = useCallback(async () => {
+    const desktop = desktopApi()
+    const repositoryId = activeLocalFile?.repositoryId || localGitState.activeId
+    const repository = localGitState.repositories.find((item) => item.id === repositoryId)
+    if (!desktop || !repositoryId || !repository) return
+    setLocalGitBusy(true); setLocalGitError('')
+    try {
+      const files: AgentSourceFile[] = []
+      for (const entry of repository.files) {
+        const file = await desktop.localGit.read(repositoryId, entry.path)
+        files.push({ path: file.path, content: file.content, status: 'clean' })
+      }
+      setLocalAgentContext({ repositoryId, files })
+      setLocalGitNotice(`Agent 已读取 ${files.length} 个本地 Markdown 文件`)
+    } catch (error) { setLocalGitError(error instanceof Error ? error.message : '读取本地仓库失败') }
+    finally { setLocalGitBusy(false) }
+  }, [activeLocalFile?.repositoryId, localGitState.activeId, localGitState.repositories])
+
+  const applyLocalAgentChange = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
+    const desktop = desktopApi()
+    const repositoryId = activeLocalFile?.repositoryId || localGitState.activeId
+    if (!desktop || !repositoryId || localAgentContext.repositoryId !== repositoryId) return { ok: false, error: '当前本地仓库上下文已切换，请重新读取后再修改。' }
+    try {
+      const result = await desktop.localGit.write(repositoryId, path, content)
+      setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === result.repository.id ? result.repository : item) }))
+      setLocalAgentContext((current) => ({ ...current, files: current.files.map((file) => file.path === path ? { ...file, content, status: 'modified' } : file) }))
+      if (activeLocalFile?.repositoryId === repositoryId && activeLocalFile.path === path) updateMarkdown(content, 'agent')
+      return { ok: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '写入本地仓库失败'
+      setLocalGitError(message)
+      return { ok: false, error: message }
+    }
+  }, [activeLocalFile, localAgentContext.repositoryId, localGitState.activeId, updateMarkdown])
+
+  const createLocalAgentFile = useCallback(async (path: string, content: string): Promise<AgentMutationResult> => {
+    const desktop = desktopApi()
+    const repositoryId = activeLocalFile?.repositoryId || localGitState.activeId
+    if (!desktop || !repositoryId || localAgentContext.repositoryId !== repositoryId) return { ok: false, error: '当前本地仓库上下文已切换，请重新读取后再新建。' }
+    if (localAgentContext.files.some((file) => file.path === path)) return { ok: false, error: '该笔记文件已存在' }
+    try {
+      const result = await desktop.localGit.write(repositoryId, path, content)
+      setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === result.repository.id ? result.repository : item) }))
+      setLocalAgentContext((current) => ({ ...current, files: [...current.files, { path, content, status: 'added' }].sort((left, right) => left.path.localeCompare(right.path)) }))
+      return { ok: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '新建本地笔记失败'
+      setLocalGitError(message)
+      return { ok: false, error: message }
+    }
+  }, [activeLocalFile?.repositoryId, localAgentContext.files, localAgentContext.repositoryId, localGitState.activeId])
+
+  const getLocalAgentGitContext = useCallback(async (paths: string[]) => {
+    const desktop = desktopApi()
+    const repositoryId = activeLocalFile?.repositoryId || localGitState.activeId
+    if (!desktop || !repositoryId) return ''
+    try { return await desktop.localGit.history(repositoryId, paths) }
+    catch (error) { setLocalGitError(error instanceof Error ? error.message : '读取本地 Git 历史失败'); return '' }
+  }, [activeLocalFile?.repositoryId, localGitState.activeId])
+
+  const commitLocalAgentChanges = useCallback(async (): Promise<AgentCommitResult> => {
+    const desktop = desktopApi()
+    const repositoryId = activeLocalFile?.repositoryId || localGitState.activeId
+    if (!desktop || !repositoryId) return { ok: false, error: '请先打开本地 Git 仓库' }
+    try {
+      let repository = await desktop.localGit.commit(repositoryId, 'docs: update notes with markmap++ Agent')
+      if (repository.remoteName) repository = await desktop.localGit.push(repositoryId)
+      setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === repository.id ? repository : item) }))
+      setLocalAgentContext((current) => ({ ...current, files: current.files.map((file) => ({ ...file, status: 'clean' })) }))
+      return { ok: true, commitSha: repository.head, message: repository.remoteName ? '已提交并推送本地仓库' : '已提交到本地仓库' }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '本地 Git 提交失败'
+      setLocalGitError(message)
+      return { ok: false, error: message }
+    }
+  }, [activeLocalFile?.repositoryId, localGitState.activeId])
 
   const saveActiveLocalDocument = async () => {
     const desktop = desktopApi()
@@ -2747,6 +2830,9 @@ ${documentRenderConfig.style}
   const lineCount = markdown.split('\n').length
   const activeCachedFile = activeRepoPath ? cachedFiles.find((file) => file.path === activeRepoPath) : undefined
   const activeLocalRepository = localGitState.repositories.find((repository) => repository.id === localGitState.activeId)
+  const agentUsesLocalRepository = Boolean(activeLocalFile)
+  const agentLocalRepository = agentUsesLocalRepository ? localGitState.repositories.find((repository) => repository.id === activeLocalFile?.repositoryId) : undefined
+  const agentLocalFiles = agentLocalRepository && localAgentContext.repositoryId === agentLocalRepository.id ? localAgentContext.files : []
   const changedFiles = cachedFiles.filter((file) => file.status !== 'clean')
   const hasRepositoryDrafts = changedFiles.length > 0 || virtualFolders.length > 0
   const repositoryDisplayCachedFiles = repositoryCommitRef ? [] : cachedFiles
@@ -2847,7 +2933,7 @@ ${documentRenderConfig.style}
               <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
               <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span><span className="editor-status-language">Markdown</span><span className="editor-status-actions">{activeLocalFile && <button type="button" className="editor-local-save" disabled={localGitBusy} onClick={() => void saveActiveLocalDocument()} title="保存到本地 Git 仓库"><Icon name="sync" /><span>保存本地</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
-            </> : editorView === 'agent' ? <AgentPanel files={cachedFiles.filter((file) => file.status !== 'deleted')} activePath={activeRepoPath} onApplyChange={applyAgentChange} onCreateFile={createAgentFile} onOpenFile={(path) => { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) }} onCommit={pushRepositoryChanges} getGitContext={getAgentGitContext} remoteFileCount={remoteFiles.length} remotePaths={remoteFiles.map((file) => file.path)} repositoryBranch={githubConfig?.branch} onLoadAllFiles={loadAllRepositoryNotes} loadingFiles={githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
+            </> : editorView === 'agent' ? <AgentPanel files={agentUsesLocalRepository ? agentLocalFiles : cachedFiles.filter((file) => file.status !== 'deleted')} activePath={agentUsesLocalRepository ? activeLocalFile?.path || null : activeRepoPath} onApplyChange={agentUsesLocalRepository ? applyLocalAgentChange : applyAgentChange} onCreateFile={agentUsesLocalRepository ? createLocalAgentFile : createAgentFile} onOpenFile={(path) => { if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentUsesLocalRepository ? commitLocalAgentChanges : pushRepositoryChanges} getGitContext={agentUsesLocalRepository ? getLocalAgentGitContext : getAgentGitContext} remoteFileCount={agentUsesLocalRepository ? agentLocalRepository?.files.length || 0 : remoteFiles.length} remotePaths={agentUsesLocalRepository ? agentLocalRepository?.files.map((file) => file.path) || [] : remoteFiles.map((file) => file.path)} repositoryBranch={agentUsesLocalRepository ? agentLocalRepository?.branch : githubConfig?.branch} onLoadAllFiles={agentUsesLocalRepository ? loadAllLocalAgentNotes : loadAllRepositoryNotes} loadingFiles={agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {repositorySource === 'local' ? !activeLocalRepository ? <div className="repository-unbound"><Icon name="folder" /><strong>尚未打开本地 Git 仓库</strong><span>{desktopApi() ? '只接受经过 Git 校验的文件夹，普通文件夹不会加入。' : '网页端不能直接验证本地 Git 仓库，请使用桌面应用。'}</span><button onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}>管理本地仓库</button></div> : <>
                 <div className="repository-toolbar local-repository-toolbar"><div><strong>{activeLocalRepository.name}</strong><small>{activeLocalRepository.branch} · {activeLocalRepository.remoteLabel || '仅本地'} · {activeLocalRepository.head || '暂无提交'}</small></div><button className="repository-icon-button" title="仓库设置" aria-label="仓库设置" onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title="刷新本地 Git 状态" aria-label="刷新本地 Git 状态" onClick={() => void refreshLocalGitState()} disabled={localGitBusy}><i><Icon name="refresh" className={localGitBusy ? 'loading-icon' : undefined} /></i></button>{activeLocalRepository.remoteName && <button className="repository-icon-button sync-button" title={activeLocalRepository.upstream ? `Push ${activeLocalRepository.aheadCount} 个本地提交` : '发布当前分支到远程'} aria-label="推送本地 Git 仓库" onClick={() => void pushLocalRepository()} disabled={localGitBusy || activeLocalRepository.behindCount > 0}><i><Icon name="sync" className={localGitBusy ? 'loading-icon' : undefined} /></i></button>}</div>
                 {localGitError && <div className="repository-error"><Icon name="warning" />{localGitError}</div>}

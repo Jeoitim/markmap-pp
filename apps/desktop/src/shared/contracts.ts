@@ -77,6 +77,7 @@ export const desktopChannels = {
   localGitSelect: 'desktop:local-git-select',
   localGitForget: 'desktop:local-git-forget',
   localGitRead: 'desktop:local-git-read',
+  localGitHistory: 'desktop:local-git-history',
   localGitWrite: 'desktop:local-git-write',
   localGitCommit: 'desktop:local-git-commit',
   localGitPush: 'desktop:local-git-push',

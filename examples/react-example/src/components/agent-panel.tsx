@@ -2,12 +2,11 @@ import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, 
 import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessage, type AgentProposal } from './agent-client'
+import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessage, type AgentProposal, type AgentSourceFile } from './agent-client'
 import { buildAgentDiff } from './agent-diff'
 import { activeContent, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation } from './agent-history'
 import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
 import { saveBlob } from './desktop-api'
-import type { CachedMarkdownFile } from './github-sync'
 
 type AgentMode = 'chat' | 'edit'
 
@@ -327,7 +326,7 @@ interface ConversationMessageProps {
   path: number[]
   editing: boolean
   editText: string
-  files: CachedMarkdownFile[]
+  files: AgentSourceFile[]
   busy: string | null
   repositoryBranch?: string
   changedFileCount: number
@@ -385,7 +384,7 @@ function ConversationMessage({ message, path, editing, editText, files, busy, re
 }
 
 interface AgentPanelProps {
-  files: CachedMarkdownFile[]
+  files: AgentSourceFile[]
   activePath: string | null
   onApplyChange: (path: string, content: string) => Promise<AgentMutationResult>
   onCreateFile: (path: string, content: string) => Promise<AgentMutationResult>
@@ -442,7 +441,7 @@ function fileDiff(before: string, after: string) {
   return { start, removed: oldLines.slice(start, oldEnd + 1), added: newLines.slice(start, newEnd + 1) }
 }
 
-function ProposalDiff({ proposal, file, textStyle, onAccept, onReject, onOpen }: { proposal: AgentProposal; file?: CachedMarkdownFile; textStyle: CSSProperties; onAccept: () => void; onReject: () => void; onOpen: () => void }) {
+function ProposalDiff({ proposal, file, textStyle, onAccept, onReject, onOpen }: { proposal: AgentProposal; file?: AgentSourceFile; textStyle: CSSProperties; onAccept: () => void; onReject: () => void; onOpen: () => void }) {
   const status = proposal.status || 'pending'
   const [expanded, setExpanded] = useState(false)
   const drawerRef = useRef<HTMLElement | null>(null)

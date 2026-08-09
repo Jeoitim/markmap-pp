@@ -305,6 +305,18 @@ export async function readLocalGitMarkdown(id: string, relativePath: string) {
   return { path: relative, content: await fs.readFile(target, 'utf8') };
 }
 
+export async function readLocalGitHistory(id: string, relativePaths: string[]) {
+  const { repository } = await resolveStoredRepository(id);
+  const paths = relativePaths.slice(0, 20).map(safeRelativeMarkdownPath);
+  return runGit(repository.root, [
+    'log',
+    '--max-count=12',
+    '--date=short',
+    '--pretty=format:%h | %an | %ad | %s',
+    ...(paths.length ? ['--', ...paths] : []),
+  ]).catch(() => '');
+}
+
 export async function writeLocalGitMarkdown(
   id: string,
   relativePath: string,
