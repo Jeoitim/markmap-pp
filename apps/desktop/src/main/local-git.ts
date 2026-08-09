@@ -4,7 +4,10 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { dialog, type BrowserWindow } from 'electron';
 import type {
+  DesktopLocalGitBranch,
+  DesktopLocalGitCommit,
   DesktopLocalGitFile,
+  DesktopLocalGitGraph,
   DesktopLocalGitRepository,
   DesktopLocalGitState,
 } from '../shared/contracts.js';
@@ -110,8 +113,50 @@ function safeRelativeMarkdownPath(value: string) {
   return normalized;
 }
 
-async function listMarkdownFiles(root: string) {
+function safeRelativeWorkspacePath(value: string, kind: 'file' | 'folder') {
+  const normalized = value.replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
+  if (
+    !normalized ||
+    path.posix.isAbsolute(normalized) ||
+    normalized.split('/').some((part) => !part || part === '.' || part === '..' || part === '.git') ||
+    (kind === 'file' && !markdownExtension.test(normalized))
+  ) throw new Error(kind === 'file' ? '仅允许操作工作区内的 Markdown 文件' : '文件夹路径无效');
+  return normalized;
+}
+
+function gitStatusCode(value: string): DesktopLocalGitFile['gitStatus'] {
+  if (value === '??') return '?';
+  if (/U|AA|DD/.test(value)) return 'U';
+  if (/R|C/.test(value)) return 'R';
+  if (value.includes('A')) return 'A';
+  if (value.includes('D')) return 'D';
+  return 'M';
+}
+
+async function listMarkdownGitStatus(root: string) {
+  const output = await runGit(root, [
+    '-c',
+    'core.quotepath=false',
+    'status',
+    '--porcelain=v1',
+    '--untracked-files=all',
+    '--',
+    '*.md',
+    '*.markdown',
+  ]);
+  const statuses = new Map<string, DesktopLocalGitFile['gitStatus']>();
+  for (const line of output.split(/\r?\n/).filter(Boolean)) {
+    const code = line.slice(0, 2);
+    const rawPath = line.slice(3);
+    const relative = (rawPath.includes(' -> ') ? rawPath.slice(rawPath.lastIndexOf(' -> ') + 4) : rawPath).replaceAll('\\', '/');
+    if (markdownExtension.test(relative)) statuses.set(relative, gitStatusCode(code));
+  }
+  return statuses;
+}
+
+async function listMarkdownFiles(root: string, gitStatuses = new Map<string, DesktopLocalGitFile['gitStatus']>()) {
   const files: DesktopLocalGitFile[] = [];
+  const seen = new Set<string>();
   const visit = async (directory: string, relativeDirectory: string) => {
     if (files.length >= maxRepositoryFiles) return;
     const entries = await fs.readdir(directory, { withFileTypes: true });
@@ -129,15 +174,21 @@ async function listMarkdownFiles(root: string) {
       if (entry.isDirectory()) await visit(absolute, relative);
       else if (entry.isFile() && markdownExtension.test(entry.name)) {
         const stat = await fs.stat(absolute);
+        const normalized = relative.replaceAll('\\', '/');
+        seen.add(normalized);
         files.push({
-          path: relative.replaceAll('\\', '/'),
+          path: normalized,
           size: stat.size,
           updatedAt: stat.mtimeMs,
+          gitStatus: gitStatuses.get(normalized) || null,
         });
       }
     }
   };
   await visit(root, '');
+  for (const [relative, gitStatus] of gitStatuses) {
+    if (!seen.has(relative)) files.push({ path: relative, size: 0, updatedAt: 0, gitStatus });
+  }
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
@@ -188,6 +239,7 @@ async function inspectRepository(
     '--untracked-files=all',
   ]);
   const changedMarkdownPaths = await listChangedMarkdownPaths(gitRoot);
+  const markdownGitStatuses = await listMarkdownGitStatus(gitRoot);
   const remoteNames = (await runGit(gitRoot, ['remote']))
     .split(/\r?\n/)
     .filter(Boolean);
@@ -232,7 +284,7 @@ async function inspectRepository(
     upstream: upstream || null,
     aheadCount: Number.parseInt(aheadText, 10) || 0,
     behindCount: Number.parseInt(behindText, 10) || 0,
-    files: await listMarkdownFiles(gitRoot),
+    files: await listMarkdownFiles(gitRoot, markdownGitStatuses),
     lastOpenedAt: Date.now(),
   };
 }
@@ -264,6 +316,40 @@ async function resolveRepositoryFile(
       throw new Error('文件路径超出 Git 仓库范围');
   }
   return { repository, relative, target };
+}
+
+async function resolveWorkspaceTarget(
+  id: string,
+  relativePath: string,
+  kind: 'file' | 'folder',
+  allowMissing = false,
+) {
+  const { repository } = await resolveStoredRepository(id);
+  const relative = safeRelativeWorkspacePath(relativePath, kind);
+  const target = path.resolve(repository.root, ...relative.split('/'));
+  const prefix = `${repository.root}${path.sep}`;
+  if (!target.startsWith(prefix)) throw new Error('目标路径超出本地工作区范围');
+  if (allowMissing) {
+    const parent = await fs.realpath(path.dirname(target));
+    if (parent !== repository.root && !parent.startsWith(prefix))
+      throw new Error('目标路径超出本地工作区范围');
+  } else {
+    const realTarget = await fs.realpath(target);
+    if (!realTarget.startsWith(prefix)) throw new Error('目标路径超出本地工作区范围');
+  }
+  return { repository, relative, target };
+}
+
+async function assertManagedDirectory(directory: string) {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) throw new Error('包含符号链接的文件夹不能在应用内移动或删除');
+    if (entry.name === '.git') throw new Error('不能移动或删除 Git 元数据目录');
+    const child = path.join(directory, entry.name);
+    if (entry.isDirectory()) await assertManagedDirectory(child);
+    else if (!entry.isFile() || !markdownExtension.test(entry.name))
+      throw new Error('文件夹包含未显示的非 Markdown 文件，请使用系统文件管理器操作');
+  }
 }
 
 export async function getLocalGitState(): Promise<DesktopLocalGitState> {
@@ -375,6 +461,134 @@ export async function writeLocalGitMarkdown(
   }
   await fs.writeFile(target, content, 'utf8');
   return { path: relative, repository: await resolveStoredRepository(id).then((value) => value.repository) };
+}
+
+export async function moveLocalWorkspaceTarget(
+  id: string,
+  sourcePath: string,
+  destinationPath: string,
+  kind: 'file' | 'folder',
+) {
+  const source = await resolveWorkspaceTarget(id, sourcePath, kind);
+  const destination = await resolveWorkspaceTarget(id, destinationPath, kind, true);
+  if (source.repository.id !== destination.repository.id)
+    throw new Error('不能跨本地工作区移动文件');
+  if (kind === 'folder') {
+    if (destination.relative.startsWith(`${source.relative}/`))
+      throw new Error('不能把文件夹移动到自身内部');
+    await assertManagedDirectory(source.target);
+  }
+  await fs.access(destination.target).then(
+    () => { throw new Error('目标位置已存在同名文件或文件夹'); },
+    () => undefined,
+  );
+  await fs.rename(source.target, destination.target);
+  return inspectRepository(source.repository.root);
+}
+
+export async function removeLocalWorkspaceTarget(
+  id: string,
+  relativePath: string,
+  kind: 'file' | 'folder',
+) {
+  const resolved = await resolveWorkspaceTarget(id, relativePath, kind);
+  const stat = await fs.lstat(resolved.target);
+  if (stat.isSymbolicLink()) throw new Error('不允许删除符号链接');
+  if (kind === 'file' && !stat.isFile()) throw new Error('目标不是 Markdown 文件');
+  if (kind === 'folder') {
+    if (!stat.isDirectory()) throw new Error('目标不是文件夹');
+    await assertManagedDirectory(resolved.target);
+  }
+  await fs.rm(resolved.target, { recursive: kind === 'folder', force: false });
+  return inspectRepository(resolved.repository.root);
+}
+
+export async function discardLocalGitChanges(id: string) {
+  const { repository } = await resolveStoredRepository(id);
+  if (!repository.isGitRepository) throw new Error('当前文件夹不是 Git 仓库，无法放弃版本修改');
+  if (!repository.head) throw new Error('仓库还没有提交记录，不能恢复到上一版本');
+  const untracked = await runGit(repository.root, [
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+    '--',
+    '*.md',
+    '*.markdown',
+  ]);
+  await runGit(repository.root, [
+    'restore',
+    '--source=HEAD',
+    '--staged',
+    '--worktree',
+    '--',
+    '*.md',
+    '*.markdown',
+  ]);
+  for (const relativePath of untracked.split(/\r?\n/).filter(Boolean)) {
+    const resolved = await resolveRepositoryFile(id, relativePath);
+    const stat = await fs.lstat(resolved.target);
+    if (stat.isFile() && !stat.isSymbolicLink()) await fs.rm(resolved.target);
+  }
+  return inspectRepository(repository.root);
+}
+
+export async function readLocalGitGraph(id: string): Promise<DesktopLocalGitGraph> {
+  let { repository } = await resolveStoredRepository(id);
+  if (!repository.isGitRepository) throw new Error('当前文件夹不是 Git 仓库，无法查看提交图');
+  if (repository.remoteName) repository = await refreshLocalGitRepository(id).catch(() => repository);
+  const [branchOutput, commitOutput] = await Promise.all([
+    runGit(repository.root, [
+      'for-each-ref',
+      '--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)',
+      'refs/heads',
+      'refs/remotes',
+    ]),
+    runGit(repository.root, [
+      'log',
+      '--all',
+      '--max-count=100',
+      '--date=iso-strict',
+      '--pretty=format:%H%x1f%P%x1f%an%x1f%aI%x1f%D%x1f%s',
+    ]).catch(() => ''),
+  ]);
+  const branches: DesktopLocalGitBranch[] = branchOutput.split(/\r?\n/).filter(Boolean).map((line) => {
+    const [name = '', sha = '', upstream = '', marker = ''] = line.split('\t');
+    return {
+      name,
+      sha,
+      current: marker.trim() === '*',
+      remote: name.startsWith(`${repository.remoteName || 'origin'}/`),
+      upstream: upstream || null,
+    };
+  }).filter((branch) => branch.name && !branch.name.endsWith('/HEAD'));
+  const commits: DesktopLocalGitCommit[] = commitOutput.split(/\r?\n/).filter(Boolean).map((line) => {
+    const [sha = '', parents = '', author = '', date = '', decorations = '', message = ''] = line.split('\x1f');
+    return {
+      sha,
+      parents: parents.split(' ').filter(Boolean),
+      author,
+      date,
+      message,
+      refs: decorations.split(',').map((value) => value.trim().replace(/^HEAD -> /, '')).filter(Boolean),
+    };
+  });
+  return { branches, commits };
+}
+
+export async function switchLocalGitBranch(id: string, requestedBranch: string) {
+  const { repository } = await resolveStoredRepository(id);
+  if (!repository.isGitRepository) throw new Error('当前文件夹不是 Git 仓库，无法切换分支');
+  if (repository.changedCount) throw new Error('切换分支前请先提交或放弃当前工作区修改');
+  const graph = await readLocalGitGraph(id);
+  const selected = graph.branches.find((branch) => branch.name === requestedBranch);
+  if (!selected) throw new Error('所选分支不存在或已失效');
+  if (selected.remote) {
+    const localName = selected.name.slice(selected.name.indexOf('/') + 1);
+    const local = graph.branches.find((branch) => !branch.remote && branch.name === localName);
+    if (local) await runGit(repository.root, ['switch', local.name]);
+    else await runGit(repository.root, ['switch', '--track', '-c', localName, selected.name]);
+  } else await runGit(repository.root, ['switch', selected.name]);
+  return inspectRepository(repository.root);
 }
 
 export async function refreshLocalGitRepository(id: string) {

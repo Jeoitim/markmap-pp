@@ -28,6 +28,29 @@ export interface DesktopLocalGitFile {
   path: string;
   size: number;
   updatedAt: number;
+  gitStatus: 'M' | 'A' | 'D' | 'R' | 'U' | '?' | null;
+}
+
+export interface DesktopLocalGitBranch {
+  name: string;
+  sha: string;
+  current: boolean;
+  remote: boolean;
+  upstream: string | null;
+}
+
+export interface DesktopLocalGitCommit {
+  sha: string;
+  parents: string[];
+  author: string;
+  date: string;
+  message: string;
+  refs: string[];
+}
+
+export interface DesktopLocalGitGraph {
+  branches: DesktopLocalGitBranch[];
+  commits: DesktopLocalGitCommit[];
 }
 
 export interface DesktopLocalGitRepository {
@@ -85,6 +108,11 @@ export const desktopChannels = {
   localGitWrite: 'desktop:local-git-write',
   localGitRefresh: 'desktop:local-git-refresh',
   localGitSync: 'desktop:local-git-sync',
+  localGitMove: 'desktop:local-git-move',
+  localGitRemove: 'desktop:local-git-remove',
+  localGitDiscard: 'desktop:local-git-discard',
+  localGitGraph: 'desktop:local-git-graph',
+  localGitSwitchBranch: 'desktop:local-git-switch-branch',
   localGitCommit: 'desktop:local-git-commit',
   localGitPush: 'desktop:local-git-push',
   secureCacheGet: 'desktop:secure-cache-get',

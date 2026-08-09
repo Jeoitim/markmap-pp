@@ -9,6 +9,29 @@ export interface DesktopLocalGitFile {
   path: string
   size: number
   updatedAt: number
+  gitStatus: 'M' | 'A' | 'D' | 'R' | 'U' | '?' | null
+}
+
+export interface DesktopLocalGitBranch {
+  name: string
+  sha: string
+  current: boolean
+  remote: boolean
+  upstream: string | null
+}
+
+export interface DesktopLocalGitCommit {
+  sha: string
+  parents: string[]
+  author: string
+  date: string
+  message: string
+  refs: string[]
+}
+
+export interface DesktopLocalGitGraph {
+  branches: DesktopLocalGitBranch[]
+  commits: DesktopLocalGitCommit[]
 }
 
 export interface DesktopLocalGitRepository {
@@ -57,6 +80,11 @@ export interface MarkmapDesktopApi {
     write(id: string, relativePath: string, content: string): Promise<{ path: string; repository: DesktopLocalGitRepository }>
     refresh(id: string): Promise<DesktopLocalGitRepository>
     sync(id: string): Promise<DesktopLocalGitRepository>
+    move(id: string, sourcePath: string, destinationPath: string, kind: 'file' | 'folder'): Promise<DesktopLocalGitRepository>
+    remove(id: string, relativePath: string, kind: 'file' | 'folder'): Promise<DesktopLocalGitRepository>
+    discard(id: string): Promise<DesktopLocalGitRepository>
+    graph(id: string): Promise<DesktopLocalGitGraph>
+    switchBranch(id: string, branch: string): Promise<DesktopLocalGitRepository>
     commit(id: string, message: string): Promise<DesktopLocalGitRepository>
     push(id: string): Promise<DesktopLocalGitRepository>
   }

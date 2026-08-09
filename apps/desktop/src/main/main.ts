@@ -30,14 +30,19 @@ import {
 } from './updates.js';
 import {
   commitLocalGitMarkdown,
+  discardLocalGitChanges,
   forgetLocalGitRepository,
   getLocalGitState,
   openLocalGitRepository,
   pushLocalGitRepository,
+  readLocalGitGraph,
   refreshLocalGitRepository,
   readLocalGitHistory,
   readLocalGitMarkdown,
   selectLocalGitRepository,
+  moveLocalWorkspaceTarget,
+  removeLocalWorkspaceTarget,
+  switchLocalGitBranch,
   syncLocalGitRepository,
   writeLocalGitMarkdown,
 } from './local-git.js';
@@ -339,6 +344,33 @@ function registerIpc() {
     assertTrusted(event);
     if (typeof id !== 'string') throw new Error('仓库标识无效');
     return syncLocalGitRepository(id);
+  });
+  ipcMain.handle(desktopChannels.localGitMove, async (event, id: unknown, sourcePath: unknown, destinationPath: unknown, kind: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string' || typeof sourcePath !== 'string' || typeof destinationPath !== 'string' || (kind !== 'file' && kind !== 'folder'))
+      throw new Error('移动参数无效');
+    return moveLocalWorkspaceTarget(id, sourcePath, destinationPath, kind);
+  });
+  ipcMain.handle(desktopChannels.localGitRemove, async (event, id: unknown, relativePath: unknown, kind: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string' || typeof relativePath !== 'string' || (kind !== 'file' && kind !== 'folder'))
+      throw new Error('删除参数无效');
+    return removeLocalWorkspaceTarget(id, relativePath, kind);
+  });
+  ipcMain.handle(desktopChannels.localGitDiscard, async (event, id: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string') throw new Error('仓库标识无效');
+    return discardLocalGitChanges(id);
+  });
+  ipcMain.handle(desktopChannels.localGitGraph, async (event, id: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string') throw new Error('仓库标识无效');
+    return readLocalGitGraph(id);
+  });
+  ipcMain.handle(desktopChannels.localGitSwitchBranch, async (event, id: unknown, branch: unknown) => {
+    assertTrusted(event);
+    if (typeof id !== 'string' || typeof branch !== 'string') throw new Error('分支参数无效');
+    return switchLocalGitBranch(id, branch);
   });
   ipcMain.handle(desktopChannels.localGitPush, async (event, id: unknown) => {
     assertTrusted(event);

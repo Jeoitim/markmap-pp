@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DesktopAppInfo, DesktopLocalGitRepository, DesktopLocalGitState, DesktopOpenedFile, DesktopSaveRequest, DesktopSaveResult, DesktopUpdateState } from '../shared/contracts.js'
+import type { DesktopAppInfo, DesktopLocalGitGraph, DesktopLocalGitRepository, DesktopLocalGitState, DesktopOpenedFile, DesktopSaveRequest, DesktopSaveResult, DesktopUpdateState } from '../shared/contracts.js'
 
 const desktopChannels = {
   appInfo: 'desktop:app-info',
@@ -17,6 +17,11 @@ const desktopChannels = {
   localGitWrite: 'desktop:local-git-write',
   localGitRefresh: 'desktop:local-git-refresh',
   localGitSync: 'desktop:local-git-sync',
+  localGitMove: 'desktop:local-git-move',
+  localGitRemove: 'desktop:local-git-remove',
+  localGitDiscard: 'desktop:local-git-discard',
+  localGitGraph: 'desktop:local-git-graph',
+  localGitSwitchBranch: 'desktop:local-git-switch-branch',
   localGitCommit: 'desktop:local-git-commit',
   localGitPush: 'desktop:local-git-push',
   secureCacheGet: 'desktop:secure-cache-get',
@@ -49,6 +54,11 @@ const api = {
     write: (id: string, relativePath: string, content: string) => ipcRenderer.invoke(desktopChannels.localGitWrite, id, relativePath, content) as Promise<{ path: string; repository: DesktopLocalGitRepository }>,
     refresh: (id: string) => ipcRenderer.invoke(desktopChannels.localGitRefresh, id) as Promise<DesktopLocalGitRepository>,
     sync: (id: string) => ipcRenderer.invoke(desktopChannels.localGitSync, id) as Promise<DesktopLocalGitRepository>,
+    move: (id: string, sourcePath: string, destinationPath: string, kind: 'file' | 'folder') => ipcRenderer.invoke(desktopChannels.localGitMove, id, sourcePath, destinationPath, kind) as Promise<DesktopLocalGitRepository>,
+    remove: (id: string, relativePath: string, kind: 'file' | 'folder') => ipcRenderer.invoke(desktopChannels.localGitRemove, id, relativePath, kind) as Promise<DesktopLocalGitRepository>,
+    discard: (id: string) => ipcRenderer.invoke(desktopChannels.localGitDiscard, id) as Promise<DesktopLocalGitRepository>,
+    graph: (id: string) => ipcRenderer.invoke(desktopChannels.localGitGraph, id) as Promise<DesktopLocalGitGraph>,
+    switchBranch: (id: string, branch: string) => ipcRenderer.invoke(desktopChannels.localGitSwitchBranch, id, branch) as Promise<DesktopLocalGitRepository>,
     commit: (id: string, message: string) => ipcRenderer.invoke(desktopChannels.localGitCommit, id, message) as Promise<DesktopLocalGitRepository>,
     push: (id: string) => ipcRenderer.invoke(desktopChannels.localGitPush, id) as Promise<DesktopLocalGitRepository>,
   },
