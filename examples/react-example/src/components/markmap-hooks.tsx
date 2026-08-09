@@ -772,6 +772,8 @@ export default function MarkmapHooks() {
   const panelReturnFocusRef = useRef<HTMLElement | null>(null)
   const resizeWidthRef = useRef(editorWidth)
   const markdownRef = useRef(markdown)
+  const localAutosaveRevisionRef = useRef(new Map<string, number>())
+  const localAutosaveQueueRef = useRef(new Map<string, Promise<void>>())
   const historyRef = useRef<string[]>([])
   const lastEditRef = useRef({ source: '', time: 0 })
   const helpTouchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -935,6 +937,12 @@ export default function MarkmapHooks() {
     setDocumentTabs(nextTabs)
   }, [activeTabId])
 
+  const markDocumentSaved = useCallback((tabId: string, content: string) => {
+    const nextTabs = documentTabsRef.current.map((tab) => tab.id === tabId ? { ...tab, content, savedContent: content } : tab)
+    documentTabsRef.current = nextTabs
+    setDocumentTabs(nextTabs)
+  }, [])
+
   const openDocumentTab = useCallback((name: string, content: string, sourceKey?: string, repositoryPath: string | null = null, localRepositoryId: string | null = null, localPath: string | null = null, persistence: Partial<DocumentTabPersistence> = {}) => {
     const savedTabs = persistActiveDocumentTab()
     const existing = sourceKey ? savedTabs.find((tab) => tab.sourceKey === sourceKey) : undefined
@@ -964,6 +972,18 @@ export default function MarkmapHooks() {
     let nextTabs = savedTabs.filter((tab) => tab.id !== tabId)
     const closing = savedTabs[closingIndex]
     if (closing && tabHasUnsavedChanges(closing) && !discardUnsaved) {
+      if (closing.localRepositoryId && closing.localPath) {
+        const desktop = desktopApi()
+        if (desktop) {
+          setLocalGitBusy(true)
+          void desktop.localGit.write(closing.localRepositoryId, closing.localPath, closing.content).then((result) => {
+            setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === result.repository.id ? result.repository : item) }))
+            markDocumentSaved(closing.id, closing.content)
+            closeDocumentTab(closing.id, true)
+          }).catch((error) => setLocalGitError(error instanceof Error ? error.message : '自动保存本地 Markdown 失败')).finally(() => setLocalGitBusy(false))
+          return
+        }
+      }
       setPendingCloseTabId(tabId)
       setPendingCloseError('')
       return
@@ -975,7 +995,7 @@ export default function MarkmapHooks() {
     const nextTab = nextTabs[Math.min(closingIndex, nextTabs.length - 1)]
     setActiveTabId(nextTab.id)
     displayDocumentTab(nextTab)
-  }, [activeTabId, displayDocumentTab, persistActiveDocumentTab])
+  }, [activeTabId, displayDocumentTab, markDocumentSaved, persistActiveDocumentTab])
 
   const savePendingDocumentAndClose = useCallback(async () => {
     const tab = documentTabsRef.current.find((item) => item.id === pendingCloseTabId)
@@ -1403,6 +1423,36 @@ export default function MarkmapHooks() {
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '保存本地 Markdown 失败') }
     finally { setLocalGitBusy(false) }
   }
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    if (!desktop || !activeLocalFile) return
+    const tab = documentTabsRef.current.find((item) => item.id === activeTabId)
+    if (!tab || tab.savedContent === markdown) return
+    const repositoryId = activeLocalFile.repositoryId
+    const path = activeLocalFile.path
+    const tabId = activeTabId
+    const content = markdown
+    const key = `${repositoryId}:${path}`
+    const revision = (localAutosaveRevisionRef.current.get(key) || 0) + 1
+    localAutosaveRevisionRef.current.set(key, revision)
+    const timer = window.setTimeout(() => {
+      const previous = localAutosaveQueueRef.current.get(key) || Promise.resolve()
+      const operation = previous.catch(() => {}).then(async () => {
+        const result = await desktop.localGit.write(repositoryId, path, content)
+        if (localAutosaveRevisionRef.current.get(key) !== revision) return
+        setLocalGitState((current) => ({ ...current, repositories: current.repositories.map((item) => item.id === result.repository.id ? result.repository : item) }))
+        setLocalAgentContext((current) => current.repositoryId === repositoryId ? { ...current, files: current.files.map((file) => file.path === path ? { ...file, content, status: 'modified' } : file) } : current)
+        markDocumentSaved(tabId, content)
+        setSaveState('saved')
+        setLocalGitError('')
+      }).catch((error) => {
+        if (localAutosaveRevisionRef.current.get(key) === revision) setLocalGitError(error instanceof Error ? error.message : '自动保存本地 Markdown 失败')
+      })
+      localAutosaveQueueRef.current.set(key, operation)
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [activeLocalFile, activeTabId, markdown, markDocumentSaved])
 
   const saveStandaloneDocument = useCallback(async () => {
     const tab = documentTabsRef.current.find((item) => item.id === activeTabId)
@@ -3074,7 +3124,7 @@ ${documentRenderConfig.style}
             <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button></div>
             {editorView === 'markdown' ? <>
               <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
-              <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span>{activeTabUnsaved && <span className="editor-unsaved"><i />未保存</span>}<span className="editor-status-language">Markdown</span><span className="editor-status-actions">{activeLocalFile && <button type="button" className="editor-local-save" disabled={localGitBusy || !activeTabUnsaved} onClick={() => void saveActiveLocalDocument()} title="保存到本地 Git 仓库"><Icon name="sync" /><span>保存</span></button>}{agentUsesStandaloneFile && <button type="button" className="editor-local-save" disabled={!activeTabUnsaved} onClick={() => void saveStandaloneDocument()} title={activeDocumentTab?.desktopFileId ? '保存到原文件' : '下载 Markdown 副本'}><Icon name="download" /><span>{activeDocumentTab?.desktopFileId ? '保存' : '下载副本'}</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
+              <footer className="editor-status"><button className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => diagnostics.length && setShowDiagnostics((value) => !value)} disabled={!diagnostics.length}><Icon name={diagnostics.length ? 'warning' : 'check'} />{diagnostics.length ? diagnostics.length : '语法正常'}</button><span>{lineCount} 行</span><span>{markdown.length} 字符</span>{activeTabUnsaved && <span className="editor-unsaved"><i />{activeLocalFile ? '自动保存中' : '未保存'}</span>}<span className="editor-status-language">Markdown</span><span className="editor-status-actions">{agentUsesStandaloneFile && <button type="button" className="editor-local-save" disabled={!activeTabUnsaved} onClick={() => void saveStandaloneDocument()} title={activeDocumentTab?.desktopFileId ? '保存到原文件' : '下载 Markdown 副本'}><Icon name="download" /><span>{activeDocumentTab?.desktopFileId ? '保存' : '下载副本'}</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
               {showDiagnostics && diagnostics.length > 0 && <div className="diagnostics-popover"><header><strong>语法问题</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label="关闭问题列表"><Icon name="x" /></button></header>{diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; return <button key={`${item.from}-${index}`} onClick={() => setShowDiagnostics(false)}><Icon name="warning" /><span><strong>第 {line} 行</strong><small>{item.message}</small></span></button> })}</div>}
             </> : editorView === 'agent' ? <AgentPanel workspaceKey={agentWorkspaceKey} workspaceLabel={agentWorkspaceLabel} workspaceKind={agentUsesStandaloneFile ? 'file' : agentUsesLocalRepository ? 'local' : 'remote'} repositoryScopeEnabled={!agentUsesStandaloneFile} canCreateFiles={!agentUsesStandaloneFile} canCommit={!agentUsesStandaloneFile} files={agentFiles} activePath={agentActivePath} onApplyChange={agentApplyChange} onCreateFile={agentCreateFile} onOpenFile={(path) => { if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else if (!agentUsesStandaloneFile) { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentCommit} getGitContext={agentGitContext} remoteFileCount={agentFileCount} remotePaths={agentPaths} repositoryBranch={agentUsesLocalRepository ? agentLocalRepository?.branch : agentUsesStandaloneFile ? undefined : githubConfig?.branch} onLoadAllFiles={loadAgentFiles} loadingFiles={agentUsesStandaloneFile ? false : agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize }}>
               {repositorySource === 'local' ? !activeLocalRepository ? <div className="repository-unbound"><Icon name="folder" /><strong>尚未打开本地 Git 仓库</strong><span>{desktopApi() ? '只接受经过 Git 校验的文件夹，普通文件夹不会加入。' : '网页端不能直接验证本地 Git 仓库，请使用桌面应用。'}</span><button onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}>管理本地仓库</button></div> : <>
