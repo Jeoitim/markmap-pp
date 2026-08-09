@@ -25,6 +25,15 @@ describe('repository links', () => {
     expect(resolveHeading(note, '%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E')?.line).toBe(1)
   })
 
+  it('indexes a bold repository link rendered inside a mind-map node', () => {
+    const note = indexRepositoryNote('古代文学/诗人.md', '- **[李白](/古代文学/隋唐文学：李白.md)** (浪漫主义)')
+    expect(note.links[0]).toMatchObject({
+      label: '李白',
+      href: '/古代文学/隋唐文学：李白.md',
+      resolution: { kind: 'internal', path: '古代文学/隋唐文学：李白.md', fragment: '' },
+    })
+  })
+
   it('writes portable root-relative Markdown links', () => {
     expect(repositoryMarkdownLink('查看说明', 'doc/使用说明.md', '快速-开始')).toBe('[查看说明](/doc/使用说明.md#快速-开始)')
     expect(repositoryMarkdownLink('专题', '古代 文学/隋唐文学（李白）.md')).toBe('[专题](/古代%20文学/隋唐文学（李白）.md)')
