@@ -47,6 +47,13 @@ function decodeLinkPart(value: string) {
   try { return decodeURIComponent(value) } catch { return value }
 }
 
+function encodeReadableLinkPart(value: string) {
+  return value.replace(/[\s"#%()[\]<>?\\^`{|}]/g, (character) => {
+    const code = character.charCodeAt(0)
+    return code <= 0x7f ? `%${code.toString(16).toUpperCase().padStart(2, '0')}` : encodeURIComponent(character)
+  })
+}
+
 function cleanHeadingText(value: string) {
   return value
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -167,8 +174,8 @@ export function resolveRepositoryLink(href: string, sourcePath: string): Reposit
 }
 
 export function repositoryLinkHref(path: string, fragment = '') {
-  const encodedPath = path.split('/').map((part) => encodeURIComponent(part)).join('/')
-  return `/${encodedPath}${fragment ? `#${encodeURIComponent(fragment).replace(/%2F/gi, '/')}` : ''}`
+  const readablePath = path.split('/').map(encodeReadableLinkPart).join('/')
+  return `/${readablePath}${fragment ? `#${encodeReadableLinkPart(fragment)}` : ''}`
 }
 
 export function repositoryMarkdownLink(label: string, path: string, fragment = '') {

@@ -711,6 +711,7 @@ svg { flex: 0 0 auto; }
   .mobile-pane-switch { flex: 0 0 auto; white-space: nowrap; }
   .editor-status { gap: 8px; padding: 0 8px; }
   .editor-status-language { display: none; }
+  .editor-status-actions { margin-left: auto; }
   .note-links-panel { inset: 52px 8px 36px; width: auto; max-height: none; }
   .link-picker-backdrop { align-items: end; padding: 0; }
   .link-picker-dialog { width: 100%; max-height: min(86dvh,760px); border-radius: 17px 17px 0 0; }

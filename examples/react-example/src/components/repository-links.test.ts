@@ -4,6 +4,7 @@ import { extractRepositoryHeadings, indexRepositoryNote, repositoryMarkdownLink,
 describe('repository links', () => {
   it('distinguishes repository Markdown links from normal browser links', () => {
     expect(resolveRepositoryLink('/doc/guide.md#安装', 'notes/start.md')).toEqual({ kind: 'internal', path: 'doc/guide.md', fragment: '安装' })
+    expect(resolveRepositoryLink('/%E5%8F%A4%E4%BB%A3%E6%96%87%E5%AD%A6/%E9%9A%8B%E5%94%90%E6%96%87%E5%AD%A6%EF%BC%9A%E6%9D%8E%E7%99%BD.md', 'notes/start.md')).toEqual({ kind: 'internal', path: '古代文学/隋唐文学：李白.md', fragment: '' })
     expect(resolveRepositoryLink('../guide.md', 'notes/start.md')).toEqual({ kind: 'internal', path: 'guide.md', fragment: '' })
     expect(resolveRepositoryLink('#本页标题', 'notes/start.md')).toEqual({ kind: 'internal', path: 'notes/start.md', fragment: '本页标题' })
     expect(resolveRepositoryLink('https://example.com/guide.md', 'notes/start.md')).toEqual({ kind: 'external', href: 'https://example.com/guide.md' })
@@ -25,7 +26,8 @@ describe('repository links', () => {
   })
 
   it('writes portable root-relative Markdown links', () => {
-    expect(repositoryMarkdownLink('查看说明', 'doc/使用说明.md', '快速-开始')).toBe('[查看说明](/doc/%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.md#%E5%BF%AB%E9%80%9F-%E5%BC%80%E5%A7%8B)')
+    expect(repositoryMarkdownLink('查看说明', 'doc/使用说明.md', '快速-开始')).toBe('[查看说明](/doc/使用说明.md#快速-开始)')
+    expect(repositoryMarkdownLink('专题', '古代 文学/隋唐文学（李白）.md')).toBe('[专题](/古代%20文学/隋唐文学（李白）.md)')
   })
 
   it('updates incoming links after a file move without touching web links', () => {
