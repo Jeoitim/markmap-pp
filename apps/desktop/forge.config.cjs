@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { FuseV1Options, FuseVersion } = require('@electron/fuses')
 const path = require('node:path')
 
