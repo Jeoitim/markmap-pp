@@ -45,6 +45,7 @@ const transformer = new Transformer()
 const SETTINGS_KEY = 'markmap-plus-plus:settings'
 const VIRTUAL_FOLDERS_KEY = 'markmap-plus-plus:virtual-folders'
 const MARKMAP_PREVIEW_ID = 'markmap-preview'
+const brandIconUrl = `${import.meta.env.BASE_URL}brand/markmap-plus-plus-icon.png`
 
 const starterDocument = `---
 title: markmap++ 使用指南
@@ -2554,7 +2555,7 @@ ${documentRenderConfig.style}
     <main className="app-shell">
       {documentRenderConfig.style && <style>{documentRenderConfig.style}</style>}
       <header className="topbar">
-        <div className="brand" aria-label="markmap++"><span className="brand-mark"><Icon name="map" /></span><span className="brand-name">markmap<span>++</span></span></div>
+        <div className="brand" aria-label="markmap++"><span className="brand-mark"><img src={brandIconUrl} alt="" /></span><span className="brand-name">markmap<span>++</span></span></div>
         <div className="document-name" title={fileName}><span className={`save-dot ${titleSyncState}`} /><span>{fileName}</span><small>{titleSyncText}</small></div>
         <nav ref={actionsRef} className="actions" aria-label="文档操作">
           <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
@@ -2565,6 +2566,7 @@ ${documentRenderConfig.style}
           <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
           <button type="button" className="icon-button" aria-label={previewDarkMode ? '切换浅色模式' : '切换深色模式'} title={previewDarkMode ? '浅色模式 · 雾白背景' : '深色模式 · 深灰背景'} onClick={() => updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d')}><Icon name={previewDarkMode ? 'sun' : 'moon'} /></button>
           <button type="button" className="icon-button more-action" aria-label="更多操作" title="更多操作" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
+          <span className="brand-corner-mark" title="markmap++" aria-label="markmap++ 品牌图标"><img src={brandIconUrl} alt="" /></span>
           {actionMenuOpen && <div className="action-overflow-menu">
             <button type="button" onClick={() => { setActionMenuOpen(false); void chooseMarkdownFile() }}><Icon name="folder" /><span>打开 Markdown</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); openHelpPanel() }}><Icon name="help" /><span>使用说明</span></button>

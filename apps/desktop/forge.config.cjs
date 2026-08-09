@@ -1,4 +1,11 @@
 const { FuseV1Options, FuseVersion } = require('@electron/fuses')
+const path = require('node:path')
+
+const applicationIcon = path.join(
+  __dirname,
+  'resources',
+  process.platform === 'win32' ? 'icon.ico' : process.platform === 'darwin' ? 'icon.icns' : 'icon.png',
+)
 
 module.exports = {
   packagerConfig: {
@@ -7,6 +14,7 @@ module.exports = {
     executableName: 'markmap-plus-plus',
     appBundleId: 'io.github.jeoitim.markmap-plus-plus',
     appCategoryType: 'public.app-category.productivity',
+    icon: applicationIcon,
     download:
       process.platform === 'win32' && process.arch === 'x64'
         ? {
@@ -32,6 +40,7 @@ module.exports = {
       config: {
         name: 'markmap_plus_plus',
         setupExe: 'markmap-plus-plus-Setup.exe',
+        setupIcon: path.join(__dirname, 'resources', 'icon.ico'),
         noMsi: true,
       },
     },
