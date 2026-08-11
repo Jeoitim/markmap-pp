@@ -65,6 +65,7 @@ export interface MarkmapDesktopApi {
     arch: string
     packaged: boolean
   }>
+  setNativeTheme(theme: 'dark' | 'light' | 'system'): Promise<{ shouldUseDarkColors: boolean }>
   openExternal(url: string): Promise<boolean>
   openMarkdown(): Promise<DesktopOpenedFile | null>
   saveOpenedMarkdown(id: string, content: string): Promise<DesktopOpenedFile>

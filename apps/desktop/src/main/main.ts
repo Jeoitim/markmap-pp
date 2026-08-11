@@ -10,6 +10,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   net,
   protocol,
   session,
@@ -108,6 +109,7 @@ function handleSquirrelStartup() {
 }
 
 const squirrelStartup = handleSquirrelStartup();
+nativeTheme.themeSource = 'system';
 
 function rendererRoot() {
   return path.join(app.getAppPath(), 'dist', 'renderer');
@@ -219,6 +221,16 @@ function registerIpc() {
       arch: process.arch,
       packaged: app.isPackaged,
     };
+  });
+  ipcMain.handle(desktopChannels.setNativeTheme, (event, theme: unknown) => {
+    assertTrusted(event);
+    if (theme !== 'dark' && theme !== 'light' && theme !== 'system') {
+      throw new Error('Invalid native theme');
+    }
+    nativeTheme.themeSource = theme;
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (process.platform === 'win32') window?.setBackgroundMaterial('mica');
+    return { shouldUseDarkColors: nativeTheme.shouldUseDarkColors };
   });
   ipcMain.handle(
     desktopChannels.openExternal,

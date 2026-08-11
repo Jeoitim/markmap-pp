@@ -94,6 +94,7 @@ export interface DesktopUpdateState {
 
 export const desktopChannels = {
   appInfo: 'desktop:app-info',
+  setNativeTheme: 'desktop:set-native-theme',
   openExternal: 'desktop:open-external',
   openMarkdown: 'desktop:open-markdown',
   openedMarkdown: 'desktop:opened-markdown',

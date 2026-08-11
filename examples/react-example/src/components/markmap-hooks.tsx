@@ -583,6 +583,18 @@ function loadSettings(): AppSettings {
   }
 }
 
+const systemThemeBackgrounds = new Set(['#fafafa', '#ffffff', '#15181d', '#000000'])
+
+function loadInitialSettings() {
+  const settings = loadSettings()
+  const desktop = desktopApi()
+  if (!desktop || !window.matchMedia) return settings
+  const storedBackground = settings.previewBackgroundColor.toLowerCase()
+  if (!systemThemeBackgrounds.has(storedBackground)) return settings
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+  return { ...settings, previewBackgroundColor: systemDark ? '#15181d' : '#fafafa' }
+}
+
 const previewLightText = '#f4f6f9'
 const previewDarkText = '#30333a'
 const defaultLinkColor = '#0097e6'
@@ -704,6 +716,7 @@ function readUserPreviewBackground(style: string) {
 
 export default function MarkmapHooks() {
   const desktopWorkspaceSessionRef = useRef(loadDesktopWorkspaceSession())
+  const initialSettingsRef = useRef(loadInitialSettings())
   const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [createDocumentTab('markmap++ 操作指南.md', loadDocument(), 'starter')])
   const [activeTabId, setActiveTabId] = useState(() => documentTabs[0].id)
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
@@ -719,8 +732,9 @@ export default function MarkmapHooks() {
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
   const [editorView, setEditorView] = useState<EditorView>(() => desktopWorkspaceSessionRef.current?.editorView || 'markdown')
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
-  const [settings, setSettings] = useState(loadSettings)
-  const [dark, setDark] = useState(() => shouldUseDarkTheme(loadSettings().previewBackgroundColor))
+  const [settings, setSettings] = useState(() => initialSettingsRef.current)
+  const [dark, setDark] = useState(() => shouldUseDarkTheme(initialSettingsRef.current.previewBackgroundColor))
+  const nativeThemeSyncSkippedRef = useRef(false)
   const [activePanel, setActivePanel] = useState<Panel>(null)
   const [helpTipIndex, setHelpTipIndex] = useState(0)
   const [editorWidth, setEditorWidth] = useState(38)
@@ -2947,6 +2961,16 @@ export default function MarkmapHooks() {
       svg.style.setProperty('--markmap-a-color', previewLinkColor)
     }
   }, [documentRenderConfig.style, previewCodeBackground, previewDarkMode, previewLinkColor])
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    if (!desktop) return
+    if (!nativeThemeSyncSkippedRef.current) {
+      nativeThemeSyncSkippedRef.current = true
+      return
+    }
+    void desktop.setNativeTheme(previewDarkMode ? 'dark' : 'light').catch(() => {})
+  }, [previewDarkMode])
 
   useEffect(() => {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* storage may be disabled */ }
