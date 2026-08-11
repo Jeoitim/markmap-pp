@@ -2,6 +2,7 @@
   --bg: #f4f5f7; --panel: #fff; --panel-soft: #fafafa; --border: #e3e5ea;
   --text: #20232a; --muted: #747b88; --accent: #7056e8; --accent-hover: #5e46d0;
   --editor-bg: #fbfbfc; --editor-text: #292d35; --editor-gutter: #a4a8b0; --editor-active: #f1f0f8;
+  --overlay-surface: color-mix(in srgb,var(--panel) 68%,transparent); --overlay-surface-strong: color-mix(in srgb,var(--panel) 82%,transparent); --overlay-border: color-mix(in srgb,var(--border) 82%,transparent);
   color: var(--text); background: var(--bg); font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none; text-rendering: optimizeLegibility;
 }
@@ -1154,4 +1155,64 @@ svg { flex: 0 0 auto; }
 
 @media (prefers-reduced-motion: reduce) {
   .agent-confirm-dialog { animation: none; }
+}
+
+/* Glass surfaces for floating menus, popovers, dialogs, and panels. */
+.desktop-app-menu,
+.action-overflow-menu,
+.unsaved-dialog,
+.agent-settings,
+.agent-history,
+.agent-option-popover,
+.diagnostics-popover,
+.selection-action-menu,
+.link-picker-dialog,
+.note-links-panel:not(.embedded),
+.settings-panel,
+.repository-context-menu,
+.repository-history-popover,
+.repository-graph-popover,
+.repository-touch-drag-ghost,
+.repository-touch-drag-indicator,
+.mobile-tabs-sheet,
+.agent-drawer,
+.agent-confirm-dialog {
+  border-color: var(--overlay-border);
+  background: var(--overlay-surface);
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
+  backdrop-filter: blur(18px) saturate(1.18);
+}
+
+.panel-backdrop,
+.unsaved-dialog-backdrop,
+.link-picker-backdrop,
+.mobile-tabs-backdrop,
+.agent-drawer-backdrop {
+  background: color-mix(in srgb,var(--bg) 22%,transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.unsaved-dialog-backdrop,
+.link-picker-backdrop {
+  background: color-mix(in srgb,var(--bg) 28%,transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.link-picker-backdrop { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.mobile-tabs-backdrop { -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.agent-drawer-backdrop { -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
+.agent-drawer-backdrop.portal { -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
+.agent-drawer-backdrop.portal { background: color-mix(in srgb,var(--bg) 34%,transparent); }
+
+.desktop-app-menu nav,
+.settings-panel > header,
+.note-links-panel > header,
+.link-picker-dialog > footer,
+.mobile-tabs-sheet > footer,
+.agent-drawer > header,
+.agent-settings-actions,
+.agent-diff-drawer .agent-diff-summary,
+.agent-diff-drawer > footer {
+  background: var(--overlay-surface-strong);
 }
