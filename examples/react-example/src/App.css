@@ -2,7 +2,7 @@
   --bg: #f4f5f7; --panel: #fff; --panel-soft: #fafafa; --border: #e3e5ea;
   --text: #20232a; --muted: #747b88; --accent: #7056e8; --accent-hover: #5e46d0;
   --editor-bg: #fbfbfc; --editor-text: #292d35; --editor-gutter: #a4a8b0; --editor-active: #f1f0f8;
-  --overlay-surface: color-mix(in srgb,var(--panel) 68%,transparent); --overlay-surface-strong: color-mix(in srgb,var(--panel) 82%,transparent); --overlay-border: color-mix(in srgb,var(--border) 82%,transparent);
+  --overlay-surface: color-mix(in srgb,var(--panel) 94%,transparent); --overlay-surface-strong: color-mix(in srgb,var(--panel) 97%,transparent); --overlay-border: color-mix(in srgb,var(--border) 82%,transparent);
   color: var(--text); background: var(--bg); font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none; text-rendering: optimizeLegibility;
 }
@@ -10,6 +10,7 @@
   --bg: #0d0f13; --panel: #181b21; --panel-soft: #12151a; --border: #303641;
   --text: #f4f5f7; --muted: #b1b7c2; --editor-bg: #101318; --editor-text: #f1f3f6;
   --editor-gutter: #8a929f; --editor-active: #242936;
+  --overlay-surface: color-mix(in srgb,var(--panel) 91%,transparent); --overlay-surface-strong: color-mix(in srgb,var(--panel) 95%,transparent);
 }
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; height: 100%; overflow: hidden; }
@@ -1179,9 +1180,30 @@ svg { flex: 0 0 auto; }
 .agent-confirm-dialog {
   border-color: var(--overlay-border);
   background: var(--overlay-surface);
-  -webkit-backdrop-filter: blur(26px) saturate(1.16);
-  backdrop-filter: blur(26px) saturate(1.16);
+  -webkit-backdrop-filter: blur(30px) saturate(1.12);
+  backdrop-filter: blur(30px) saturate(1.12);
 }
+
+.selection-action-menu,
+.repository-context-menu {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.selection-action-menu button,
+.repository-context-menu button {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.repository-context-menu strong { padding: 7px 10px 8px; font-size: 12px; line-height: 1.35; }
+.selection-action-menu button:hover,
+.repository-context-menu button:hover { background: color-mix(in srgb,var(--accent) 8%,transparent); }
 
 .panel-backdrop,
 .unsaved-dialog-backdrop,
