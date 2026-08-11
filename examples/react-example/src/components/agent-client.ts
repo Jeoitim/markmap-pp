@@ -87,6 +87,9 @@ export interface AskAgentOptions {
   appliedChanges?: AgentAppliedChange[]
   operationMemory?: AgentOperation[]
   activePath?: string | null
+  workspaceLabel?: string
+  allowCreate?: boolean
+  allowCommit?: boolean
   /** 仓库全部已知路径，用于在受限编辑范围内仍能阻止新建同名文件。 */
   repositoryPaths?: string[]
   getGitContext?: (paths: string[]) => Promise<string>
@@ -191,7 +194,7 @@ function systemPrompt(mode: AgentMode, files: AgentSourceFile[], options: AskAge
   const fileIndex = files.map((file) => `- ${file.path}${file.status && file.status !== 'clean' ? ` [${file.status}]` : ''}`).join('\n') || '- 当前范围没有笔记'
   const memory = (options.operationMemory || []).slice(-24).map((item) => `- ${item.summary}`).join('\n') || '- 暂无历史操作'
   const editRules = mode === 'edit'
-    ? `你处于 Edit 模式。先观察再行动：修改前读取实时文件，必要时搜索相关笔记以避免孤立改写。使用 propose_note_change 生成待审核提案；不要在最终回答中粘贴整份文件或伪造 JSON。工具返回“已登记”不等于用户已接受，必须准确说“已提出/待审核”。只有用户本轮明确要求 commit、提交或推送时才调用 request_git_commit。一次任务可提出多个相互一致的文件修改。`
+    ? `你处于 Edit 模式。先观察再行动：修改前读取实时文件，必要时搜索相关笔记以避免孤立改写。使用 propose_note_change 生成待审核提案；不要在最终回答中粘贴整份文件或伪造 JSON。工具返回“已登记”不等于用户已接受，必须准确说“已提出/待审核”。${options.allowCreate === false ? '当前是单文件工作区，只能 update 当前文件，不能 create 新文件。' : '一次任务可提出多个相互一致的文件修改。'}${options.allowCommit === false ? ' 当前工作区没有 Git，不能请求提交。' : ' 只有用户本轮明确要求 commit、提交或推送时才调用 request_git_commit。'}`
     : `你处于 Chat 模式。可以自由使用只读工具，但不能修改笔记。直接回答用户问题，不要把“切到 Edit 模式”当成每次回答的固定尾巴。`
   return `你是 markmap++ 中常驻于笔记仓库的知识伙伴和仓库 Agent。你的首要能力是理解用户正在做什么、按需观察真实工作区、连续记住已发生的操作，并把笔记内容与可靠的通用知识结合起来。
 
@@ -205,6 +208,7 @@ ${editRules}
 5. 对话历史提供意图连续性；下方“实时工作区”提供当前事实。两者冲突时，以工具返回的实时状态为准。
 
 实时工作区：
+- 工作区：${options.workspaceLabel || '当前工作区'}（不会访问其他已打开仓库）
 - 当前活动笔记：${options.activePath || '无'}
 - 当前可访问范围共 ${files.length} 篇：
 ${fileIndex}
@@ -382,7 +386,7 @@ async function executeTool(call: ToolCall, mode: AgentMode, files: AgentSourceFi
   const repositoryPaths = new Set(options.repositoryPaths || files.map((file) => file.path))
   const args = call.arguments
   if (call.name === 'get_working_state') {
-    return JSON.stringify({ activePath: options.activePath || null, accessibleNotes: files.length, files: files.map((file) => ({ path: file.path, status: file.status || 'clean' })), pendingProposals: proposals.map((proposal) => ({ path: proposal.path, action: proposal.action })), approvedChanges: (options.appliedChanges || []).map((change) => ({ path: change.path, action: change.action })) })
+    return JSON.stringify({ workspace: options.workspaceLabel || '当前工作区', activePath: options.activePath || null, accessibleNotes: files.length, files: files.map((file) => ({ path: file.path, status: file.status || 'clean' })), pendingProposals: proposals.map((proposal) => ({ path: proposal.path, action: proposal.action })), approvedChanges: (options.appliedChanges || []).map((change) => ({ path: change.path, action: change.action })) })
   }
   if (call.name === 'list_notes') {
     const prefix = stringArgument(args, 'prefix')
@@ -413,6 +417,7 @@ async function executeTool(call: ToolCall, mode: AgentMode, files: AgentSourceFi
     const content = typeof args.content === 'string' ? args.content : ''
     const reason = stringArgument(args, 'reason') || 'AI 建议修改'
     if (!path || !/\.md$/i.test(path) || !content) return '错误：path 必须是有效的 .md 路径，content 必须是完整 Markdown。'
+    if (action === 'create' && options.allowCreate === false) return '错误：当前是单文件工作区，不能新建其他文件。'
     if (action === 'update' && !fileMap.has(path)) return `错误：无法更新不存在的 ${path}；如需新建请使用 create。`
     if (action === 'create' && repositoryPaths.has(path)) return `错误：${path} 已存在；如需修改请把它加入当前编辑范围后使用 update。`
     if (action !== 'update' && action !== 'create') return '错误：action 只能是 update 或 create。'
@@ -424,6 +429,7 @@ async function executeTool(call: ToolCall, mode: AgentMode, files: AgentSourceFi
   }
   if (call.name === 'request_git_commit') {
     if (mode !== 'edit') return '错误：Chat 模式不允许请求 Git 提交。'
+    if (options.allowCommit === false) return '错误：当前单文件工作区没有 Git，不能请求提交。'
     return '已登记 Git 提交请求。它仍待用户确认，尚未提交或推送。'
   }
   return `错误：未知工具 ${call.name}`

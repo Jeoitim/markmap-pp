@@ -1,0 +1,92 @@
+{
+  "name": "markmap-plus-plus-desktop",
+  "productName": "markmap++",
+  "desktopName": "io.github.jeoitim.markmap-plus-plus.desktop",
+  "version": "1.0.0",
+  "description": "Markdown mind-map workspace with GitHub sync and AI assistance",
+  "author": "Jeoitim",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "clean": "del-cli dist out",
+    "build:main": "tsc -p tsconfig.json",
+    "build:renderer": "cross-env VITE_BASE_PATH=./ VITE_OUT_DIR=../../apps/desktop/dist/renderer pnpm --dir ../../examples/react-example build",
+    "build": "pnpm clean && pnpm build:main && pnpm build:renderer",
+    "dev:renderer": "pnpm --dir ../../examples/react-example dev --host 127.0.0.1",
+    "dev": "pnpm build:main && concurrently --kill-others --success first \"pnpm dev:renderer\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "package": "pnpm build && electron-forge package",
+    "make:win": "pnpm build && del-cli release && electron-builder --win --x64 --publish never",
+    "make:mac": "pnpm build && del-cli release && electron-builder --mac --publish never",
+    "make:linux": "pnpm build && del-cli release && electron-builder --linux --x64 --publish never"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/core": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/plugin-fuses": "^7.11.2",
+    "@electron/fuses": "^1.8.0",
+    "@types/node": "^24.10.1",
+    "concurrently": "^10.0.4",
+    "cross-env": "^10.1.0",
+    "del-cli": "^6.0.0",
+    "electron": "43.3.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "~5.9.3",
+    "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "io.github.jeoitim.markmap-plus-plus",
+    "productName": "markmap-plus-plus",
+    "executableName": "markmap-plus-plus",
+    "directories": {
+      "buildResources": "resources",
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "extraResources": [
+      "resources/update.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "resources/icon.icns",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "artifactName": "${productName}-${version}-macos-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-macos-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "resources/icon.png",
+      "category": "Office",
+      "syncDesktopName": true,
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "7z"
+      ],
+      "icon": "resources/icon.ico",
+      "artifactName": "${productName}-${version}-windows-${arch}-portable.${ext}"
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
