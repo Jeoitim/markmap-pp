@@ -106,8 +106,18 @@
 
     pre {
       margin: 0;
+      max-width: 100%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       > code {
         display: block;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        white-space: inherit;
+        overflow-wrap: inherit;
+        word-break: inherit;
       }
     }
 

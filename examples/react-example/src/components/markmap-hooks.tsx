@@ -300,7 +300,7 @@ function inlineComputedStyles(source: Element, target: Element) {
   const targetChildren = Array.from(target.children)
   sourceChildren.forEach((child, index) => {
     const targetChild = targetChildren[index]
-    if (targetChild && child.tagName === targetChild.tagName) inlineComputedStyles(child, targetChild)
+    if (targetChild && child.tagName.toLowerCase() === targetChild.tagName.toLowerCase()) inlineComputedStyles(child, targetChild)
   })
 }
 
@@ -3122,6 +3122,8 @@ export default function MarkmapHooks() {
 .markmap-foreign th { font-weight: 650; }
 .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
 .markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
+.markmap-foreign pre { max-width: 100%; white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
+.markmap-foreign pre > code { display: block; width: 100%; max-width: 100%; box-sizing: border-box; white-space: inherit !important; overflow-wrap: inherit !important; word-break: inherit !important; }
 .markmap-foreign pre, .markmap-foreign code { color: ${textColor} !important; background: ${exportCodeBackground} !important; }
 .markmap-foreign .markmap-task-box { display: inline-block; width: 1em; height: 1em; margin: 0 .35em -.15em 0; border: 1.5px solid currentColor; border-radius: .25em; vertical-align: baseline; }
 .markmap-foreign .markmap-task-box[data-checked='true'] { color: #fff !important; background: #7056e8 !important; border-color: #7056e8 !important; }

@@ -337,6 +337,21 @@ svg { flex: 0 0 auto; }
 .map-canvas .markmap-foreign th { font-weight: 650; }
 .map-canvas .markmap-foreign pre,
 .map-canvas .markmap-foreign code { color: var(--markmap-code-color); background-color: var(--markmap-code-bg); }
+.map-canvas .markmap-foreign pre {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.map-canvas .markmap-foreign pre > code {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
+}
 /* The published markmap-plus stylesheet uses border + padding for hover.
    Restore the measured node box and draw the frame without changing layout. */
 .map-canvas .markmap-node-hovered > foreignObject > div > div,
