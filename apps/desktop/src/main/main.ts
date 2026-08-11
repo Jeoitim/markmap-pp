@@ -14,6 +14,7 @@ import {
   protocol,
   session,
   shell,
+  type BrowserWindowConstructorOptions,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
 } from 'electron';
@@ -492,6 +493,40 @@ function configureSession() {
   }
 }
 
+function nativeWindowOptions(): Pick<
+  BrowserWindowConstructorOptions,
+  | 'backgroundColor'
+  | 'backgroundMaterial'
+  | 'titleBarOverlay'
+  | 'titleBarStyle'
+  | 'trafficLightPosition'
+  | 'vibrancy'
+  | 'visualEffectState'
+> {
+  if (process.platform === 'win32') {
+    return {
+      backgroundColor: '#00000000',
+      backgroundMaterial: 'mica',
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#00000000',
+        symbolColor: '#5f636d',
+        height: 34,
+      },
+    };
+  }
+  if (process.platform === 'darwin') {
+    return {
+      backgroundColor: '#00000000',
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 15, y: 16 },
+      vibrancy: 'titlebar',
+      visualEffectState: 'followWindow',
+    };
+  }
+  return { backgroundColor: '#15181d' };
+}
+
 async function createWindow() {
   const window = new BrowserWindow({
     width: 1440,
@@ -500,8 +535,8 @@ async function createWindow() {
     minHeight: 640,
     show: true,
     autoHideMenuBar: true,
-    backgroundColor: '#15181d',
     title: 'markmap++',
+    ...nativeWindowOptions(),
     webPreferences: {
       preload: path.join(app.getAppPath(), 'dist', 'preload', 'preload.cjs'),
       contextIsolation: true,
@@ -510,6 +545,9 @@ async function createWindow() {
       webSecurity: true,
     },
   });
+  if (process.platform === 'win32') {
+    window.setBackgroundMaterial('mica');
+  }
   window.setMenuBarVisibility(false);
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {
