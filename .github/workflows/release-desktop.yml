@@ -85,3 +85,4 @@ jobs:
             gh release create "$tag" --repo "$repository" --title "markmap++ $tag" --generate-notes
           fi
           gh release upload "$tag" "${files[@]}" --repo "$repository" --clobber
+          gh release edit "$tag" --repo "$repository" --draft=false
