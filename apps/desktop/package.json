@@ -1,6 +1,6 @@
 {
   "name": "markmap-plus-plus-desktop",
-  "productName": "markmap++",
+  "productName": "Markmap++",
   "desktopName": "io.github.jeoitim.markmap-plus-plus.desktop",
   "version": "1.0.0",
   "description": "Markdown mind-map workspace with GitHub sync and AI assistance",
@@ -39,7 +39,7 @@
   },
   "build": {
     "appId": "io.github.jeoitim.markmap-plus-plus",
-    "productName": "markmap-plus-plus",
+    "productName": "Markmap++",
     "executableName": "markmap-plus-plus",
     "directories": {
       "buildResources": "resources",
