@@ -98,6 +98,37 @@ pnpm --filter markmap-plus-plus-app preview
 
 The production app is generated in `examples/react-example/dist/`.
 
+## Electron desktop app (Beta)
+
+The desktop app shares the React interface with the web app. Electron provides native windows, security isolation, local Markdown file access, and local Git workspace support. Pushing a version tag publishes these assets on [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases):
+
+| Platform    | Release file    | Purpose                           |
+| ----------- | --------------- | --------------------------------- |
+| Windows x64 | `*-setup.exe`   | NSIS installer                    |
+| Windows x64 | `*-portable.7z` | Portable archive; extract and run |
+| Linux x64   | `*.AppImage`    | Standalone Linux application      |
+
+To run the Linux package:
+
+```bash
+chmod +x markmap-plus-plus-*.AppImage
+./markmap-plus-plus-*.AppImage
+```
+
+### macOS
+
+Sorry, macOS builds are not currently published: GitHub-hosted macOS runners remained queued long enough to block the entire release. macOS users can download the source and try a native build instead. It produces a DMG for the local CPU architecture, but it is unsigned and may need to be allowed manually in macOS System Settings on first launch.
+
+```bash
+git clone https://github.com/Jeoitim/markmap-pp.git
+cd markmap-pp
+corepack enable
+pnpm install
+pnpm --filter markmap-plus-plus-desktop make:mac
+```
+
+Artifacts are written to `apps/desktop/release/`. Use `pnpm dev:desktop` for desktop development. See [`apps/desktop/README.md`](apps/desktop/README.md) and the [desktop documentation](docs/desktop/index.md) for details.
+
 ## GitHub Pages deployment
 
 The repository includes [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml). It installs dependencies, checks the app, builds it with the correct repository base path, uploads the Pages artifact, and deploys whenever `main` is updated. It can also be started manually from the Actions page.

@@ -11,6 +11,7 @@ export default defineConfig({
     nav: [
       { text: '项目概览', link: '/introduction/' },
       { text: '快速开始', link: '/installation/' },
+      { text: '桌面应用', link: '/desktop/' },
       { text: 'Agent', link: '/agent/' },
       { text: 'GitHub 同步', link: '/example/' },
       { text: '打开应用', link: 'https://jeoitim.github.io/markmap-pp/' },
@@ -21,6 +22,7 @@ export default defineConfig({
         items: [
           { text: '项目概览', link: '/introduction/' },
           { text: '快速开始', link: '/installation/' },
+          { text: 'Electron 桌面应用', link: '/desktop/' },
           { text: '编辑与思维导图', link: '/mind-map-usage/' },
           { text: 'Agent 知识与仓库操作', link: '/agent/' },
           { text: 'GitHub 仓库同步', link: '/example/' },

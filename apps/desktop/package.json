@@ -18,6 +18,7 @@
     "dev": "pnpm build:main && concurrently --kill-others --success first \"pnpm dev:renderer\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "package": "pnpm build && electron-forge package",
     "make:win": "pnpm build && del-cli release && electron-builder --win --x64 --publish never",
+    "make:mac": "pnpm build && del-cli release && electron-builder --mac --publish never",
     "make:linux": "pnpm build && del-cli release && electron-builder --linux --x64 --publish never"
   },
   "devDependencies": {
@@ -53,6 +54,18 @@
     "extraResources": [
       "resources/update.json"
     ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "resources/icon.icns",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "artifactName": "${productName}-${version}-macos-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-macos-${arch}.${ext}"
+    },
     "linux": {
       "target": [
         "AppImage"

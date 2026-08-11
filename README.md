@@ -167,22 +167,36 @@ pnpm --filter markmap-plus-plus-app preview
 
 本地 `pnpm dev` 只启动应用，因此 `http://localhost:5173/doc/` 不会显示文档。需要使用 `pnpm docs:dev` 单独启动 VitePress；正式部署则由 `pnpm build:site` 将两者合并。
 
-### Windows 桌面版（Beta）
+### Electron 桌面应用（Beta）
 
-桌面版与 Web 版共用 React 应用，Electron 仅负责系统窗口、安全隔离、本地文件访问和安装更新能力。在仓库根目录运行：
+桌面应用与 Web 版共用 React 界面，Electron 提供系统窗口、安全隔离、本地 Markdown 文件读写和本地 Git 工作区能力。每次推送版本 tag 时，GitHub Actions 会自动在 [Releases](https://github.com/Jeoitim/markmap-pp/releases) 发布：
+
+| 平台        | 发布文件        | 说明                       |
+| ----------- | --------------- | -------------------------- |
+| Windows x64 | `*-setup.exe`   | 可安装的 NSIS 安装包       |
+| Windows x64 | `*-portable.7z` | 解压后即可使用的便携包     |
+| Linux x64   | `*.AppImage`    | 下载后授予执行权限即可运行 |
+
+Linux AppImage 的典型启动方式：
 
 ```bash
-# 启动桌面开发环境
-pnpm dev:desktop
-
-# 构建主进程和桌面渲染资源
-pnpm build:desktop
-
-# 生成 Windows x64 安装包和便携压缩包
-pnpm make:desktop:win
+chmod +x markmap-plus-plus-*.AppImage
+./markmap-plus-plus-*.AppImage
 ```
 
-构建产物位于 `apps/desktop/out/make/`。第一版已接入系统原生 Markdown 打开/保存、本地工作区安全接口、稳定的桌面缓存来源和 Squirrel 更新框架；本地文件夹浏览界面及正式更新源将在后续版本启用。当前安装包尚未进行代码签名，Windows 可能显示 SmartScreen 提示。实现说明见 [`apps/desktop/README.md`](apps/desktop/README.md)。
+::: warning macOS 发行说明
+抱歉，GitHub-hosted macOS runner 长时间排队会阻塞整次发布，因此当前不提供 macOS 的自动构建或下载包。macOS 用户可以下载源码并在本机尝试构建；该过程会生成与本机 CPU 架构匹配的 DMG，但产物未签名，首次打开可能需要在系统设置中手动允许。
+:::
+
+```bash
+git clone https://github.com/Jeoitim/markmap-pp.git
+cd markmap-pp
+corepack enable
+pnpm install
+pnpm --filter markmap-plus-plus-desktop make:mac
+```
+
+构建产物写入 `apps/desktop/release/`。桌面开发可使用 `pnpm dev:desktop`；实现与平台注意事项见 [`apps/desktop/README.md`](apps/desktop/README.md) 和[桌面应用文档](docs/desktop/index.md)。
 
 ## 部署到 GitHub Pages
 

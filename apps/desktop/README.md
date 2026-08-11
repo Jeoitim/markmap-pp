@@ -1,6 +1,6 @@
 # markmap++ Desktop
 
-Electron desktop shell for the existing React application. Release builds target Windows x64 and Linux x64.
+Electron desktop shell for the existing React application. Release builds target Windows x64 and Linux x64; macOS packaging is available only as a local source build.
 
 ## Run and build
 
@@ -12,6 +12,7 @@ pnpm dev:desktop
 pnpm build:desktop
 pnpm make:desktop:win
 pnpm --filter markmap-plus-plus-desktop make:linux
+pnpm --filter markmap-plus-plus-desktop make:mac
 ```
 
 Release output is written to `apps/desktop/release/`:
@@ -20,7 +21,9 @@ Release output is written to `apps/desktop/release/`:
 - `markmap-plus-plus-<version>-windows-x64-portable.7z` is the Windows portable archive.
 - `markmap-plus-plus-<version>-linux-x64.AppImage` is the Linux AppImage.
 
-Pushing any new Git tag runs the three native builds and creates a GitHub Release with these four files. The builds are not triggered by normal branch pushes.
+Pushing any new Git tag runs the Windows and Linux native builds and creates a GitHub Release with these three files. The builds are not triggered by normal branch pushes.
+
+macOS packages are not built or published in GitHub Actions because the hosted macOS runner can block releases with long queue times. On macOS, run `pnpm --filter markmap-plus-plus-desktop make:mac` locally to create an unsigned native-architecture DMG.
 
 ## Platform notes
 
@@ -35,6 +38,6 @@ Pushing any new Git tag runs the three native builds and creates a GitHub Releas
 - The renderer has no Node.js access. Context isolation, sandboxing, CSP, sender validation and Electron fuses are enabled; filesystem access goes through a narrow preload API.
 - Native Markdown open/save dialogs are wired into the existing import and export actions.
 - The workspace API can select a local folder, list Markdown files, and safely read/write files inside that folder. The UI for browsing this workspace can be added independently in the next iteration.
-- Update IPC and state handling are ready for Squirrel.Windows. Set `feedUrl` in `resources/update.json` when a release server and signing process are available. An empty URL intentionally leaves updates disabled.
+- Update IPC and state handling remain disabled while `feedUrl` in `resources/update.json` is empty. Configure a signed update channel before enabling in-app updates for release packages.
 
 Local workspace selection is stored in Electron's per-user `userData/desktop-state.json`. Existing web cache, AI settings, conversations and drafts continue to use the renderer's IndexedDB/local storage under the stable desktop origin.
