@@ -43,6 +43,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set release version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const path = 'apps/desktop/package.json'
+          const version = process.env.RELEASE_VERSION
+          if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+            throw new Error(`Invalid release version: ${version}`)
+          }
+          const packageJson = JSON.parse(fs.readFileSync(path, 'utf8'))
+          packageJson.version = version
+          fs.writeFileSync(path, `${JSON.stringify(packageJson, null, 2)}\n`)
+          console.log(`Building desktop packages at version ${version}`)
+          NODE
+
       - name: Build package
         run: ${{ matrix.command }}
 
@@ -83,6 +102,10 @@ jobs:
           test "${#files[@]}" -gt 0
           if ! gh release view "$tag" --repo "$repository" > /dev/null 2>&1; then
             gh release create "$tag" --repo "$repository" --title "markmap++ $tag" --generate-notes
+          else
+            while IFS= read -r asset; do
+              gh release delete-asset "$tag" "$asset" --repo "$repository" --yes
+            done < <(gh release view "$tag" --repo "$repository" --json assets --jq '.assets[].name')
           fi
           gh release upload "$tag" "${files[@]}" --repo "$repository" --clobber
           gh release edit "$tag" --repo "$repository" --draft=false
