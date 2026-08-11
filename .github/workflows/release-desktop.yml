@@ -9,8 +9,53 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: Prepare next development version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Update package version and commit
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const path = 'apps/desktop/package.json'
+          const tag = process.env.RELEASE_TAG.replace(/^v(?=\d)/i, '')
+          const match = tag.match(/^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/)
+          if (!match) {
+            throw new Error(`Invalid release tag: ${process.env.RELEASE_TAG}`)
+          }
+          const commit = process.env.SOURCE_COMMIT.slice(0, 12)
+          const nextVersion = `${match[1]}.${match[2]}.${Number(match[3]) + 1}-dev.${commit}`
+          const packageJson = JSON.parse(fs.readFileSync(path, 'utf8'))
+          packageJson.version = nextVersion
+          fs.writeFileSync(path, `${JSON.stringify(packageJson, null, 2)}\n`)
+          console.log(`Preparing next desktop development version ${nextVersion}`)
+          NODE
+
+          if git diff --quiet -- apps/desktop/package.json; then
+            echo 'Desktop development version is already up to date.'
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/desktop/package.json
+          git commit -m "chore: prepare next desktop development version"
+          git push origin "HEAD:${DEFAULT_BRANCH}"
+
   build:
     name: Build ${{ matrix.name }}
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
