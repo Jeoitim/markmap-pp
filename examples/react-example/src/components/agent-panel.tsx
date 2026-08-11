@@ -580,11 +580,14 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
 
   useEffect(() => {
     if (conversation.workspaceKey === workspaceKey) return
-    const current = conversations.find((item) => item.workspaceKey === workspaceKey) || createConversation(workspaceKey)
-    setConversation(current)
-    setMode(current.mode ?? 'chat')
-    setNotice('已切换到当前工作区的独立 Agent 会话。')
-    setError('')
+    const timer = window.setTimeout(() => {
+      const current = conversations.find((item) => item.workspaceKey === workspaceKey) || createConversation(workspaceKey)
+      setConversation(current)
+      setMode(current.mode ?? 'chat')
+      setNotice('已切换到当前工作区的独立 Agent 会话。')
+      setError('')
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [conversation.workspaceKey, conversations, workspaceKey])
 
   const saveConversation = (next: AgentConversation) => {
@@ -687,7 +690,11 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
 
   const selectedFiles = useMemo(() => scope === 'current' && activePath ? files.filter((file) => file.path === activePath) : files, [activePath, files, scope])
 
-  useEffect(() => { if (!repositoryScopeEnabled) setScope('current') }, [repositoryScopeEnabled])
+  useEffect(() => {
+    if (repositoryScopeEnabled) return
+    const timer = window.setTimeout(() => setScope('current'), 0)
+    return () => window.clearTimeout(timer)
+  }, [repositoryScopeEnabled])
 
   const chooseProvider = (id: AgentProviderId) => {
     const definition = providerDefinition(id)

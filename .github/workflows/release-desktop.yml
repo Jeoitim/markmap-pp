@@ -68,4 +68,16 @@ jobs:
       - name: Create release and upload files
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" release/* --repo "${{ github.repository }}" --title "markmap++ ${{ github.ref_name }}" --generate-notes
+        run: |
+          tag="${{ github.ref_name }}"
+          repository="${{ github.repository }}"
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find release -type f \( -name '*.AppImage' -o -name '*.exe' -o -name '*.7z' \) -print0)
+
+          test "${#files[@]}" -gt 0
+          if ! gh release view "$tag" --repo "$repository" > /dev/null 2>&1; then
+            gh release create "$tag" --repo "$repository" --title "markmap++ $tag" --generate-notes
+          fi
+          gh release upload "$tag" "${files[@]}" --repo "$repository" --clobber
