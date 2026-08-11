@@ -1,6 +1,6 @@
 # markmap++ Desktop
 
-Electron desktop shell for the existing React application. Release builds target Windows x64, macOS x64, and Linux x64.
+Electron desktop shell for the existing React application. Release builds target Windows x64 and Linux x64.
 
 ## Run and build
 
@@ -11,7 +11,6 @@ pnpm install
 pnpm dev:desktop
 pnpm build:desktop
 pnpm make:desktop:win
-pnpm --filter markmap-plus-plus-desktop make:mac
 pnpm --filter markmap-plus-plus-desktop make:linux
 ```
 
@@ -19,7 +18,6 @@ Release output is written to `apps/desktop/release/`:
 
 - `markmap-plus-plus-<version>-windows-x64-setup.exe` is the Windows NSIS installer.
 - `markmap-plus-plus-<version>-windows-x64-portable.7z` is the Windows portable archive.
-- `markmap-plus-plus-<version>-macos-x64.dmg` is the macOS disk image.
 - `markmap-plus-plus-<version>-linux-x64.AppImage` is the Linux AppImage.
 
 Pushing any new Git tag runs the three native builds and creates a GitHub Release with these four files. The builds are not triggered by normal branch pushes.
@@ -29,7 +27,7 @@ Pushing any new Git tag runs the three native builds and creates a GitHub Releas
 - Local file access uses Electron's native open/save dialogs and Node's cross-platform path APIs. Workspace moves remain inside the selected repository, so they never cross filesystem volumes.
 - Local Git features require the `git` executable to be available on `PATH`: install Git for Windows, Xcode Command Line Tools on macOS, or your distribution's Git package on Linux.
 - The Linux secure cache intentionally requires an available system keyring. If no secret service is running, the app refuses to write sensitive credentials rather than falling back to plain text.
-- The macOS DMG and Windows installer are unsigned until signing credentials are configured. macOS Gatekeeper and Windows SmartScreen may therefore show a warning. Some Linux distributions also require FUSE support to launch AppImages.
+- The Windows installer is unsigned until signing credentials are configured, so Windows SmartScreen may show a warning. Some Linux distributions also require FUSE support to launch AppImages.
 
 ## Architecture and foundations
 

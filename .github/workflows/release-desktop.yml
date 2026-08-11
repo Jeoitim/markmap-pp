@@ -20,10 +20,6 @@ jobs:
             os: ubuntu-22.04
             command: pnpm --filter markmap-plus-plus-desktop make:linux
             artifact: desktop-linux
-          - name: macOS DMG
-            os: macos-13
-            command: pnpm --filter markmap-plus-plus-desktop make:mac
-            artifact: desktop-macos
           - name: Windows installer and portable archive
             os: windows-latest
             command: pnpm --filter markmap-plus-plus-desktop make:win
