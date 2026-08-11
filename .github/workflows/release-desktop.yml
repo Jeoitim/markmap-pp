@@ -75,9 +75,9 @@ jobs:
           while IFS= read -r -d '' file; do
             files+=("$file")
           done < <(find release -type f \( \
-            -name 'markmap-plus-plus-*-linux-*.AppImage' -o \
-            -name 'markmap-plus-plus-*-windows-*-setup.exe' -o \
-            -name 'markmap-plus-plus-*-windows-*-portable.7z' \
+            -name '*-linux-*.AppImage' -o \
+            -name '*-windows-*-setup.exe' -o \
+            -name '*-windows-*-portable.7z' \
           \) -print0)
 
           test "${#files[@]}" -gt 0
