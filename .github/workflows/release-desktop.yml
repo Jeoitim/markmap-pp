@@ -43,26 +43,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Set release version from tag
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          RELEASE_VERSION: ${{ github.ref_name }}
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('fs')
-          const path = 'apps/desktop/package.json'
-          const version = process.env.RELEASE_VERSION
-          if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-            throw new Error(`Invalid release version: ${version}`)
-          }
-          const packageJson = JSON.parse(fs.readFileSync(path, 'utf8'))
-          packageJson.version = version
-          fs.writeFileSync(path, `${JSON.stringify(packageJson, null, 2)}\n`)
-          console.log(`Building desktop packages at version ${version}`)
-          NODE
-
       - name: Build package
+        env:
+          MARKMAP_DESKTOP_VERSION: ${{ github.ref_name }}
         run: ${{ matrix.command }}
 
       - name: Upload release files

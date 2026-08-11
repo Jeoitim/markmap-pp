@@ -17,9 +17,9 @@
     "dev:renderer": "pnpm --dir ../../examples/react-example dev --host 127.0.0.1",
     "dev": "pnpm build:main && concurrently --kill-others --success first \"pnpm dev:renderer\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "package": "pnpm build && electron-forge package",
-    "make:win": "pnpm build && del-cli release && electron-builder --win --x64 --publish never",
-    "make:mac": "pnpm build && del-cli release && electron-builder --mac --publish never",
-    "make:linux": "pnpm build && del-cli release && electron-builder --linux --x64 --publish never"
+    "make:win": "pnpm build && del-cli release && node scripts/build-electron.mjs --win --x64 --publish never",
+    "make:mac": "pnpm build && del-cli release && node scripts/build-electron.mjs --mac --publish never",
+    "make:linux": "pnpm build && del-cli release && node scripts/build-electron.mjs --linux --x64 --publish never"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
