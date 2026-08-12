@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessage, type AgentProposal, type AgentSourceFile } from './agent-client'
 import { buildAgentDiff } from './agent-diff'
-import { activeContent, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation } from './agent-history'
+import { activeContent, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, normalizeStoredWorkspaceKey, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation, type AgentWorkspaceRef, type AgentWorkspaceSelectionResult } from './agent-history'
 import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
 import { saveBlob } from './desktop-api'
 
@@ -281,9 +281,13 @@ function conversationPendingCount(item: AgentConversation) {
 interface AgentHistoryDrawerProps {
   conversations: AgentConversation[]
   activeId: string
+  currentWorkspaceKey: string
   onClose: () => void
   onNew: () => void
   onSelect: (item: AgentConversation) => void
+  workspaceWarning: { item: AgentConversation; message: string } | null
+  onConfirmWorkspaceWarning: () => void
+  onCancelWorkspaceWarning: () => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
   onExport: (item: AgentConversation) => void
@@ -291,7 +295,7 @@ interface AgentHistoryDrawerProps {
   onExportAll: () => void
 }
 
-function AgentHistoryDrawer({ conversations, activeId, onClose, onNew, onSelect, onRename, onDelete, onExport, onImportAll, onExportAll }: AgentHistoryDrawerProps) {
+function AgentHistoryDrawer({ conversations, activeId, currentWorkspaceKey, onClose, onNew, onSelect, workspaceWarning, onConfirmWorkspaceWarning, onCancelWorkspaceWarning, onRename, onDelete, onExport, onImportAll, onExportAll }: AgentHistoryDrawerProps) {
   const drawerRef = useRef<HTMLElement | null>(null)
   const importRef = useRef<HTMLInputElement | null>(null)
   const [query, setQuery] = useState('')
@@ -312,12 +316,15 @@ function AgentHistoryDrawer({ conversations, activeId, onClose, onNew, onSelect,
       <button type="button" className="agent-history-new" onClick={onNew}><AgentGlyph name="plus" />新建对话</button>
       <div className="agent-history-list">{visible.length ? visible.map((item) => {
         const pending = conversationPendingCount(item)
+        const itemWorkspaceKey = normalizeStoredWorkspaceKey(item.workspace?.key || item.workspaceKey)
+        const workspaceLabel = item.workspace?.label || (itemWorkspaceKey === currentWorkspaceKey ? '当前工作区' : '其他工作区')
         return <article className={item.id === activeId ? 'active' : ''} key={item.id}>
-          {renamingId === item.id ? <div className="agent-history-rename"><input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={finishRename} onKeyDown={(event) => { if (event.key === 'Enter') finishRename(); if (event.key === 'Escape') setRenamingId(null) }} aria-label="新对话标题" /><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={finishRename}><AgentGlyph name="check" /></button></div> : <button type="button" className="agent-history-main" onClick={() => onSelect(item)}><strong>{item.title}</strong><span><i className={`agent-mode-badge ${item.mode === 'edit' ? 'edit' : 'chat'}`}>{item.mode === 'edit' ? 'Edit' : 'Chat'}</i>{pending > 0 && <b>{pending} 项待处理</b>}<small>{new Date(item.updatedAt).toLocaleString('zh-CN')}</small></span></button>}
+          {renamingId === item.id ? <div className="agent-history-rename"><input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={finishRename} onKeyDown={(event) => { if (event.key === 'Enter') finishRename(); if (event.key === 'Escape') setRenamingId(null) }} aria-label="新对话标题" /><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={finishRename}><AgentGlyph name="check" /></button></div> : <button type="button" className="agent-history-main" onClick={() => onSelect(item)}><strong>{item.title}</strong><span><i className={`agent-mode-badge ${item.mode === 'edit' ? 'edit' : 'chat'}`}>{item.mode === 'edit' ? 'Edit' : 'Chat'}</i>{pending > 0 && <b>{pending} 项待处理</b>}<small>{new Date(item.updatedAt).toLocaleString('zh-CN')}</small></span><em className="agent-history-workspace" title={item.workspace?.locator || workspaceLabel}>{workspaceLabel}{itemWorkspaceKey === currentWorkspaceKey ? ' · 当前' : ''}</em></button>}
           <div className="agent-history-actions"><button type="button" onClick={() => { setRenamingId(item.id); setRenameValue(item.title) }} title="重命名" aria-label={`重命名 ${item.title}`}><AgentGlyph name="edit" /></button><button type="button" onClick={() => onExport(item)} title="导出 Markdown" aria-label={`导出 ${item.title}`}><AgentGlyph name="download" /></button><button type="button" className="danger" onClick={() => onDelete(item.id)} title="删除" aria-label={`删除 ${item.title}`}><AgentGlyph name="trash" /></button></div>
         </article>
       }) : <div className="agent-history-empty">没有匹配的对话</div>}</div>
     </div>
+    {workspaceWarning && <div className="agent-history-workspace-warning" role="alertdialog" aria-live="assertive"><strong>找不到该对话工作区</strong><p>{workspaceWarning.message}</p><footer><button type="button" onClick={onCancelWorkspaceWarning}>取消</button><button type="button" className="primary" onClick={onConfirmWorkspaceWarning}>仍然继续</button></footer></div>}
   </section></>
 }
 
@@ -387,6 +394,8 @@ interface AgentPanelProps {
   workspaceKey: string
   workspaceLabel: string
   workspaceKind: 'remote' | 'local' | 'file'
+  workspaceLocator?: string
+  onSelectWorkspace?: (workspace: AgentWorkspaceRef) => Promise<AgentWorkspaceSelectionResult>
   repositoryScopeEnabled?: boolean
   canCreateFiles?: boolean
   canCommit?: boolean
@@ -479,16 +488,18 @@ function ProposalDiff({ proposal, file, textStyle, onAccept, onReject, onOpen }:
   </article>
 }
 
-export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind, repositoryScopeEnabled = true, canCreateFiles = true, canCommit = true, files, activePath, onApplyChange, onCreateFile, onOpenFile, onCommit, getGitContext, remoteFileCount, remotePaths, repositoryBranch, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
+export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind, workspaceLocator, onSelectWorkspace, repositoryScopeEnabled = true, canCreateFiles = true, canCommit = true, files, activePath, onApplyChange, onCreateFile, onOpenFile, onCommit, getGitContext, remoteFileCount, remotePaths, repositoryBranch, onLoadAllFiles, loadingFiles, fontSize, fontFamily, fontWeight }: AgentPanelProps) {
+  const workspace = useMemo<AgentWorkspaceRef>(() => ({ key: workspaceKey, kind: workspaceKind, label: workspaceLabel, locator: workspaceLocator }), [workspaceKey, workspaceKind, workspaceLabel, workspaceLocator])
   const [mode, setMode] = useState<AgentMode>('chat')
   const [config, setConfig] = useState<AgentProviderConfig>(defaultAgentProviderConfig)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [connectionStatus, setConnectionStatus] = useState<'unconfigured' | 'configured' | 'checking' | 'connected' | 'failed'>('unconfigured')
-  const [conversation, setConversation] = useState<AgentConversation>(() => createConversation(workspaceKey))
+  const [conversation, setConversation] = useState<AgentConversation>(() => createConversation(workspace))
   const [conversations, setConversations] = useState<AgentConversation[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [workspaceWarning, setWorkspaceWarning] = useState<{ item: AgentConversation; message: string } | null>(null)
   const [input, setInput] = useState('')
   const [permissionOpen, setPermissionOpen] = useState(false)
   const [reasoningOpen, setReasoningOpen] = useState(false)
@@ -514,6 +525,7 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
   const abortRef = useRef<AbortController | null>(null)
   const conversationRef = useRef<HTMLDivElement | null>(null)
   const stickToBottomRef = useRef(true)
+  const pendingConversationIdRef = useRef<string | null>(null)
 
   useDialogFocus(settingsOpen, settingsRef, () => setSettingsOpen(false))
 
@@ -572,34 +584,25 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
     void loadAgentConversations().then((saved) => {
       if (disposed || !saved.length) return
       setConversations(saved)
-      const current = saved.find((item) => item.workspaceKey === workspaceKey) || createConversation(workspaceKey)
+      const pendingId = pendingConversationIdRef.current
+      const current = (pendingId ? saved.find((item) => item.id === pendingId) : undefined) || saved.find((item) => normalizeStoredWorkspaceKey(item.workspace?.key || item.workspaceKey) === workspaceKey) || createConversation(workspace)
+      pendingConversationIdRef.current = null
       setConversation(current); setMode(current.mode ?? 'chat')
     }).catch(() => { if (!disposed) setError('无法读取本地对话历史') })
     return () => { disposed = true }
   }, [workspaceKey])
 
-  useEffect(() => {
-    if (conversation.workspaceKey === workspaceKey) return
-    const timer = window.setTimeout(() => {
-      const current = conversations.find((item) => item.workspaceKey === workspaceKey) || createConversation(workspaceKey)
-      setConversation(current)
-      setMode(current.mode ?? 'chat')
-      setNotice('已切换到当前工作区的独立 Agent 会话。')
-      setError('')
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [conversation.workspaceKey, conversations, workspaceKey])
-
   const saveConversation = (next: AgentConversation) => {
-    setConversation(next)
+    const normalized = next.workspaceKey === workspaceKey && !next.workspace ? { ...next, workspace } : next
+    setConversation(normalized)
     setConversations((current) => {
-      const updated = [next, ...current.filter((item) => item.id !== next.id)].sort((a, b) => b.updatedAt - a.updatedAt)
+      const updated = [normalized, ...current.filter((item) => item.id !== normalized.id)].sort((a, b) => b.updatedAt - a.updatedAt)
       void saveAgentConversations(updated).catch(() => setError('对话历史保存失败'))
       return updated
     })
   }
 
-  const startConversation = () => { const next = { ...createConversation(workspaceKey), mode }; saveConversation(next); setHistoryOpen(false) }
+  const startConversation = () => { const next = { ...createConversation(workspace), mode }; saveConversation(next); setHistoryOpen(false); setWorkspaceWarning(null) }
 
   const switchMode = (next: AgentMode) => {
     if (next === mode) return
@@ -630,14 +633,18 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
         const messages = value.messages.filter((message) => isRecord(message) && (message.role === 'user' || message.role === 'assistant')) as AgentMessage[]
         if (!messages.length) return null
         const now = Date.now()
-        return { id: typeof value.id === 'string' && value.id ? value.id : crypto.randomUUID(), title: typeof value.title === 'string' && value.title.trim() ? value.title.trim() : '导入的对话', createdAt: typeof value.createdAt === 'number' ? value.createdAt : now, updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : now, mode: value.mode === 'edit' ? 'edit' : 'chat', workspaceKey: typeof value.workspaceKey === 'string' ? value.workspaceKey : workspaceKey, messages }
+        const importedWorkspace = isRecord(value.workspace) && typeof value.workspace.key === 'string' && (value.workspace.kind === 'remote' || value.workspace.kind === 'local' || value.workspace.kind === 'file')
+          ? { key: normalizeStoredWorkspaceKey(value.workspace.key) || value.workspace.key, kind: value.workspace.kind as AgentWorkspaceRef['kind'], label: typeof value.workspace.label === 'string' ? value.workspace.label : '其他工作区', locator: typeof value.workspace.locator === 'string' ? value.workspace.locator : undefined }
+          : undefined
+        const importedWorkspaceKey = normalizeStoredWorkspaceKey(importedWorkspace?.key || (typeof value.workspaceKey === 'string' ? value.workspaceKey : undefined)) || workspaceKey
+        return { id: typeof value.id === 'string' && value.id ? value.id : crypto.randomUUID(), title: typeof value.title === 'string' && value.title.trim() ? value.title.trim() : '导入的对话', createdAt: typeof value.createdAt === 'number' ? value.createdAt : now, updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : now, mode: value.mode === 'edit' ? 'edit' : 'chat', workspaceKey: importedWorkspaceKey, workspace: importedWorkspace, messages }
       }).filter((item): item is AgentConversation => item !== null)
       if (!imported.length) throw new Error('没有找到有效对话')
       const merged = new Map(conversationSnapshot().map((item) => [item.id, item]))
       imported.forEach((item) => merged.set(item.id, item))
       const next = Array.from(merged.values()).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 80)
       await saveAgentConversations(next)
-      setConversations(next); setConversation(next[0]); setMode(next[0].mode ?? 'chat'); setHistoryOpen(false)
+      setConversations(next); setConversation(next[0]); setMode(next[0].mode ?? 'chat'); setHistoryOpen(true); setWorkspaceWarning(null)
       setNotice(`已导入 ${imported.length} 条对话，并与现有历史合并。`); setError('')
     } catch (reason) { setError(reason instanceof Error ? `导入对话失败：${reason.message}` : '导入对话失败') }
   }
@@ -680,12 +687,37 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
     if (!target || !window.confirm(`删除对话“${target.title}”？此操作无法撤销。`)) return
     let updated = conversations.filter((item) => item.id !== id)
     if (conversation.id === id) {
-      const next = updated.find((item) => item.workspaceKey === workspaceKey) || { ...createConversation(workspaceKey), mode }
+      const next = updated.find((item) => normalizeStoredWorkspaceKey(item.workspace?.key || item.workspaceKey) === workspaceKey) || { ...createConversation(workspace), mode }
       if (!updated.length) updated = [next]
       setConversation(next); setMode(next.mode ?? 'chat')
     }
     setConversations(updated)
     void saveAgentConversations(updated).catch(() => setError('对话历史保存失败'))
+  }
+
+  const selectConversation = async (item: AgentConversation, force = false) => {
+    const itemWorkspaceKey = normalizeStoredWorkspaceKey(item.workspace?.key || item.workspaceKey)
+    if (!force && itemWorkspaceKey !== workspaceKey) {
+      if (item.workspace && onSelectWorkspace) {
+        const result = await onSelectWorkspace(item.workspace)
+        if (result.matched) {
+          pendingConversationIdRef.current = item.id
+          setConversation(item)
+          setMode(item.mode ?? 'chat')
+          setWorkspaceWarning(null)
+          setHistoryOpen(false)
+          return
+        }
+        setWorkspaceWarning({ item, message: result.message || '继续使用该工作区对话可能出现问题。' })
+        return
+      }
+      setWorkspaceWarning({ item, message: '继续使用该工作区对话可能出现问题。当前应用找不到与它完全匹配的工作区。' })
+      return
+    }
+    setConversation(item)
+    setMode(item.mode ?? 'chat')
+    setWorkspaceWarning(null)
+    setHistoryOpen(false)
   }
 
   const selectedFiles = useMemo(() => scope === 'current' && activePath ? files.filter((file) => file.path === activePath) : files, [activePath, files, scope])
@@ -980,7 +1012,7 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
     <div className="agent-context-bar" aria-label="Agent 当前上下文"><span><AgentGlyph name={workspaceKind === 'file' ? 'file' : 'folder'} /><strong title={workspaceLabel}>{workspaceLabel}</strong>{activePath && activePath !== workspaceLabel && <em>· {activePath}</em>}</span>{contextStatus.length > 0 && <small>{contextStatus.join(' · ')}</small>}</div>
     {notice && <div className="agent-notice" role="status" aria-live="polite" aria-atomic="true"><AgentGlyph name="check" />{notice}</div>}
     {error && <div className="agent-error" role="alert" aria-live="assertive" aria-atomic="true"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />重试</button>}</div>}
-    {historyOpen && <AgentHistoryDrawer conversations={conversations.filter((item) => item.workspaceKey === workspaceKey)} activeId={conversation.id} onClose={() => setHistoryOpen(false)} onNew={startConversation} onSelect={(item) => { setConversation(item); setMode(item.mode ?? 'chat'); setHistoryOpen(false) }} onRename={renameConversation} onDelete={deleteConversation} onExport={exportConversation} onImportAll={(file) => void importConversationHistory(file)} onExportAll={exportConversationHistory} />}
+    {historyOpen && <AgentHistoryDrawer conversations={conversations} activeId={conversation.id} currentWorkspaceKey={workspaceKey} onClose={() => { setHistoryOpen(false); setWorkspaceWarning(null) }} onNew={startConversation} onSelect={(item) => void selectConversation(item)} workspaceWarning={workspaceWarning} onConfirmWorkspaceWarning={() => { if (workspaceWarning) void selectConversation(workspaceWarning.item, true) }} onCancelWorkspaceWarning={() => setWorkspaceWarning(null)} onRename={renameConversation} onDelete={deleteConversation} onExport={exportConversation} onImportAll={(file) => void importConversationHistory(file)} onExportAll={exportConversationHistory} />}
     <div className="agent-conversation" ref={conversationRef} onScroll={(event) => { const el = event.currentTarget; stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32 }}>{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} repositoryBranch={repositoryBranch} changedFileCount={files.filter((file) => file.status !== 'clean').length} textStyle={agentTextStyle} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={(path, proposalId) => void acceptProposalInMessage(path, proposalId)} onRejectProposal={rejectProposalInMessage} onOpenFile={onOpenFile} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{conversation.messages.length === 1 && <div className="agent-starters" aria-label="建议问法"><button type="button" onClick={() => setInput('结合这些笔记和你的知识，找出三个值得继续探索的关联。')}>发现跨笔记关联</button><button type="button" onClick={() => setInput('检查当前笔记的逻辑缺口，补充我可能忽略的背景知识。')}>补充背景与反例</button><button type="button" onClick={() => { setMode('edit'); setInput('整理当前笔记的结构，保留原意并提升可读性。') }}>整理并完善笔记</button></div>}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div>{config.reasoningEnabled && <details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>}{!answerStarted && Boolean(liveOperations.length) && <div className="agent-live-operations">{liveOperations.map((operation) => <span className={operation.status || 'succeeded'} key={operation.id || `${operation.tool}:${operation.at}`}><i>{operation.status === 'running' ? <span className="agent-operation-spinner" /> : operation.status === 'failed' ? '×' : '✓'}</i>{operation.summary}</span>)}</div>}{!answerStarted && !liveOperations.length && <div className="agent-pending"><span className="agent-typing"><span /><span /><span /></span>{mode === 'edit' ? '正在分析仓库并生成修改方案…' : '正在结合笔记与通用知识思考…'}</div>}{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
     <footer className="agent-composer"><div className="agent-composer-input"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={mode === 'edit' ? canCreateFiles ? '描述要修改或新建的笔记。AI 会先给出可审核的方案。' : '描述要如何修改当前文件。AI 会先给出可审核的方案。' : '询问笔记内容，Enter 发送…'} /></div><div className="agent-composer-tools">{mode === 'edit' && repositoryScopeEnabled && <div className="agent-option-wrap"><button type="button" title="编辑范围" className="agent-option-trigger" onClick={() => setScopeOpen((value) => !value)}><AgentGlyph name={scope === 'current' ? 'file' : 'folder'} />{scope === 'current' ? '当前文件' : '工作区笔记'}</button>{scopeOpen && <div className="agent-option-popover scope-popover" ref={clampPopover}><header><strong>编辑范围</strong></header><button type="button" className={scope === 'current' ? 'selected' : ''} disabled={!activePath} onClick={() => { setScope('current'); setScopeOpen(false) }}><AgentGlyph name="file" /><span><strong>当前文件</strong><small>{activePath || '请先从工作区中打开一个文件'}</small></span><i>✓</i></button><button type="button" className={scope === 'cached' ? 'selected' : ''} onClick={() => { setScope('cached'); setScopeOpen(false) }}><AgentGlyph name="folder" /><span><strong>工作区笔记</strong><small>已读取 {files.length}/{remoteFileCount} 个 Markdown 文件</small></span><i>✓</i></button>{files.length < remoteFileCount && <button type="button" className="scope-load-button" onClick={() => void onLoadAllFiles()} disabled={loadingFiles}>{loadingFiles ? '正在读取全部笔记…' : '读取全部笔记'}</button>}</div>}</div>}<div className="agent-option-wrap"><button type="button" title="思考" className={`agent-option-trigger ${config.reasoningEnabled ? 'active' : ''}`} onClick={() => setReasoningOpen((value) => !value)}><AgentGlyph name="brain" />思考{config.reasoningEnabled ? ` · ${{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[config.reasoningEffort]}` : ' · 关'}</button>{reasoningOpen && <div className="agent-option-popover reasoning-popover" ref={clampPopover}><header><strong>思考</strong></header><div className="agent-effort">{(['low', 'medium', 'high', 'xhigh', 'max'] as const).map((effort) => <button type="button" className={config.reasoningEffort === effort ? 'active' : ''} key={effort} onClick={() => setConfig((current) => ({ ...current, reasoningEffort: effort, reasoningEnabled: true }))}><span>{{ low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }[effort]}</span>{config.reasoningEffort === effort && <AgentGlyph name="check" />}</button>)}</div><p>让支持推理的模型返回可展开的思考过程。</p><button type="button" className={`reasoning-toggle ${config.reasoningEnabled ? 'on' : ''}`} onClick={() => setConfig((current) => ({ ...current, reasoningEnabled: !current.reasoningEnabled }))}><AgentGlyph name="brain" />{config.reasoningEnabled ? '关闭思考' : '开启思考'}</button></div>}</div>{mode === 'edit' && <div className="agent-option-wrap"><button type="button" title="操作许可" className={`agent-option-trigger ${config.permissionMode === 'auto' ? 'auto' : ''}`} onClick={() => setPermissionOpen((value) => !value)}><AgentGlyph name={config.permissionMode === 'auto' ? 'alert' : 'shield'} />{config.permissionMode === 'auto' ? '自动执行' : '每次确认'}</button>{permissionOpen && <div className="agent-option-popover permission-popover" ref={clampPopover}><header><strong>操作许可</strong></header><button type="button" className={config.permissionMode === 'confirm' ? 'selected' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'confirm' })); setPermissionOpen(false) }}><AgentGlyph name="shield" /><span><strong>请求批准</strong><small>{canCommit ? '修改、新建或提交 Git 前逐项确认。' : '修改当前文件前逐项确认。'}</small></span><i>✓</i></button><button type="button" className={config.permissionMode === 'auto' ? 'selected auto' : ''} onClick={() => { setConfig((current) => ({ ...current, permissionMode: 'auto' })); setPermissionOpen(false) }}><AgentGlyph name="alert" /><span><strong>自动执行</strong><small>{canCommit ? '收到方案后直接暂存修改与提交请求。' : '收到方案后直接应用到当前标签。'}</small></span><i>✓</i></button></div>}</div>}<button type="button" className="agent-send-button" title={busy === 'send' ? '停止回答' : '发送'} onClick={() => { if (busy === 'send') abortRef.current?.abort(); else void send() }} disabled={busy === 'send' ? false : busy !== null || !input.trim()}><AgentGlyph name={busy === 'send' ? 'stop' : 'send'} /></button></div></footer>
   </div>
