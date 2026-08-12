@@ -528,9 +528,11 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
   const stickToBottomRef = useRef(true)
   const pendingConversationIdRef = useRef<string | null>(null)
 
-  conversationStateRef.current = conversation
-
   useDialogFocus(settingsOpen, settingsRef, () => setSettingsOpen(false))
+
+  useEffect(() => {
+    conversationStateRef.current = conversation
+  }, [conversation])
 
   useEffect(() => {
     let disposed = false
