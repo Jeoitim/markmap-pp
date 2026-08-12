@@ -490,7 +490,7 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'link' | 'map' | 'menu' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'x'
+type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'link' | 'map' | 'menu' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
@@ -520,6 +520,9 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   tabs: <><rect x="7" y="4" width="13" height="15" rx="2"/><path d="M4 8v10a2 2 0 0 0 2 2h10"/></>,
   undo: <><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6v1"/></>,
   warning: <><path d="M10.3 3.7 2.5 17.2A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.8L13.7 3.7a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/></>,
+  'window-minimize': <path d="M5 18h14"/>,
+  'window-maximize': <rect x="5" y="5" width="14" height="14" rx="1"/>,
+  'window-restore': <><path d="M8 8h11v11H8z"/><path d="M5 16H4V5h11v1"/></>,
   x: <path d="m6 6 12 12M18 6 6 18"/>,
 }
 
@@ -743,6 +746,8 @@ export default function MarkmapHooks() {
   const [editorCollapsed, setEditorCollapsed] = useState(false)
   const [canUndo, setCanUndo] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const [desktopPlatform, setDesktopPlatform] = useState<string | null>(null)
+  const [desktopWindowMaximized, setDesktopWindowMaximized] = useState(false)
   const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [desktopMenuOpen, setDesktopMenuOpen] = useState(false)
   const [desktopMenuSection, setDesktopMenuSection] = useState<'file' | 'edit' | 'view' | 'help'>('file')
@@ -1934,6 +1939,25 @@ export default function MarkmapHooks() {
       else void desktop.windowControl.close()
     })
   }, [activeTabId])
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    if (!desktop) return
+    let active = true
+    void desktop.getAppInfo().then(({ platform }) => { if (active) setDesktopPlatform(platform) }).catch(() => {})
+    return () => { active = false }
+  }, [])
+
+  const isWindowsDesktop = desktopPlatform === 'win32'
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    if (!desktop || !isWindowsDesktop) return
+    let active = true
+    void desktop.windowControl.getMaximized().then((maximized) => { if (active) setDesktopWindowMaximized(maximized) }).catch(() => {})
+    const unsubscribe = desktop.windowControl.onMaximizedChanged(setDesktopWindowMaximized)
+    return () => { active = false; unsubscribe() }
+  }, [isWindowsDesktop])
 
   useEffect(() => {
     const saveWithShortcut = (event: KeyboardEvent) => {
@@ -3725,6 +3749,7 @@ ${documentRenderConfig.style}
             <button type="button" onClick={() => { setActionMenuOpen(false); openHelpPanel() }}><Icon name="help" /><span>使用说明</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); undoLastChange() }} disabled={!canUndo}><Icon name="undo" /><span>撤回修改</span></button>
           </div>}
+          {isWindowsDesktop && <div className="desktop-window-controls" aria-label="窗口控制"><button type="button" aria-label="最小化" title="最小化" onClick={() => void desktopApi()?.windowControl.minimize()}><Icon name="window-minimize" /></button><button type="button" aria-label={desktopWindowMaximized ? '还原' : '最大化'} title={desktopWindowMaximized ? '还原' : '最大化'} onClick={() => void desktopApi()?.windowControl.toggleMaximize()}><Icon name={desktopWindowMaximized ? 'window-restore' : 'window-maximize'} /></button><button type="button" className="window-close-button" aria-label="关闭" title="关闭" onClick={() => void desktopApi()?.windowControl.requestClose()}><Icon name="x" /></button></div>}
         </nav>
       </header>
 

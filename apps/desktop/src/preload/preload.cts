@@ -11,7 +11,12 @@ const desktopChannels = {
   saveOpenedMarkdown: 'desktop:save-opened-markdown',
   saveFile: 'desktop:save-file',
   windowCloseRequested: 'desktop:window-close-requested',
+  windowRequestClose: 'desktop:window-request-close',
   windowClose: 'desktop:window-close',
+  windowMinimize: 'desktop:window-minimize',
+  windowToggleMaximize: 'desktop:window-toggle-maximize',
+  windowGetMaximized: 'desktop:window-get-maximized',
+  windowMaximizedChanged: 'desktop:window-maximized-changed',
   localGitGet: 'desktop:local-git-get',
   localGitOpen: 'desktop:local-git-open',
   localGitSelect: 'desktop:local-git-select',
@@ -61,7 +66,16 @@ const api = {
     return () => ipcRenderer.removeListener(desktopChannels.openedMarkdown, handler)
   },
   windowControl: {
+    requestClose: () => ipcRenderer.invoke(desktopChannels.windowRequestClose) as Promise<boolean>,
     close: () => ipcRenderer.invoke(desktopChannels.windowClose) as Promise<boolean>,
+    minimize: () => ipcRenderer.invoke(desktopChannels.windowMinimize) as Promise<boolean>,
+    toggleMaximize: () => ipcRenderer.invoke(desktopChannels.windowToggleMaximize) as Promise<boolean>,
+    getMaximized: () => ipcRenderer.invoke(desktopChannels.windowGetMaximized) as Promise<boolean>,
+    onMaximizedChanged: (listener: (maximized: boolean) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) => listener(maximized)
+      ipcRenderer.on(desktopChannels.windowMaximizedChanged, handler)
+      return () => ipcRenderer.removeListener(desktopChannels.windowMaximizedChanged, handler)
+    },
     onCloseRequested: (listener: () => void) => {
       const handler = () => listener()
       ipcRenderer.on(desktopChannels.windowCloseRequested, handler)

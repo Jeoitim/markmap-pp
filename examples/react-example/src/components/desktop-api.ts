@@ -73,7 +73,12 @@ export interface MarkmapDesktopApi {
   saveFile(request: { suggestedName: string; mimeType: string; bytes: Uint8Array }): Promise<{ canceled: boolean; path?: string }>
   onOpenedMarkdown(listener: (file: DesktopOpenedFile) => void): () => void
   windowControl: {
+    requestClose(): Promise<boolean>
     close(): Promise<boolean>
+    minimize(): Promise<boolean>
+    toggleMaximize(): Promise<boolean>
+    getMaximized(): Promise<boolean>
+    onMaximizedChanged(listener: (maximized: boolean) => void): () => void
     onCloseRequested(listener: () => void): () => void
   }
   localGit: {

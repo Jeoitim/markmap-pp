@@ -271,6 +271,34 @@ function registerIpc() {
     window.close();
     return true;
   });
+  ipcMain.handle(desktopChannels.windowRequestClose, (event) => {
+    assertTrusted(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window.isDestroyed()) return false;
+    window.close();
+    return true;
+  });
+  ipcMain.handle(desktopChannels.windowMinimize, (event) => {
+    assertTrusted(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window.isDestroyed()) return false;
+    window.minimize();
+    return true;
+  });
+  ipcMain.handle(desktopChannels.windowToggleMaximize, (event) => {
+    assertTrusted(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window.isDestroyed()) return false;
+    if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
+    window.webContents.send(desktopChannels.windowMaximizedChanged, window.isMaximized());
+    return true;
+  });
+  ipcMain.handle(desktopChannels.windowGetMaximized, (event) => {
+    assertTrusted(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    return Boolean(window && !window.isDestroyed() && window.isMaximized());
+  });
   ipcMain.handle(desktopChannels.appInfo, (event) => {
     assertTrusted(event);
     return {
@@ -579,11 +607,6 @@ function nativeWindowOptions(): Pick<
       backgroundColor: '#00000000',
       backgroundMaterial: 'mica',
       titleBarStyle: 'hidden',
-      titleBarOverlay: {
-        color: '#00000000',
-        symbolColor: '#5f636d',
-        height: 34,
-      },
     };
   }
   if (process.platform === 'darwin') {
@@ -689,6 +712,8 @@ async function createWindow() {
     stopLocalGitWatcher = null;
     if (mainWindow === window) mainWindow = null;
   });
+  window.on('maximize', () => window.webContents.send(desktopChannels.windowMaximizedChanged, true));
+  window.on('unmaximize', () => window.webContents.send(desktopChannels.windowMaximizedChanged, false));
   const developmentUrl = process.env.VITE_DEV_SERVER_URL;
   if (developmentUrl && !app.isPackaged) await window.loadURL(developmentUrl);
   else await window.loadURL(`${appScheme}://${appHost}/index.html`);
