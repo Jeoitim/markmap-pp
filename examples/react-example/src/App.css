@@ -1128,6 +1128,18 @@ svg { flex: 0 0 auto; }
 .agent-settings .agent-advanced > button > span.open svg { transform: rotate(180deg); }
 .agent-settings .agent-advanced > button:hover > span svg { background: color-mix(in srgb,var(--accent) 16%,transparent); }
 .agent-settings .agent-advanced > button:focus-visible { outline: 3px solid color-mix(in srgb,var(--accent) 22%,transparent); outline-offset: 3px; border-radius: 7px; }
+.agent-settings-actions button.agent-test-button { color: var(--accent); border-color: color-mix(in srgb,var(--accent) 42%,var(--border)); background: var(--panel-soft); }
+.agent-settings-actions button.agent-test-button:hover { color: var(--accent-hover); border-color: var(--accent); background: color-mix(in srgb,var(--accent) 10%,var(--panel-soft)); }
+.agent-settings-actions button.agent-test-button:active { background: color-mix(in srgb,var(--accent) 16%,var(--panel-soft)); }
+.agent-settings-actions button.agent-save-button { color: #fff; border-color: var(--accent); background: var(--accent); }
+.agent-settings-actions button.agent-save-button:hover { color: #fff; border-color: var(--accent-hover); background: var(--accent-hover); }
+.agent-settings-actions button.agent-save-button:active { background: color-mix(in srgb,var(--accent-hover) 92%,#000); }
+.agent-settings-result { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); background: var(--panel-soft); font-size: 12px; line-height: 1.45; }
+.agent-settings-result svg { flex: 0 0 auto; width: 15px; height: 15px; margin-top: 1px; color: var(--accent); }
+.agent-settings-result.success { color: #347a54; border-color: color-mix(in srgb,#39865c 35%,var(--border)); background: color-mix(in srgb,#39865c 9%,var(--panel-soft)); }
+.agent-settings-result.success svg { color: #39865c; }
+.agent-settings-result.error { color: #b74646; border-color: color-mix(in srgb,#c75050 35%,var(--border)); background: color-mix(in srgb,#c75050 9%,var(--panel-soft)); }
+.agent-settings-result.error svg { color: #c75050; }
 
 .agent-transfer-bar { flex: 0 0 auto; display: grid; gap: 7px; margin: 0 0 17px; padding: 11px; border: 1px solid color-mix(in srgb,var(--accent) 18%,var(--border)); border-radius: 12px; background: color-mix(in srgb,var(--accent) 4%,var(--panel-soft)); }
 .agent-transfer-bar > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
