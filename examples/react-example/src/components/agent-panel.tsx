@@ -524,8 +524,11 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
   const streamedContentRef = useRef('')
   const abortRef = useRef<AbortController | null>(null)
   const conversationRef = useRef<HTMLDivElement | null>(null)
+  const conversationStateRef = useRef<AgentConversation | null>(null)
   const stickToBottomRef = useRef(true)
   const pendingConversationIdRef = useRef<string | null>(null)
+
+  conversationStateRef.current = conversation
 
   useDialogFocus(settingsOpen, settingsRef, () => setSettingsOpen(false))
 
@@ -594,6 +597,7 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
 
   const saveConversation = (next: AgentConversation) => {
     const normalized = next.workspaceKey === workspaceKey && !next.workspace ? { ...next, workspace } : next
+    conversationStateRef.current = normalized
     setConversation(normalized)
     setConversations((current) => {
       const updated = [normalized, ...current.filter((item) => item.id !== normalized.id)].sort((a, b) => b.updatedAt - a.updatedAt)
@@ -913,7 +917,7 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
           finalMessages = updateAtPath(finalMessages, answerPath, (message) => commit.ok
             ? { ...message, commitRequested: false, commitDone: true, commitSha: commit.commitSha, commitMessage: commit.message, commitError: undefined }
             : { ...message, commitRequested: true, commitDone: false, commitError: commit.error })
-          saveConversation({ ...conversation, mode, title: conversationTitle, messages: finalMessages, updatedAt: Date.now() })
+          saveConversation({ ...(conversationStateRef.current || conversation), mode, title: conversationTitle, messages: finalMessages, updatedAt: Date.now() })
         }
         if (commit.ok) setNotice(`已提交 Git 修改：${commit.commitSha.slice(0, 7)}`)
         else setError(commit.error)
@@ -979,17 +983,19 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
     setBusy('commit'); setError('')
     try {
       const commit = await onCommit()
-      const messages = updateAtPath(conversation.messages, msgPath, (message) => commit.ok
+      const current = conversationStateRef.current || conversation
+      const messages = updateAtPath(current.messages, msgPath, (message) => commit.ok
         ? { ...message, commitRequested: false, commitDone: true, commitSha: commit.commitSha, commitMessage: commit.message, commitError: undefined }
         : { ...message, commitRequested: true, commitDone: false, commitError: commit.error })
-      saveConversation({ ...conversation, messages, updatedAt: Date.now() })
+      saveConversation({ ...current, messages, updatedAt: Date.now() })
       if (commit.ok) setNotice(`已提交 Git 修改：${commit.commitSha.slice(0, 7)}`)
       else setError(commit.error)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Git 提交失败') } finally { setBusy(null) }
   }
   const cancelCommitFromMessage = (msgPath: number[]) => {
-    const messages = updateAtPath(conversation.messages, msgPath, (message) => ({ ...message, commitRequested: false, commitError: undefined }))
-    saveConversation({ ...conversation, messages, updatedAt: Date.now() })
+    const current = conversationStateRef.current || conversation
+    const messages = updateAtPath(current.messages, msgPath, (message) => ({ ...message, commitRequested: false, commitError: undefined }))
+    saveConversation({ ...current, messages, updatedAt: Date.now() })
   }
   const connectionLabel = { unconfigured: '未配置', configured: '已配置', checking: '检查中', connected: '已连接', failed: '连接失败' }[connectionStatus]
   const providerLabel = providerDefinition(config.provider).label
