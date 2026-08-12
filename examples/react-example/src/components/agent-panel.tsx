@@ -478,7 +478,7 @@ function ProposalDiff({ proposal, file, textStyle, onAccept, onReject, onOpen }:
       {status === 'applied' && <><span className="agent-applied-inline"><AgentGlyph name="check" />已应用到本地</span><button type="button" onClick={onOpen}>打开文件</button></>}
       {status === 'rejected' && <span className="agent-proposal-muted">已保留修改记录，可展开重新查看</span>}
     </footer>
-    {expanded && typeof document !== 'undefined' && createPortal(<><button type="button" className="agent-drawer-backdrop portal" onClick={() => setExpanded(false)} aria-label="关闭 Diff" tabIndex={-1} /><section className="agent-drawer agent-diff-drawer" ref={drawerRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={textStyle}>
+    {expanded && typeof document !== 'undefined' && createPortal(<><button type="button" className="agent-drawer-backdrop portal agent-diff-backdrop" onClick={() => setExpanded(false)} aria-label="关闭 Diff" tabIndex={-1} /><section className="agent-drawer agent-diff-drawer" ref={drawerRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={textStyle}>
       <header><div><strong id={titleId}>{proposal.path}</strong><small>{proposal.action === 'create' ? '新建笔记' : '修改笔记'} · {proposal.reason}</small></div><button type="button" className="agent-drawer-close" onClick={() => setExpanded(false)} data-autofocus aria-label="关闭 Diff"><AgentGlyph name="close" /></button></header>
       <div className="agent-diff-summary"><span className={`agent-proposal-status ${status}`}>{labels[status]}</span><span><b>+{diff.added}</b><i>−{diff.removed}</i></span></div>
       <div className="agent-diff" aria-label={`${proposal.path} 的修改预览`}>{diffRows}</div>
