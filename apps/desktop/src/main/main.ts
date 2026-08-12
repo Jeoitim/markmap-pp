@@ -613,7 +613,7 @@ function nativeWindowOptions(): Pick<
     return {
       backgroundColor: '#00000000',
       titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 152, y: 4 },
+      trafficLightPosition: { x: 12, y: 25 },
       vibrancy: 'titlebar',
       visualEffectState: 'followWindow',
     };
