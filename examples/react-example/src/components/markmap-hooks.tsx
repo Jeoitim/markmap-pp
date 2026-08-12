@@ -583,7 +583,7 @@ function loadSettings(): AppSettings {
   }
 }
 
-const systemThemeBackgrounds = new Set(['#fafafa', '#ffffff', '#15181d', '#000000'])
+const systemThemeBackgrounds = new Set(['#fafafa', '#15181d'])
 
 function loadInitialSettings() {
   const settings = loadSettings()
@@ -735,6 +735,7 @@ export default function MarkmapHooks() {
   const [settings, setSettings] = useState(() => initialSettingsRef.current)
   const [dark, setDark] = useState(() => shouldUseDarkTheme(initialSettingsRef.current.previewBackgroundColor))
   const nativeThemeSyncSkippedRef = useRef(false)
+  const nativeThemeSystemUpdateRef = useRef(false)
   const [activePanel, setActivePanel] = useState<Panel>(null)
   const [helpTipIndex, setHelpTipIndex] = useState(0)
   const [editorWidth, setEditorWidth] = useState(38)
@@ -2969,8 +2970,24 @@ export default function MarkmapHooks() {
       nativeThemeSyncSkippedRef.current = true
       return
     }
+    if (nativeThemeSystemUpdateRef.current) {
+      nativeThemeSystemUpdateRef.current = false
+      return
+    }
     void desktop.setNativeTheme(previewDarkMode ? 'dark' : 'light').catch(() => {})
   }, [previewDarkMode])
+
+  useEffect(() => {
+    const desktop = desktopApi()
+    if (!desktop || !systemThemeBackgrounds.has(settings.previewBackgroundColor.toLowerCase())) return
+    return desktop.onNativeThemeChanged(({ shouldUseDarkColors, themeSource }) => {
+      if (themeSource !== 'system') return
+      nativeThemeSystemUpdateRef.current = true
+      const nextBackground = shouldUseDarkColors ? '#15181d' : '#fafafa'
+      setDark(shouldUseDarkColors)
+      setSettings((current) => ({ ...current, previewBackgroundColor: nextBackground }))
+    })
+  }, [settings.previewBackgroundColor])
 
   useEffect(() => {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* storage may be disabled */ }

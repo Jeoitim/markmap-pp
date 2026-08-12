@@ -108,6 +108,65 @@ function handleSquirrelStartup() {
   return true;
 }
 
+function nativeApplicationMenu() {
+  if (process.platform !== 'darwin') return null;
+  return Menu.buildFromTemplate([
+    {
+      label: 'Markmap++',
+      submenu: [
+        { label: '关于 Markmap++', role: 'about' },
+        { type: 'separator' },
+        { label: '隐藏 Markmap++', role: 'hide' },
+        { label: '隐藏其他', role: 'hideOthers' },
+        { label: '显示全部', role: 'unhide' },
+        { type: 'separator' },
+        { label: '退出 Markmap++', role: 'quit' },
+      ],
+    },
+    {
+      label: '文件',
+      submenu: [
+        { label: '关闭窗口', role: 'close' },
+      ],
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { label: '撤销', role: 'undo' },
+        { label: '重做', role: 'redo' },
+        { type: 'separator' },
+        { label: '剪切', role: 'cut' },
+        { label: '复制', role: 'copy' },
+        { label: '粘贴', role: 'paste' },
+        { label: '全选', role: 'selectAll' },
+      ],
+    },
+    {
+      label: '视图',
+      submenu: [
+        { label: '重新加载', role: 'reload' },
+        { label: '强制重新加载', role: 'forceReload' },
+        { label: '开发者工具', role: 'toggleDevTools' },
+      ],
+    },
+    {
+      label: '窗口',
+      submenu: [
+        { label: '最小化', role: 'minimize' },
+        { label: '缩放', role: 'zoom' },
+        { type: 'separator' },
+        { label: '前置全部窗口', role: 'front' },
+      ],
+    },
+    {
+      label: '帮助',
+      submenu: [
+        { label: '关于 Markmap++', role: 'about' },
+      ],
+    },
+  ]);
+}
+
 const squirrelStartup = handleSquirrelStartup();
 nativeTheme.themeSource = 'system';
 
@@ -531,7 +590,7 @@ function nativeWindowOptions(): Pick<
     return {
       backgroundColor: '#00000000',
       titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 15, y: 16 },
+      trafficLightPosition: { x: 152, y: 4 },
       vibrancy: 'titlebar',
       visualEffectState: 'followWindow',
     };
@@ -560,6 +619,20 @@ async function createWindow() {
   if (process.platform === 'win32') {
     window.setBackgroundMaterial('mica');
   }
+  const sendNativeTheme = () => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(desktopChannels.nativeThemeChanged, {
+        shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
+        themeSource: nativeTheme.themeSource,
+      });
+    }
+  };
+  const nativeThemeListener = () => {
+    if (process.platform === 'win32') window.setBackgroundMaterial('mica');
+    sendNativeTheme();
+  };
+  nativeTheme.on('updated', nativeThemeListener);
+  window.on('closed', () => nativeTheme.removeListener('updated', nativeThemeListener));
   window.setMenuBarVisibility(false);
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {
@@ -638,7 +711,7 @@ if (!squirrelStartup) {
         await registerAppProtocol();
         configureSession();
         registerIpc();
-        Menu.setApplicationMenu(null);
+        Menu.setApplicationMenu(nativeApplicationMenu());
         mainWindow = await createWindow();
         await configureUpdates(() => mainWindow);
         app.on('activate', async () => {
