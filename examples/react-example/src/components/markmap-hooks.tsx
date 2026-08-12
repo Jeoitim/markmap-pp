@@ -1373,7 +1373,7 @@ export default function MarkmapHooks() {
     } finally { setGithubBusyAction(null) }
   }
 
-  const switchRemoteRepository = async (profileId: string) => {
+  const switchRemoteRepository = async (profileId: string, targetView: EditorView = 'repository') => {
     const profile = githubProfiles.find((item) => item.id === profileId)
     if (!profile || repositoryProfileId(githubConfig || profile.config) === profileId) return
     setGithubBusyAction('load-repository'); setGithubError(''); setGithubNotice('')
@@ -1387,7 +1387,7 @@ export default function MarkmapHooks() {
       setRepositoryCommitRef(null)
       await refreshRepository(profile.config)
       setRepositorySource('remote')
-      setEditorView('repository')
+      setEditorView(targetView)
       setActivePanel(null)
       setGithubNotice(`已切换到 ${profile.config.owner}/${profile.config.repo}`)
     } catch (error) {
@@ -1441,14 +1441,14 @@ export default function MarkmapHooks() {
     finally { setLocalGitBusy(false) }
   }
 
-  const selectLocalRepository = async (id: string) => {
+  const selectLocalRepository = async (id: string, targetView: EditorView = 'repository') => {
     const desktop = desktopApi()
     if (!desktop) return
     setLocalGitBusy(true); setLocalGitError(''); setLocalGitNotice('')
     try {
       setLocalGitState(await desktop.localGit.select(id))
       setRepositorySource('local')
-      setEditorView('repository')
+      setEditorView(targetView)
       setActivePanel(null)
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '切换本地文件夹失败') }
     finally { setLocalGitBusy(false) }
@@ -3621,8 +3621,7 @@ ${documentRenderConfig.style}
       const locator = normalizeWorkspaceLocator('remote', target.locator || target.key.replace(/^remote:/, ''))
       const profile = githubProfiles.find((item) => normalizeWorkspaceLocator('remote', `${item.config.owner}/${item.config.repo}`) === locator)
       if (!profile) return { matched: false, message: '继续使用该工作区对话可能出现问题。当前设备没有找到对应的远程仓库配置。' }
-      await switchRemoteRepository(profile.id)
-      setEditorView('agent')
+      await switchRemoteRepository(profile.id, 'agent')
       return { matched: true }
     }
     if (target.kind === 'local') {
@@ -3631,8 +3630,7 @@ ${documentRenderConfig.style}
       if (!repository) return { matched: false, message: '继续使用该工作区对话可能出现问题。当前设备没有找到根目录完全匹配的本地文件夹。' }
       setActiveLocalFile(null)
       setActiveRepoPath(null)
-      await selectLocalRepository(repository.id)
-      setEditorView('agent')
+      await selectLocalRepository(repository.id, 'agent')
       return { matched: true }
     }
     return { matched: false, message: '继续使用该工作区对话可能出现问题。独立文件在当前设备上没有找到完全匹配的来源。' }
