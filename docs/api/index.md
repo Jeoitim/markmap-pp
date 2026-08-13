@@ -61,18 +61,20 @@ Cloudflare Pages 使用域名根路径，配置如下：
 | Node.js              | 22                               |
 | pnpm                 | 9                                |
 
-EdgeOne 当前托管构建使用 pnpm 9 读取本仓库 lockfile。不要把项目根目录改为 `examples/react-example`，否则无法解析 `packages/*` workspace 依赖。
+EdgeOne 当前托管构建使用 pnpm 9 读取本仓库 lockfile。不要把项目根目录改为 `apps/web`，否则无法解析 `packages/*` workspace 依赖；应保持从仓库根目录构建。
 
 ## 代码结构
 
 ```text
 markmap-pp/
-├─ examples/react-example/       # markmap++ React 应用
-│  └─ src/components/
-│     ├─ markdown-editor.tsx     # CodeMirror 编辑器
-│     ├─ markdown-lint.ts        # Markdown 检查
-│     ├─ github-sync.ts          # GitHub API 与 IndexedDB
-│     └─ markmap-hooks.tsx       # 工作区与导图交互
+├─ apps/
+│  ├─ web/                       # markmap++ React 应用
+│  │  └─ src/components/
+│  │     ├─ markdown-editor.tsx  # CodeMirror 编辑器
+│  │     ├─ markdown-lint.ts     # Markdown 检查
+│  │     ├─ github-sync.ts       # GitHub API 与 IndexedDB
+│  │     └─ markmap-hooks.tsx    # 工作区与导图交互
+│  └─ desktop/                   # Electron 桌面应用
 ├─ packages/
 │  ├─ markmap-lib/               # Markdown 转换
 │  ├─ markmap-view-plus/         # 可编辑 SVG 导图
@@ -85,7 +87,7 @@ markmap-pp/
 
 ```bash
 pnpm dev
-pnpm --filter markmap-plus-plus-app lint
+pnpm --filter markmap-plus-plus-web lint
 pnpm build:app
 pnpm build:site
 pnpm docs:dev

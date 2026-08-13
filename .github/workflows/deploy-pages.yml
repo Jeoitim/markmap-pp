@@ -37,7 +37,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Check web application
-        run: pnpm --filter markmap-plus-plus-app lint
+        run: pnpm --filter markmap-plus-plus-web lint
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6

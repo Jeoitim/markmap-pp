@@ -1,9 +1,10 @@
 node_modules
 /dist
-/apps/desktop/dist
+/apps/*/dist
 /apps/desktop/out
 /apps/desktop/release
 docs/.vitepress/dist
+docs/.vitepress/cache
 .pnpm-store/
 *.log
 /.idea

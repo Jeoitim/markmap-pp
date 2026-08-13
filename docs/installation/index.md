@@ -61,7 +61,7 @@ pnpm dev
 
 ```bash
 # 检查 Web 应用
-pnpm --filter markmap-plus-plus-app lint
+pnpm --filter markmap-plus-plus-web lint
 
 # 构建应用
 pnpm build:app

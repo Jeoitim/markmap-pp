@@ -12,9 +12,9 @@
   "scripts": {
     "clean": "del-cli dist out",
     "build:main": "tsc -p tsconfig.json",
-    "build:renderer": "cross-env VITE_BASE_PATH=./ VITE_OUT_DIR=../../apps/desktop/dist/renderer pnpm --dir ../../examples/react-example build",
+    "build:renderer": "cross-env VITE_BASE_PATH=./ VITE_OUT_DIR=../desktop/dist/renderer pnpm --dir ../web build",
     "build": "pnpm clean && pnpm build:main && pnpm build:renderer",
-    "dev:renderer": "pnpm --dir ../../examples/react-example dev --host 127.0.0.1",
+    "dev:renderer": "pnpm --dir ../web dev --host 127.0.0.1",
     "dev": "pnpm build:main && concurrently --kill-others --success first \"pnpm dev:renderer\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "package": "pnpm build && electron-forge package",
     "make:win": "pnpm build && del-cli release && node scripts/build-electron.mjs --win --x64 --publish never",

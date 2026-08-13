@@ -90,13 +90,13 @@ Open `http://localhost:5173`.
 Useful commands:
 
 ```bash
-pnpm --filter markmap-plus-plus-app lint
+pnpm --filter markmap-plus-plus-web lint
 pnpm build:app
 pnpm test
-pnpm --filter markmap-plus-plus-app preview
+pnpm --filter markmap-plus-plus-web preview
 ```
 
-The production app is generated in `examples/react-example/dist/`.
+The production app is generated in `apps/web/dist/`.
 
 ## Electron desktop app (Beta)
 
@@ -145,18 +145,18 @@ Connect the repository from **Workers & Pages → Create application → Pages �
 | ---------------------- | ------------------------------------------- |
 | Framework preset       | React (Vite) or None                        |
 | Root directory         | `/`                                         |
-| Build command          | `pnpm --filter markmap-plus-plus-app build` |
-| Build output directory | `examples/react-example/dist`               |
+| Build command          | `pnpm --filter markmap-plus-plus-web build` |
+| Build output directory | `apps/web/dist`                             |
 | `NODE_VERSION`         | `22`                                        |
 | `PNPM_VERSION`         | `10`                                        |
 
 Cloudflare Pages serves the project at the domain root, so do not reuse the GitHub Pages `--base "/markmap-pp/"` option. The default Vite base of `/` is correct.
 
-For a direct upload instead of Git integration:
+For a direct upload of the standalone web app instead of Git integration:
 
 ```bash
 pnpm build:app
-pnpm dlx wrangler pages deploy examples/react-example/dist --project-name markmap-pp
+pnpm dlx wrangler pages deploy apps/web/dist --project-name markmap-pp
 ```
 
 See the official [Cloudflare Pages Git integration](https://developers.cloudflare.com/pages/get-started/git-integration/) and [build configuration](https://developers.cloudflare.com/pages/configuration/build-configuration/) guides.
@@ -170,18 +170,18 @@ Import the GitHub repository into [EdgeOne Pages](https://pages.edgeone.ai/), as
 | Framework preset     | Vite or Custom                              |
 | Root directory       | `./`                                        |
 | Installation command | `pnpm install --frozen-lockfile`            |
-| Build command        | `pnpm --filter markmap-plus-plus-app build` |
-| Output directory     | `examples/react-example/dist`               |
+| Build command        | `pnpm --filter markmap-plus-plus-web build` |
+| Output directory     | `apps/web/dist`                             |
 | Node.js version      | 22                                          |
 | pnpm version         | 9                                           |
 
-EdgeOne's managed build environment currently supports pnpm 6–9, and pnpm 9 can read this repository's lockfile. Do not change the root to `examples/react-example`, because the application depends on `packages/*` workspace packages.
+EdgeOne's managed build environment currently supports pnpm 6–9, and pnpm 9 can read this repository's lockfile. Keep the root directory at the repository root rather than changing it to `apps/web`, because the application depends on `packages/*` workspace packages.
 
 Optional CLI deployment:
 
 ```bash
 pnpm build:app
-npx edgeone pages deploy examples/react-example/dist \
+npx edgeone pages deploy apps/web/dist \
   -n markmap-pp \
   -t "$EDGEONE_API_TOKEN" \
   -e production
@@ -211,7 +211,9 @@ Store `EDGEONE_API_TOKEN` as a CI secret rather than committing it. See the offi
 ```text
 markmap-pp/
 ├─ .github/workflows/         # GitHub Pages deployment
-├─ examples/react-example/    # markmap++ web application and Agent UI
+├─ apps/
+│  ├─ web/                    # markmap++ web application and Agent UI
+│  └─ desktop/                # Electron desktop application
 ├─ packages/                  # Markmap workspace packages
 ├─ docs/                      # Usage, Agent, sync, and deployment documentation
 ├─ package.json               # Workspace commands
@@ -220,6 +222,6 @@ markmap-pp/
 
 ## Upstream and license
 
-This repository is derived from [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus), which extends the original [markmap](https://github.com/markmap/markmap) renderer with editable nodes and Markdown write-back. markmap++ adds the end-user workspace, AI note and repository Agent, and synchronization experience under `examples/react-example`.
+This repository is derived from [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus), which extends the original [markmap](https://github.com/markmap/markmap) renderer with editable nodes and Markdown write-back. markmap++ adds the end-user workspace, AI note and repository Agent, and synchronization experience under `apps/web`.
 
 Licensed under the [MIT License](LICENSE).

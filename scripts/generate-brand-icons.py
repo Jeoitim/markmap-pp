@@ -92,12 +92,12 @@ def main() -> None:
     master = build_master()
     save_png(master, 'assets/brand/markmap-plus-plus-icon.png', 512)
     save_png(master, 'apps/desktop/resources/icon.png', 512)
-    save_png(master, 'examples/react-example/public/brand/markmap-plus-plus-icon.png', 256)
-    save_png(master, 'examples/react-example/public/icon-512.png', 512)
-    save_png(master, 'examples/react-example/public/icon-192.png', 192)
-    save_png(master, 'examples/react-example/public/apple-touch-icon.png', 180)
+    save_png(master, 'apps/web/public/brand/markmap-plus-plus-icon.png', 256)
+    save_png(master, 'apps/web/public/icon-512.png', 512)
+    save_png(master, 'apps/web/public/icon-192.png', 192)
+    save_png(master, 'apps/web/public/apple-touch-icon.png', 180)
     master.save(ROOT / 'apps/desktop/resources/icon.ico', format='ICO', sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    master.save(ROOT / 'examples/react-example/public/favicon.ico', format='ICO', sizes=[(16, 16), (32, 32), (48, 48)])
+    master.save(ROOT / 'apps/web/public/favicon.ico', format='ICO', sizes=[(16, 16), (32, 32), (48, 48)])
     master.save(ROOT / 'apps/desktop/resources/icon.icns', format='ICNS')
 
 

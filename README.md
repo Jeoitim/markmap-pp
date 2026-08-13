@@ -148,7 +148,7 @@ pnpm dev
 
 ```bash
 # 检查 Web 应用
-pnpm --filter markmap-plus-plus-app lint
+pnpm --filter markmap-plus-plus-web lint
 
 # 构建 Web 应用
 pnpm build:app
@@ -160,10 +160,10 @@ pnpm build:site
 pnpm test
 
 # 预览生产构建
-pnpm --filter markmap-plus-plus-app preview
+pnpm --filter markmap-plus-plus-web preview
 ```
 
-`pnpm build:app` 只把应用输出到 `examples/react-example/dist/`。用于部署的 `pnpm build:site` 会把应用和 VitePress 文档合并到根目录 `dist/`：应用位于 `/`，文档位于 `/doc/`。
+`pnpm build:app` 只把应用输出到 `apps/web/dist/`。用于部署的 `pnpm build:site` 会把应用和 VitePress 文档合并到根目录 `dist/`：应用位于 `/`，文档位于 `/doc/`。
 
 本地 `pnpm dev` 只启动应用，因此 `http://localhost:5173/doc/` 不会显示文档。需要使用 `pnpm docs:dev` 单独启动 VitePress；正式部署则由 `pnpm build:site` 将两者合并。
 
@@ -262,7 +262,7 @@ Git 集成项目与 Direct Upload 项目的管理方式不同；如果希望长�
 
 4. 保存并开始部署。生产分支更新会发布到正式环境，其他分支进入 Preview 环境。
 
-EdgeOne Pages 当前托管构建支持 pnpm 6–9，而本项目的 lockfile 格式可由 pnpm 9 读取，因此这里指定 pnpm 9。不要把 Root directory 改为 `examples/react-example`，该应用依赖仓库内的 `packages/*` workspace 包。
+EdgeOne Pages 当前托管构建支持 pnpm 6–9，而本项目的 lockfile 格式可由 pnpm 9 读取，因此这里指定 pnpm 9。不要把 Root directory 改为 `apps/web`，该应用依赖仓库内的 `packages/*` workspace 包；应保持从仓库根目录安装依赖和构建。
 
 如果希望通过 GitHub Actions 或其他 CI 主动上传，可以先创建 EdgeOne API Token，然后执行：
 
@@ -299,9 +299,11 @@ npx edgeone pages deploy dist \
 ```text
 markmap-pp/
 ├─ .github/workflows/         # GitHub Pages 自动部署
-├─ examples/react-example/    # markmap++ Web 应用
-│  ├─ src/components/         # 编辑器、导图、Agent 和 GitHub 同步
-│  └─ dist/                   # 生产构建输出
+├─ apps/
+│  ├─ web/                    # markmap++ Web 应用
+│  │  ├─ src/components/      # 编辑器、导图、Agent 和 GitHub 同步
+│  │  └─ dist/                # 生产构建输出
+│  └─ desktop/                # Electron 桌面应用
 ├─ packages/
 │  ├─ markmap-lib/            # Markdown 转换
 │  ├─ markmap-view-plus/      # 可编辑思维导图视图
@@ -314,7 +316,7 @@ markmap-pp/
 
 ## 与上游项目的关系
 
-本仓库基于 `Tem-man/markmap-plus` 修改，并继续保留其可编辑节点、增删节点、增量更新和 `toMarkdown` 回写能力。markmap++ 主要在 `examples/react-example` 中提供面向最终用户的完整工作台，并扩展本地缓存、Agent 知识与仓库操作、GitHub 同步、文件管理、显示设置和多格式导出。
+本仓库基于 `Tem-man/markmap-plus` 修改，并继续保留其可编辑节点、增删节点、增量更新和 `toMarkdown` 回写能力。markmap++ 主要在 `apps/web` 中提供面向最终用户的完整工作台，并扩展本地缓存、Agent 知识与仓库操作、GitHub 同步、文件管理、显示设置和多格式导出。
 
 ## 许可证与鸣谢
 

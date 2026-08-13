@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
 const appDist = fileURLToPath(
-  new URL('../examples/react-example/dist/', import.meta.url),
+  new URL('../apps/web/dist/', import.meta.url),
 );
 const docsDist = fileURLToPath(
   new URL('../docs/.vitepress/dist/', import.meta.url),
@@ -26,7 +26,7 @@ function run(args, environment) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-run(['--filter', 'markmap-plus-plus-app', 'build'], {
+run(['--filter', 'markmap-plus-plus-web', 'build'], {
   VITE_BASE_PATH: process.env.VITE_BASE_PATH || '/',
 });
 run(['docs:build'], {
