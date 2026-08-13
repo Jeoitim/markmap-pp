@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import './App.css'
 import MarkmapHooks from './components/markmap-hooks'
 import { desktopApi } from './components/desktop-api'
+import { I18nProvider } from './i18n-provider'
 
 export default function App() {
   useEffect(() => {
@@ -16,5 +17,5 @@ export default function App() {
     }
   }, [])
 
-  return <MarkmapHooks />
+  return <I18nProvider><MarkmapHooks /></I18nProvider>
 }

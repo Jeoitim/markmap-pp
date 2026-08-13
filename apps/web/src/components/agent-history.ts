@@ -59,6 +59,8 @@ export interface AgentConversation {
 
 const HISTORY_KEY = 'agent-conversations'
 
+export const AGENT_WELCOME_MESSAGE = '你好，我会结合你的 Markdown 笔记、当前操作上下文和通用知识来回答；也可以在 Edit 模式中生成可审核、可追踪的文件修改。'
+
 export async function loadAgentConversations() {
   return (await loadLocalSetting<AgentConversation[]>(HISTORY_KEY) || []).map((item) => {
     const workspaceKey = normalizeStoredWorkspaceKey(item.workspace?.key || item.workspaceKey)
@@ -73,7 +75,7 @@ export async function saveAgentConversations(conversations: AgentConversation[])
 export function createConversation(workspace?: AgentWorkspaceRef | string): AgentConversation {
   const now = Date.now()
   const workspaceKey = typeof workspace === 'string' ? workspace : workspace?.key
-  return { id: crypto.randomUUID(), title: '新对话', createdAt: now, updatedAt: now, workspaceKey, workspace: typeof workspace === 'string' ? undefined : workspace, messages: [{ role: 'assistant', content: '你好，我会结合你的 Markdown 笔记、当前操作上下文和通用知识来回答；也可以在 Edit 模式中生成可审核、可追踪的文件修改。' }] }
+  return { id: crypto.randomUUID(), title: '新对话', createdAt: now, updatedAt: now, workspaceKey, workspace: typeof workspace === 'string' ? undefined : workspace, messages: [{ role: 'assistant', content: AGENT_WELCOME_MESSAGE }] }
 }
 
 export function activeContent(message: AgentMessage): string {

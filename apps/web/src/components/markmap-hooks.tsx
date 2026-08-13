@@ -14,6 +14,10 @@ import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type M
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import type { AgentSourceFile } from './agent-client'
 import { normalizeWorkspaceLocator, workspaceKeyFor, type AgentWorkspaceRef, type AgentWorkspaceSelectionResult } from './agent-history'
+import guideEnglish from '../content/markmap++ guide.md?raw'
+import guideChinese from '../content/markmap++ 操作指南.md?raw'
+import { useI18n } from '../i18n-hook'
+import type { Locale } from '../i18n'
 import { desktopApi, saveBlob, type DesktopLocalGitCommit, type DesktopLocalGitFile, type DesktopLocalGitGraph, type DesktopLocalGitState } from './desktop-api'
 import { inspectMarkdown } from './markdown-lint'
 import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
@@ -53,109 +57,6 @@ const VIRTUAL_FOLDERS_KEY = 'markmap-plus-plus:virtual-folders'
 const DESKTOP_WORKSPACE_KEY = 'markmap-plus-plus:desktop-workspace'
 const MARKMAP_PREVIEW_ID = 'markmap-preview'
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/markmap-plus-plus-icon.png`
-
-const starterDocument = `---
-title: markmap++ 使用指南
-options:
-  colorFreezeLevel: 2
-  maxWidth: 360
----
-
-# markmap++
-
-## 👋 欢迎使用
-
-- 左侧编写 **Markdown**，右侧即时生成思维导图
-- 这里集中介绍节点、画布、Markdown、导出与 GitHub 文档同步
-- 需要修改内容时，请回到左侧 Markdown 编辑器；重要内容请使用顶部 **导出** 保存
-- [markmap++ 文档站](https://jeoitim.github.io/markmap-pp/doc/) · GitHub 项目：[Jeoitim/markmap-pp](https://github.com/Jeoitim/markmap-pp)
-
-## 🧭 节点与画布操作
-
-| 图标 | 操作 | 效果 |
-| :--: | --- | --- |
-| 🖱️ | 单击 / 双击节点 | 选中节点 / 编辑文字 |
-| ↩️ | 选中后按 Enter | 新增同级节点 |
-| ⇥ | 选中后按 Tab | 新增子节点 |
-| ⌫ | Delete / Backspace | 删除整个节点 |
-| ↶ | 点击顶部“撤回” | 恢复最近一次修改 |
-| ✥ | 拖动画布 / 滚轮 | 移动画布 / 缩放视图 |
-| ◉ | 点击节点圆点 | 折叠或展开分支 |
-
-## ✍️ Markdown 丰富语法
-
-### 文字样式
-
-- **粗体**、*斜体*、~~删除线~~、==高亮== 与 \`行内代码\`
-- 很长很长的文字会根据 maxWidth 自动换行，适合记录完整说明
-- 有序步骤
-  1. 在左侧拖动光标选中文字
-  2. 输入或粘贴 Markdown
-  3. 在右侧查看实时结果
-
-### 任务清单
-
-- [x] 表格
-- [x] LaTeX 公式
-- [x] Checkbox
-- [x] 在线图片
-- [ ] 用你的内容继续探索
-
-### 代码块
-
-\`\`\`js
-const message = 'Hello, markmap++'
-console.log(message)
-\`\`\`
-
-## ∑ LaTeX 公式
-
-### 实际渲染
-
-- 行内公式：圆的面积是 $A = \\pi r^2$
-- 二次方程求根公式：$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$
-
-### 公式源码示例
-
-\`\`\`latex
-\\int_{-\\infty}^{\\infty} e^{-x^2} \\, dx = \\sqrt{\\pi}
-\`\`\`
-
-## 🖼️ 在线图片
-
-### Markmap
-
-![Markmap 图标](https://markmap.js.org/favicon.png)
-
-### GitHub
-
-![GitHub 图标](https://cdn.simpleicons.org/github/7056e8)
-
-## 🎛️ 编辑与显示
-
-| 位置 | 能做什么 |
-| --- | --- |
-| 中间分割线 | 拖动调整两侧宽度；长条按钮收起或展开编辑器 |
-| 编辑器右上角 | 调整字号与语法高亮方案 |
-| 预览右上角 | 适应画布、切换字体/字重和点阵背景 |
-| 页面右上角 | 打开说明、撤回、导出、全屏和深浅色模式 |
-
-## ☁️ GitHub 多端同步
-
-| 状态 | 含义 | 下一步 |
-| :--: | --- | --- |
-| 灰点 | 文件尚未拉取 | 单击文件下载到本机缓存 |
-| A / M | 新增 / 已修改 | 检查内容后点击“同步” |
-| R / D | 已重命名 / 已删除 | 同步后写入远端仓库 |
-| 🟢 | 已同步 | 可以继续编辑 |
-| 🟠 | 已暂存、未推送 | 点击“同步”创建提交并推送 |
-
-## 📦 导出
-
-- Markdown：保留可继续编辑的源文件
-- SVG / HTML：适合网页与无限缩放
-- PNG / JPEG：适合分享，可选择 1×–4× 渲染倍率
-`
 
 type Pane = 'editor' | 'preview'
 type Panel = Pane | 'export' | 'github' | 'help' | 'links' | null
@@ -490,7 +391,7 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'help' | 'link' | 'map' | 'menu' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
+type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'globe' | 'help' | 'link' | 'map' | 'menu' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
@@ -506,6 +407,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   focus: <><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></>,
   folder: <><path d="M3 7.5V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3Z"/><path d="M3 9h18"/></>,
   github: <><circle cx="6" cy="5" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="8" cy="19" r="2"/><path d="M6 7v5a3 3 0 0 0 3 3h5a4 4 0 0 0 4-4V8M8 17v-2"/></>,
+  globe: <><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.4 2.5 3.5 5.5 3.5 9s-1.1 6.5-3.5 9c-2.4-2.5-3.5-5.5-3.5-9S9.6 5.5 12 3Z"/></>,
   help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.5-1.2 1-1.2 2"/><path d="M12 17h.01"/></>,
   link: <><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></>,
   map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15m6-12v15"/></>,
@@ -530,8 +432,8 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
   return <svg className={className} aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{iconPaths[name]}</svg>
 }
 
-function loadDocument() {
-  return starterDocument
+function loadDocument(locale: Locale) {
+  return locale === 'en-US' ? guideEnglish : guideChinese
 }
 
 interface DocumentTab {
@@ -719,9 +621,10 @@ function readUserPreviewBackground(style: string) {
 }
 
 export default function MarkmapHooks() {
+  const { locale, toggleLocale, t } = useI18n()
   const desktopWorkspaceSessionRef = useRef(loadDesktopWorkspaceSession())
   const initialSettingsRef = useRef(loadInitialSettings())
-  const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [createDocumentTab('markmap++ 操作指南.md', loadDocument(), 'starter')])
+  const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [createDocumentTab(locale === 'en-US' ? 'markmap++ guide.md' : 'markmap++ 操作指南.md', loadDocument(locale), 'starter')])
   const [activeTabId, setActiveTabId] = useState(() => documentTabs[0].id)
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
   const [pendingCloseBusy, setPendingCloseBusy] = useState(false)
@@ -821,6 +724,17 @@ export default function MarkmapHooks() {
   const [linkPickerSelection, setLinkPickerSelection] = useState<TextSelectionTarget | null>(null)
   const [linkNotice, setLinkNotice] = useState('')
   const [pendingRepositoryNavigation, setPendingRepositoryNavigation] = useState<PendingRepositoryNavigation | null>(null)
+  useEffect(() => {
+    const nextName = locale === 'en-US' ? 'markmap++ guide.md' : 'markmap++ 操作指南.md'
+    const nextContent = loadDocument(locale)
+    const previousContent = loadDocument(locale === 'en-US' ? 'zh-CN' : 'en-US')
+    const current = documentTabsRef.current.find((tab) => tab.id === activeTabId)
+    if (!current || current.sourceKey !== 'starter' || (current.content !== previousContent && markdown !== previousContent)) return
+    setDocumentTabs((tabs) => tabs.map((tab) => tab.id === current.id ? { ...tab, name: nextName, content: nextContent } : tab))
+    setMarkdown(nextContent)
+    setRenderedMarkdown(nextContent)
+    setFileName(nextName)
+  }, [activeTabId, documentTabsRef, locale, markdown])
   const initialMarkdownRef = useRef(markdown)
   const markdownEditorRef = useRef<MarkdownEditorHandle | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -3685,40 +3599,40 @@ ${documentRenderConfig.style}
   const helpTips = [
     {
       kicker: 'TIP 01 · START',
-      title: '快速上手',
-      description: '把 Markdown 当作内容，把思维导图当作结构预览。',
+      title: t('快速上手'),
+      description: t('把 Markdown 当作内容，把思维导图当作结构预览。'),
       content: <>
-        <div className="help-tip-callout"><Icon name="map" /><span><strong>左侧写内容，右侧看结构。</strong> 输入 Markdown 后，预览会即时生成；本页用于快速了解编辑器和思维导图的主要功能。</span></div>
-        <div className="help-tip-steps"><div><b>01</b><span><strong>编写</strong>在左侧编辑器中输入标题、列表或正文。</span></div><div><b>02</b><span><strong>观察</strong>右侧会同步更新节点、层级和连接关系。</span></div><div><b>03</b><span><strong>保存</strong>使用顶部导出保存副本，或绑定 GitHub 管理文档。</span></div></div>
-        <p className="help-tip-note">刷新页面会恢复默认操作指南；重要内容请及时导出或保存到仓库。</p>
+        <div className="help-tip-callout"><Icon name="map" /><span><strong>{t('左侧写内容，右侧看结构。')}</strong> {t('输入 Markdown 后，预览会即时生成；本页用于快速了解编辑器和思维导图的主要功能。')}</span></div>
+        <div className="help-tip-steps"><div><b>01</b><span><strong>{t('编写')}</strong>{t('在左侧编辑器中输入标题、列表或正文。')}</span></div><div><b>02</b><span><strong>{t('观察')}</strong>{t('右侧会同步更新节点、层级和连接关系。')}</span></div><div><b>03</b><span><strong>{t('保存')}</strong>{t('使用顶部导出保存副本，或绑定 GitHub 管理文档。')}</span></div></div>
+        <p className="help-tip-note">{t('刷新页面会恢复默认操作指南；重要内容请及时导出或保存到仓库。')}</p>
       </>,
     },
     {
       kicker: 'TIP 02 · CANVAS',
-      title: '节点与画布操作',
-      description: '先选中，再编辑；画布本身可以自由移动和缩放。',
-      content: <div className="help-tip-actions"><div><b>单击节点</b><span>选中节点，Enter 新增同级节点。</span></div><div><b>双击节点</b><span>进入文字编辑，Enter 保存当前文字。</span></div><div><b>Tab</b><span>为当前节点新增一个子节点。</span></div><div><b>Delete / Backspace</b><span>删除选中的整个节点；需要时可点击顶部“撤回”。</span></div><div><b>拖动画布</b><span>按住空白区域拖动，浏览超出视口的内容。</span></div><div><b>滚轮 / 触控板</b><span>缩放画布；点击节点圆点折叠或展开分支。</span></div><div><b>适应画布</b><span>点击预览右上角的适应按钮，让完整导图回到视口。</span></div><div><b>分割线</b><span>拖动中间分割线调整编辑器和预览的宽度。</span></div></div>,
+      title: t('节点与画布操作'),
+      description: t('先选中，再编辑；画布本身可以自由移动和缩放。'),
+      content: <div className="help-tip-actions"><div><b>{t('单击节点')}</b><span>{t('选中节点，Enter 新增同级节点。')}</span></div><div><b>{t('双击节点')}</b><span>{t('进入文字编辑，Enter 保存当前文字。')}</span></div><div><b>Tab</b><span>{t('为当前节点新增一个子节点。')}</span></div><div><b>Delete / Backspace</b><span>{t('删除选中的整个节点；需要时可点击顶部“撤回”。')}</span></div><div><b>{t('拖动画布')}</b><span>{t('按住空白区域拖动，浏览超出视口的内容。')}</span></div><div><b>{t('滚轮 / 触控板')}</b><span>{t('缩放画布；点击节点圆点折叠或展开分支。')}</span></div><div><b>{t('适应画布')}</b><span>{t('点击预览右上角的适应按钮，让完整导图回到视口。')}</span></div><div><b>{t('分割线')}</b><span>{t('拖动中间分割线调整编辑器和预览的宽度。')}</span></div></div>,
     },
     {
       kicker: 'TIP 03 · MARKDOWN',
-      title: 'Markdown 丰富语法',
-      description: '用轻量语法表达层级、重点和更完整的资料。',
+      title: t('Markdown 丰富语法'),
+      description: t('用轻量语法表达层级、重点和更完整的资料。'),
       content: <>
-        <div className="help-tip-section"><strong>文字与结构</strong><div className="help-tip-chip-row"><code># 标题</code><code>**粗体**</code><code>*斜体*</code><code>~~删除线~~</code><code>==高亮==</code><code>`行内代码`</code></div></div>
-        <div className="help-tip-section"><strong>适合思维导图的内容</strong><ul><li>使用标题和缩进列表组织层级，标题越深，分支层级越深。</li><li>有序列表、无序列表和任务清单适合拆解步骤与待办事项。</li><li>表格、LaTeX 公式、代码块和在线图片可以保留在 Markdown 中。</li></ul></div>
-        <div className="help-tip-callout subtle"><Icon name="check" /><span>较长文字会按节点最大宽度自动换行；需要更清晰的结构时，可以拆成多个子节点。</span></div>
+        <div className="help-tip-section"><strong>{t('文字与结构')}</strong><div className="help-tip-chip-row"><code># {t('标题')}</code><code>**{t('粗体')}**</code><code>*{t('斜体')}*</code><code>~~{t('删除线')}~~</code><code>=={t('高亮')}==</code><code>`{t('行内代码')}`</code></div></div>
+        <div className="help-tip-section"><strong>{t('适合思维导图的内容')}</strong><ul><li>{t('使用标题和缩进列表组织层级，标题越深，分支层级越深。')}</li><li>{t('有序列表、无序列表和任务清单适合拆解步骤与待办事项。')}</li><li>{t('表格、LaTeX 公式、代码块和在线图片可以保留在 Markdown 中。')}</li></ul></div>
+        <div className="help-tip-callout subtle"><Icon name="check" /><span>{t('较长文字会按节点最大宽度自动换行；需要更清晰的结构时，可以拆成多个子节点。')}</span></div>
       </>,
     },
     {
       kicker: 'TIP 04 · EDIT & EXPORT',
-      title: '编辑、显示与导出',
-      description: '把阅读体验调到合适状态，再选择适合用途的输出格式。',
-      content: <div className="help-tip-grid"><div><strong>编辑器设置</strong><span>调整 Markdown 字号和语法高亮方案。</span></div><div><strong>预览设置</strong><span>调整节点字号、字体、字重、配色冻结层级和点阵背景。</span></div><div><strong>主题切换</strong><span>顶部月亮/太阳按钮切换深色与浅色模式。</span></div><div><strong>导出 Markdown</strong><span>保留可继续编辑的源文件。</span></div><div><strong>导出 SVG / HTML</strong><span>适合网页、分享和无限缩放。</span></div><div><strong>导出 PNG / JPEG</strong><span>适合图片分享，可选择渲染倍率。</span></div></div>,
+      title: t('编辑、显示与导出'),
+      description: t('把阅读体验调到合适状态，再选择适合用途的输出格式。'),
+      content: <div className="help-tip-grid"><div><strong>{t('编辑器设置')}</strong><span>{t('调整 Markdown 字号和语法高亮方案。')}</span></div><div><strong>{t('预览设置')}</strong><span>{t('调整节点字号、字体、字重、配色冻结层级和点阵背景。')}</span></div><div><strong>{t('主题切换')}</strong><span>{t('顶部月亮/太阳按钮切换深色与浅色模式。')}</span></div><div><strong>{t('导出 Markdown')}</strong><span>{t('保留可继续编辑的源文件。')}</span></div><div><strong>{t('导出 SVG / HTML')}</strong><span>{t('适合网页、分享和无限缩放。')}</span></div><div><strong>{t('导出 PNG / JPEG')}</strong><span>{t('适合图片分享，可选择渲染倍率。')}</span></div></div>,
     },
     {
       kicker: 'TIP 05 · GITHUB',
-      title: 'GitHub 文档同步',
-      description: '文件先保存在浏览器本地缓存，确认后再推送到远程仓库。',
+      title: t('GitHub 文档同步'),
+      description: t('文件先保存在浏览器本地缓存，确认后再推送到远程仓库。'),
       content: <>
         <div className="help-tip-steps"><div><b>01</b><span><strong>绑定</strong>在仓库设置中填写仓库、分支和具有 Contents 权限的令牌。</span></div><div><b>02</b><span><strong>编辑</strong>打开文件后修改内容，状态会显示为 M；新文件显示为 A。</span></div><div><b>03</b><span><strong>同步</strong>点击仓库页同步按钮，一次性创建 commit 并推送。</span></div></div>
         <div className="help-tip-statuses"><span><i className="clean" />已同步</span><span><i className="dirty" />已修改</span><span><i className="added" />新文件</span><span><i className="remote" />尚未拉取</span></div>
@@ -3740,7 +3654,8 @@ ${documentRenderConfig.style}
           <button type="button" className="button secondary collapsible-action" onClick={openHelpPanel}><Icon name="help" /><span>说明</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" disabled={!hasOpenDocument} onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
-          <button type="button" className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} title={fullscreen ? '退出全屏' : '全屏'} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
+          <button type="button" className="locale-toggle" aria-label={locale === 'en-US' ? t('切换到中文') : t('切换到英文')} title={locale === 'en-US' ? t('切换到中文') : t('切换到英文')} onClick={toggleLocale}><Icon name="globe" /></button>
+          <button type="button" className="icon-button" aria-label={fullscreen ? t('退出全屏') : t('进入全屏')} title={fullscreen ? t('退出全屏') : t('全屏')} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
           <button type="button" className="icon-button" aria-label={previewDarkMode ? '切换浅色模式' : '切换深色模式'} title={previewDarkMode ? '浅色模式 · 雾白背景' : '深色模式 · 深灰背景'} onClick={() => updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d')}><Icon name={previewDarkMode ? 'sun' : 'moon'} /></button>
           <button type="button" className="icon-button mobile-tabs-trigger" aria-label={`打开文档标签，共 ${documentTabs.length} 个`} title="文档标签" aria-expanded={mobileTabsOpen} onClick={() => setMobileTabsOpen(true)}><Icon name="tabs" /><b>{documentTabs.length}</b></button>
           <button type="button" className="icon-button more-action" aria-label="更多操作" title="更多操作" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
@@ -3756,7 +3671,7 @@ ${documentRenderConfig.style}
       <section ref={workspaceRef} className={`workspace mobile-${mobilePane}`} style={{ gridTemplateColumns: gridColumns }}>
         <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' || editorView === 'agent' ? 'repository-view' : ''}`} aria-label="Markdown 编辑器">
           {!editorCollapsed && <>
-            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title="切换到思维导图"><Icon name="map" /><span>导图</span></button></div>
+            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title={t('切换到思维导图')}><Icon name="map" /><span>{t('导图')}</span></button></div>
               {editorView === 'markdown' ? <>
               {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>打开现有 Markdown，或新建一个空白标签。</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />新建标签</button></div></div>}
               <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
