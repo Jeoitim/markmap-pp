@@ -30,7 +30,7 @@ options:
 ### Text styles
 
 - **Bold**, *italic*, ~~strikethrough~~, ==highlight== and `inline code`.
-- Long text wraps automatically to the available width, which is useful for full notes.
+- Long text wraps automatically to the available width. You can also set the maxWidth parameter manually when you need full notes.
 - A simple workflow:
   1. Select text in the left editor.
   2. Type or paste Markdown.

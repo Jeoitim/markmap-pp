@@ -7,6 +7,8 @@ outline: deep
 
 The markmap++ desktop app shares the editor and mind-map UI with the web app. Electron provides native windows, an isolated renderer, Markdown file access and local Git workspaces; the browser version remains available online.
 
+To download a ready-to-use build, visit [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases). For the Web / desktop comparison, see the [App overview](/en/app/).
+
 ## Download and install
 
 Release builds are published on [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases). After a version tag is pushed, the release workflow builds these x64 artifacts:

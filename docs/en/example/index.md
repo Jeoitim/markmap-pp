@@ -7,9 +7,46 @@ outline: deep
 
 A GitHub repository can store Markdown, synchronize devices and provide version history. markmap++ creates a commit only after you click **Sync**; typing never pushes automatically.
 
-## Create a token
+## Why sync with GitHub?
 
-Create a fine-grained personal access token for the target repository and grant **Repository permissions → Contents → Read and write**. Do not put the token in Markdown, repository files or deployment environment variables.
+GitHub can be more than a code host. It can also be a versioned home for personal Markdown notes:
+
+- **Continue on any device**: use the same repository from a computer, desktop app or mobile browser.
+- **Keep history**: every sync creates a Git commit, so you can inspect changes and restore an earlier version.
+- **Avoid accidental overwrites**: the app checks the remote branch before syncing and stops when another device has pushed first.
+- **Review before pushing**: changes stay staged locally until you confirm a sync instead of creating a commit for every keystroke.
+- **Keep ownership**: use your own private repository and choose your own backup policy.
+
+## Basic Git operations
+
+If you already use Git, you can inspect and manage the same repository outside the app:
+
+| Action | Common command | Purpose |
+| --- | --- | --- |
+| Get a repository | `git clone <repository-url>` | Download it to a computer for the first time |
+| Check status | `git status` | See added, modified and deleted files |
+| Pull updates | `git pull --ff-only` | Get commits pushed from another device |
+| Commit changes | `git add .`, `git commit -m "message"` | Record a group of changes as one version |
+| Push a version | `git push` | Upload local commits to GitHub |
+| View history | `git log --oneline` | Browse previous commits |
+
+The Web app uses the GitHub API for the same pull and push workflow; the desktop app can also use a local Git workspace. If you edit the same file in the app and on the command line, pull and review the diff before pushing.
+
+## Create a GitHub token
+
+markmap++ needs a fine-grained personal access token to read and update your note repository. Grant access only to that repository instead of using a broad classic token.
+
+1. Sign in to GitHub and open **Settings** from the avatar menu.
+2. Find **Developer settings**, or open [Developer Settings](https://github.com/settings/apps) directly.
+3. Open **Personal access tokens → Fine-grained tokens** and click **Generate new token** in the upper-right corner.
+4. Fill in **Token name**, **Description** and **Expiration**.
+   - Choose **No expiration** only when you need a long-lived token. GitHub does not recommend non-expiring tokens. Keeping the token private and restricting it to one note repository reduces exposure, while a shorter expiration and regular rotation is safer.
+5. Under **Repository access**, choose **Only select repositories** and select your note repository.
+6. Under **Repository permissions**, set **Contents** to **Read and write** and leave other permissions at their defaults.
+7. Click **Generate token** and copy it immediately. GitHub normally shows the full token only once.
+8. Return to the markmap++ **Repository** tab and enter the repository, branch and token.
+
+Never put the token in Markdown, repository files, screenshots, chat messages or deployment environment variables. Revoke and regenerate it immediately if you suspect that it was exposed.
 
 ## Connect a repository
 
@@ -65,4 +102,4 @@ Confirm that local drafts are no longer needed before using it. Commits already 
 
 ## Security
 
-Repository bindings are stored in the current browser's `localStorage`; file contents are stored in IndexedDB. Tokens are not included in GitHub Pages builds, but they can access the target repository, so avoid long-term bindings on shared devices.
+The Web app stores repository bindings and file contents in the current browser's IndexedDB; the desktop app prefers the operating system's secure cache. Tokens are not included in GitHub Pages builds, but they can access the target repository, so avoid long-term bindings on shared devices.

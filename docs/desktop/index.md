@@ -7,6 +7,8 @@ outline: deep
 
 markmap++ 桌面应用与 Web 版共用编辑器和思维导图界面。Electron 负责系统窗口、安全隔离、Markdown 文件读写以及本地 Git 工作区；浏览器版仍可直接在线使用。
 
+想直接下载可用版本，请前往 [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases)；版本选择和 Web / 桌面 App 对比见 [App 介绍](/app/)。
+
 ## 下载与安装
 
 发布版本位于 [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases)。推送版本 tag 后，发布工作流会自动构建并上传以下 x64 文件：

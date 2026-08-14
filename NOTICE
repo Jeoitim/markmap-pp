@@ -1,0 +1,16 @@
+Markmap++ is licensed under the Apache License 2.0.
+
+This project contains code derived from markmap-plus and other
+MIT-licensed upstream projects. Their original copyright notices
+and license terms are preserved.
+
+The main derived upstream projects include:
+
+- markmap-plus and markmap-view-plus, by Lin Jiman / Tem-man:
+  https://github.com/Tem-man/markmap-plus
+- markmap-common, markmap-lib, markmap-html-parser and markmap-toolbar,
+  from the markmap project:
+  https://github.com/markmap/markmap
+
+See the individual package LICENSE files and source repositories for the
+original copyright notices and complete license terms.

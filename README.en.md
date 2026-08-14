@@ -4,9 +4,9 @@ A browser-based Markdown knowledge and mind-map workspace with live editing, an 
 
 [![Deploy to GitHub Pages](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-43853d?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-[Live app](https://jeoitim.github.io/markmap-pp/) · [Documentation](https://jeoitim.github.io/markmap-pp/doc/) · [Agent guide](https://jeoitim.github.io/markmap-pp/doc/agent/) · [中文](README.md) · [Upstream project](https://github.com/Tem-man/markmap-plus)
+[Live app](https://jeoitim.github.io/markmap-pp/) · [App overview](https://jeoitim.github.io/markmap-pp/doc/en/app/) · [Documentation](https://jeoitim.github.io/markmap-pp/doc/) · [Agent guide](https://jeoitim.github.io/markmap-pp/doc/en/agent/) · [中文](README.md) · [Upstream project](https://github.com/Tem-man/markmap-plus)
 
 ## Overview
 
@@ -58,6 +58,8 @@ Agent settings and conversations remain in the current browser. Configuration JS
 
 Remote Markdown files are downloaded into IndexedDB and remain available after a refresh. Edits are staged locally and are not committed on every keystroke. Pressing **Sync** combines all pending additions, edits, moves, renames, and deletions into one Git commit.
 
+GitHub sync is more than cloud storage: edit on a computer, desktop app or mobile browser, keep every confirmed version as a Git commit, review changes and restore an earlier version when needed. The Web app uses the GitHub API; the desktop app can also use a local Git workspace. In both cases, changes stay local until you confirm a push.
+
 The repository tree supports collapsible folders, drag-and-drop moves, inline rename, and context-menu actions for create, copy, cut, paste, and delete.
 
 | Indicator | Meaning                                   |
@@ -70,6 +72,8 @@ The repository tree supports collapsible folders, drag-and-drop moves, inline re
 | `D`       | Deleted locally                           |
 
 Binding requires a fine-grained GitHub personal access token restricted to the target repository with **Contents: Read and write** permission. The repository binding and token are stored only in the current browser's IndexedDB settings; they are never included in the repository, Pages build, or deployment workflow. Avoid binding repositories on shared or untrusted devices.
+
+See the [detailed GitHub token tutorial](https://jeoitim.github.io/markmap-pp/doc/en/example/). Create the token under **Developer settings → Personal access tokens → Fine-grained tokens**, choose **Only select repositories**, and select only your note repository.
 
 If the remote branch changes before a push, markmap++ refuses to overwrite it and asks the user to refresh. Empty folders remain local because Git does not track true empty directories.
 
@@ -100,7 +104,7 @@ The production app is generated in `apps/web/dist/`.
 
 ## Electron desktop app (Beta)
 
-The desktop app shares the React interface with the web app. Electron provides native windows, security isolation, local Markdown file access, and local Git workspace support. Pushing a version tag publishes these assets on [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases):
+The desktop app shares the React interface with the web app. Electron provides native windows, security isolation, local Markdown file access, and local Git workspace support. Read the [App overview](https://jeoitim.github.io/markmap-pp/doc/en/app/) first, then download the latest build from [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases). Pushing a version tag publishes these assets:
 
 | Platform    | Release file    | Purpose                           |
 | ----------- | --------------- | --------------------------------- |
@@ -204,7 +208,7 @@ Store `EDGEONE_API_TOKEN` as a CI secret rather than committing it. See the offi
 - Markmap libraries and the editable `markmap-view-plus`
 - GitHub REST Git Data API
 - IndexedDB and localStorage
-- pnpm workspace and Lerna
+- pnpm workspace
 
 ## Project layout
 
@@ -220,8 +224,14 @@ markmap-pp/
 └─ pnpm-workspace.yaml        # Workspace package mapping
 ```
 
+## Contributors and thanks
+
+Thanks to all contributors who submit code, improve documentation, report issues and share ideas for markmap++. The avatar strip updates automatically from the GitHub contribution graph:
+
+<a href="https://github.com/Jeoitim/markmap-pp/graphs/contributors"><img src="https://contrib.rocks/image?repo=Jeoitim/markmap-pp" alt="markmap++ contributors" /></a>
+
 ## Upstream and license
 
 This repository is derived from [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus), which extends the original [markmap](https://github.com/markmap/markmap) renderer with editable nodes and Markdown write-back. markmap++ adds the end-user workspace, AI note and repository Agent, and synchronization experience under `apps/web`.
 
-Licensed under the [MIT License](LICENSE).
+Markmap++ is licensed under the [Apache License 2.0](LICENSE). This project contains code derived from `markmap-plus` and other MIT-licensed upstream projects; their original copyright notices and license terms are preserved. See [NOTICE](NOTICE) and the individual package LICENSE files for details.

@@ -4,9 +4,9 @@
 
 [![Deploy to GitHub Pages](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-43853d?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-[在线使用](https://jeoitim.github.io/markmap-pp/) · [使用文档](https://jeoitim.github.io/markmap-pp/doc/) · [Agent 指南](https://jeoitim.github.io/markmap-pp/doc/agent/) · [English](README.en.md) · [上游项目](https://github.com/Tem-man/markmap-plus)
+[在线使用](https://jeoitim.github.io/markmap-pp/) · [App 介绍](https://jeoitim.github.io/markmap-pp/doc/app/) · [使用文档](https://jeoitim.github.io/markmap-pp/doc/) · [Agent 指南](https://jeoitim.github.io/markmap-pp/doc/agent/) · [English](README.en.md) · [上游项目](https://github.com/Tem-man/markmap-plus)
 
 ## 项目简介
 
@@ -86,12 +86,16 @@ PNG、JPEG、SVG 和 HTML 可选择 1–4 倍渲染倍率；位图倍率越高�
 
 markmap++ 不会在每次输入时创建提交。远程 Markdown 文件被下载到浏览器后，可以离线继续修改；只有用户点击“同步”，待处理操作才会合并成一次 Git 提交并推送到远程分支。
 
+GitHub 同步的价值不只是“把文件放到云端”：你可以在电脑、桌面 App 和移动浏览器之间继续编辑，使用 Git commit 保留每次版本，比较改动并在需要时恢复旧版本。Web 版通过 GitHub API 同步，桌面 App 还支持本地 Git 工作区；两者都把改动留在本地，等你确认后再推送。
+
 ### 绑定仓库
 
 1. 打开左侧编辑区的“仓库”页签。
 2. 填写 `owner/repository`、目标分支和 GitHub fine-grained personal access token。
 3. 令牌只需授权目标仓库，并赋予 **Contents: Read and write** 权限。
 4. 绑定完成后，点击文件树中的 Markdown 文件将其下载到本机缓存。
+
+令牌的创建步骤见[详细 GitHub 令牌教程](https://jeoitim.github.io/markmap-pp/doc/example/)。建议在 GitHub 的 **Developer settings → Personal access tokens → Fine-grained tokens** 中创建令牌，并在 **Repository access** 选择 **Only select repositories**，只勾选自己的笔记仓库。
 
 GitHub 绑定与令牌保存在当前浏览器的 IndexedDB 本地设置中，Markdown 草稿也保存在 IndexedDB。应用会直接从浏览器请求 GitHub API，不会把令牌写入项目、构建产物或 GitHub Pages。请勿在公共或不受信任的设备上长期保存令牌。
 
@@ -169,7 +173,7 @@ pnpm --filter markmap-plus-plus-web preview
 
 ### Electron 桌面应用（Beta）
 
-桌面应用与 Web 版共用 React 界面，Electron 提供系统窗口、安全隔离、本地 Markdown 文件读写和本地 Git 工作区能力。每次推送版本 tag 时，GitHub Actions 会自动在 [Releases](https://github.com/Jeoitim/markmap-pp/releases) 发布：
+桌面应用与 Web 版共用 React 界面，Electron 提供系统窗口、安全隔离、本地 Markdown 文件读写和本地 Git 工作区能力。请先查看[App 介绍](https://jeoitim.github.io/markmap-pp/doc/app/)，再从 [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases) 下载最新版本。每次推送版本 tag 时，GitHub Actions 会自动发布：
 
 | 平台        | 发布文件        | 说明                       |
 | ----------- | --------------- | -------------------------- |
@@ -292,7 +296,7 @@ npx edgeone pages deploy dist \
 - `markmap-lib` / `markmap-view-plus` / `markmap-toolbar`
 - GitHub REST Git Data API
 - IndexedDB + localStorage
-- pnpm workspace + Lerna
+- pnpm workspace
 
 ## 目录结构
 
@@ -318,6 +322,12 @@ markmap-pp/
 
 本仓库基于 `Tem-man/markmap-plus` 修改，并继续保留其可编辑节点、增删节点、增量更新和 `toMarkdown` 回写能力。markmap++ 主要在 `apps/web` 中提供面向最终用户的完整工作台，并扩展本地缓存、Agent 知识与仓库操作、GitHub 同步、文件管理、显示设置和多格式导出。
 
-## 许可证与鸣谢
+## 贡献者与鸣谢
 
-项目采用 [MIT License](LICENSE)。感谢 [markmap](https://github.com/markmap/markmap) 和 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus) 提供的基础实现。
+感谢所有为 markmap++ 提交代码、完善文档、报告问题和提出建议的贡献者。头像图标会随 GitHub 贡献记录自动更新：
+
+<a href="https://github.com/Jeoitim/markmap-pp/graphs/contributors"><img src="https://contrib.rocks/image?repo=Jeoitim/markmap-pp" alt="markmap++ contributors" /></a>
+
+## 许可证与上游鸣谢
+
+Markmap++ 采用 [Apache License 2.0](LICENSE)。项目包含来自 `markmap-plus` 及其他 MIT 许可上游项目的派生代码；原始版权声明和许可证条款保留在对应文件中，详见 [NOTICE](NOTICE) 与各包的 LICENSE 文件。感谢 [markmap](https://github.com/markmap/markmap) 和 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus) 提供的基础实现。

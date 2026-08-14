@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress';
 const zhNav = [
   { text: '项目概览', link: '/introduction/' },
   { text: '快速开始', link: '/installation/' },
+  { text: 'App 介绍', link: '/app/' },
   { text: '桌面应用', link: '/desktop/' },
   { text: 'Agent', link: '/agent/' },
   { text: 'GitHub 同步', link: '/example/' },
@@ -12,6 +13,7 @@ const zhNav = [
 const enNav = [
   { text: 'Overview', link: '/en/introduction/' },
   { text: 'Quick start', link: '/en/installation/' },
+  { text: 'App', link: '/en/app/' },
   { text: 'Desktop app', link: '/en/desktop/' },
   { text: 'Agent', link: '/en/agent/' },
   { text: 'GitHub sync', link: '/en/example/' },
@@ -24,6 +26,7 @@ const zhSidebar = {
     items: [
       { text: '项目概览', link: '/introduction/' },
       { text: '快速开始', link: '/installation/' },
+      { text: 'App 介绍', link: '/app/' },
       { text: 'Electron 桌面应用', link: '/desktop/' },
       { text: '编辑与思维导图', link: '/mind-map-usage/' },
       { text: 'Agent 知识与仓库操作', link: '/agent/' },
@@ -39,6 +42,7 @@ const enSidebar = {
     items: [
       { text: 'Overview', link: '/en/introduction/' },
       { text: 'Quick start', link: '/en/installation/' },
+      { text: 'App', link: '/en/app/' },
       { text: 'Electron desktop app', link: '/en/desktop/' },
       { text: 'Editing and mind maps', link: '/en/mind-map-usage/' },
       { text: 'Agent knowledge and repository actions', link: '/en/agent/' },
