@@ -1087,7 +1087,7 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .agent-drawer:focus { outline: none; }
 
 .agent-drawer.agent-settings { top: 0; left: auto; right: 0; bottom: 0; width: min(460px, calc(100% - 24px)); max-height: none; overflow: hidden; padding: 0; border-radius: 0; }
-.agent-drawer.agent-settings > header { margin: 0; padding-right: 18px; padding-left: 18px; }
+.agent-drawer.agent-settings > header { margin: 0 0 18px; padding-right: 18px; padding-left: 18px; }
 .agent-settings .agent-field { gap: 7px; }
 .agent-settings .agent-field > span { font-size: 13px; }
 .agent-settings .agent-field input, .agent-settings .agent-field select { height: 42px; padding: 0 12px; border-radius: 10px; font-size: 13px; }
@@ -1095,9 +1095,9 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .agent-settings .agent-field-grid { grid-template-columns: minmax(0,1fr); gap: 14px; }
 .agent-settings .agent-model-input { align-items: stretch; flex-direction: column; gap: 8px; }
 .agent-settings .agent-model-input button { width: 100%; height: 38px; font-size: 12px; }
-/* 操作栏作为抽屉 flex 列内的常驻 footer：与抽屉玻璃同一材质层（in-flow，无 sticky/负边距/独立
-   backdrop-filter，不产生合成子层），border-top 全长分割线；表单内容在 .agent-settings-body 内滚动。 */
-.agent-drawer.agent-settings > .agent-settings-actions { position: static; flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 10px; margin: 0; padding: 16px 18px; border-top: 1px solid var(--border); background: transparent; }
+/* 操作栏位于表单内容流内（跟随滚动），与抽屉玻璃同一材质层：in-flow 普通块，无 sticky/负边距/
+   独立 backdrop-filter，不产生合成子层，因此不会出现底边色带；border-top 全长分割线。 */
+.agent-settings-actions { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 10px; margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--border); background: transparent; }
 .agent-settings-body { min-height: 0; flex: 1 1 auto; overflow-y: auto; padding: 0 18px 20px; scrollbar-color: color-mix(in srgb,var(--muted) 55%,transparent) transparent; scrollbar-width: thin; }
 .agent-settings-body::-webkit-scrollbar { width: 8px; height: 8px; }
 .agent-settings-body::-webkit-scrollbar-track { background: transparent; }
