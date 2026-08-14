@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useI18n } from '../i18n-hook'
 import type { RepositoryHeading, RepositoryNoteIndex } from './repository-links'
 
 export interface LinkTarget {
@@ -20,20 +21,21 @@ interface SelectionActionMenuProps {
 }
 
 export function SelectionActionMenu(props: SelectionActionMenuProps) {
+  const { t } = useI18n()
   const menuRef = useRef<HTMLDivElement | null>(null)
   const left = Math.min(props.x, Math.max(8, window.innerWidth - 252))
   const top = Math.min(props.y, Math.max(8, window.innerHeight - (props.hasLink ? 300 : 260)))
   useEffect(() => { menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus() }, [])
-  return <div ref={menuRef} className="selection-action-menu" role="menu" aria-label="所选文字操作" style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
+  return <div ref={menuRef} className="selection-action-menu" role="menu" aria-label={t('所选文字操作')} style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
     <div className="selection-action-summary" title={props.text}>{props.text}</div>
-    <button role="menuitem" onClick={props.onCopy}><span>复制</span><kbd>Ctrl C</kbd></button>
-    <button role="menuitem" onClick={props.onCut}><span>剪切</span><kbd>Ctrl X</kbd></button>
-    <button role="menuitem" onClick={props.onPaste}><span>粘贴</span><kbd>Ctrl V</kbd></button>
+    <button role="menuitem" onClick={props.onCopy}><span>{t('复制')}</span><kbd>Ctrl C</kbd></button>
+    <button role="menuitem" onClick={props.onCut}><span>{t('剪切')}</span><kbd>Ctrl X</kbd></button>
+    <button role="menuitem" onClick={props.onPaste}><span>{t('粘贴')}</span><kbd>Ctrl V</kbd></button>
     <hr />
-    <button role="menuitem" className="link-action" onClick={props.onLink}><span>{props.hasLink ? '更改笔记链接…' : '链接到笔记…'}</span><kbd>⌘ K</kbd></button>
-    {props.hasLink && <button role="menuitem" onClick={props.onRemoveLink}><span>移除链接</span></button>}
+    <button role="menuitem" className="link-action" onClick={props.onLink}><span>{props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')}</span><kbd>⌘ K</kbd></button>
+    {props.hasLink && <button role="menuitem" onClick={props.onRemoveLink}><span>{t('移除链接')}</span></button>}
     <hr />
-    <button role="menuitem" className="native-menu-action" onClick={props.onNativeMenu}><span>更多浏览器选项</span><kbd>再次右键</kbd></button>
+    <button role="menuitem" className="native-menu-action" onClick={props.onNativeMenu}><span>{t('更多浏览器选项')}</span><kbd>{t('再次右键')}</kbd></button>
   </div>
 }
 

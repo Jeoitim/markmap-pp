@@ -82,7 +82,7 @@ svg { flex: 0 0 auto; }
 .action-overflow-menu button:hover { background: var(--panel-soft); }
 .action-overflow-menu button:disabled { opacity: .42; cursor: not-allowed; }
 .actions, .panel-header-actions, .agent-toolbar, .agent-composer-tools { min-width: 0; }
-.actions button, .panel-header-actions button, .agent-toolbar button, .agent-composer-tools button { overflow-wrap: anywhere; }
+.actions > button, .panel-header-actions > button, .agent-toolbar > button, .agent-composer-tools > .agent-option-wrap > .agent-option-trigger, .agent-composer-tools > .agent-send-button { overflow-wrap: normal; white-space: nowrap; }
 .action-overflow-menu svg { width: 16px; height: 16px; color: var(--muted); }
 .document-tabs-bar { min-width: 0; height: 39px; display: flex; align-items: end; gap: 5px; padding: 5px 14px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb,var(--panel-soft) 82%,var(--panel)); }
 :root[data-desktop-platform='win32'] .document-tabs-bar, :root[data-desktop-platform='darwin'] .document-tabs-bar, :root[data-desktop-platform='win32'] .pane-header, :root[data-desktop-platform='darwin'] .pane-header, :root[data-desktop-platform='win32'] .agent-toolbar, :root[data-desktop-platform='darwin'] .agent-toolbar, :root[data-desktop-platform='win32'] .repository-toolbar, :root[data-desktop-platform='darwin'] .repository-toolbar { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
@@ -236,7 +236,7 @@ svg { flex: 0 0 auto; }
 .repository-save-breadcrumbs::-webkit-scrollbar-thumb, .repository-save-tree::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: color-mix(in srgb,var(--muted) 55%,transparent); background-clip: padding-box; }.agent-settings > .agent-field-grid + .agent-field { margin-top: 15px; }.agent-settings > .agent-field-grid { margin-top: 2px; }.agent-provider-field { margin-bottom: 15px; }.agent-field-grid { gap: 14px; }.agent-field { gap: 7px; }.agent-settings-actions { margin-top: 14px; }.agent-advanced { margin-top: 14px; padding-top: 13px; }
 .agent-composer .agent-scope { flex: 0 1 auto; gap: 7px; overflow: hidden; }.agent-composer .agent-scope > div { display: inline-flex; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-soft); }.agent-composer .agent-scope button { min-width: 0; height: 28px; margin: 0; padding: 0 9px; border: 0; border-right: 1px solid var(--border); border-radius: 0; color: var(--muted); background: transparent; font-size: 11px; white-space: nowrap; }.agent-composer .agent-scope button:last-child { border-right: 0; }.agent-composer .agent-scope button:hover { color: var(--text); background: color-mix(in srgb,var(--accent) 7%,transparent); }.agent-composer .agent-scope button.active { color: var(--accent); background: #eeeafd; }.agent-permission { gap: 0; height: 30px; padding: 2px; border-radius: 7px; }.agent-permission button { display: inline-flex; align-items: center; gap: 4px; width: auto; height: 24px; padding: 0 8px; border: 0; border-radius: 5px; color: var(--muted); background: transparent; font-size: 11px; white-space: nowrap; }.agent-permission button svg { width: 13px; height: 13px; color: currentColor; }.agent-permission button.active { color: var(--accent); background: #eeeafd; }.agent-permission button.active.auto { color: #b36f1a; background: #fff4dd; }
 .agent-message > div { min-width: 0; flex: 1 1 0; }.agent-message > div > p { max-width: 100%; }.agent-reasoning { margin-top: 5px; border: 1px solid color-mix(in srgb,var(--accent) 22%,var(--border)); border-radius: 8px; color: var(--muted); background: color-mix(in srgb,var(--accent) 5%,var(--panel)); font-size: calc(var(--agent-font-size) * .78); }.agent-reasoning summary { display: flex; align-items: center; gap: 5px; padding: 6px 8px; cursor: pointer; list-style: none; }.agent-reasoning summary::-webkit-details-marker { display: none; }.agent-reasoning summary svg { width: 13px; height: 13px; color: var(--accent); }.agent-reasoning span { display: block; padding: 0 8px 8px; line-height: 1.5; white-space: pre-wrap; }
-.agent-composer-tools { position: relative; flex-wrap: nowrap; }.agent-composer .agent-scope { flex: 0 0 auto; overflow: visible; }.agent-composer .agent-scope > div { overflow: visible; }.agent-composer .agent-scope button { min-width: max-content; }.agent-option-wrap { position: relative; flex: 0 0 auto; }.agent-option-trigger { display: inline-flex !important; align-items: center; gap: 4px; width: auto !important; height: 30px !important; padding: 0 8px !important; border: 1px solid var(--border) !important; border-radius: 7px !important; color: var(--muted) !important; background: var(--panel-soft) !important; font-size: 11px !important; white-space: nowrap; }.agent-option-trigger:hover, .agent-option-trigger.active { border-color: #bdb3ef !important; color: var(--accent) !important; background: #f4f1ff !important; }.agent-option-trigger.auto { color: #ad711d !important; border-color: #ead5a9 !important; background: #fff8e9 !important; }.agent-option-trigger svg { width: 13px !important; height: 13px !important; }.agent-option-trigger svg:last-child { width: 11px !important; margin-left: 1px; }.agent-option-popover { position: absolute; z-index: 50; bottom: calc(100% + 7px); left: 0; width: 278px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 9px; border: 1px solid var(--border); border-radius: 11px; color: var(--text); background: var(--panel); box-shadow: 0 14px 35px #080a1035; }.agent-option-popover > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 4px 8px; font-size: 12px; }.agent-option-popover > header > button { width: auto; height: 24px; padding: 0 7px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); background: var(--panel-soft); font-size: 10px; cursor: pointer; }.agent-option-popover > header > button.on { color: var(--accent); border-color: #bdb3ef; background: #f2efff; }.agent-option-popover > p { margin: 0 4px 10px; color: var(--muted); font-size: 11px; line-height: 1.45; }.agent-effort { display: grid; gap: 2px; padding: 3px 0; }.agent-effort button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: 32px; padding: 0 9px; border: 0; border-radius: 7px; color: var(--text); background: transparent; font-size: 12px; cursor: pointer; }.agent-effort button:hover { background: var(--panel-soft); }.agent-effort button.active { color: var(--accent); background: #eeeafd; }.agent-effort button svg { width: 13px; height: 13px; }.permission-popover { width: 322px; }.permission-popover > button { width: 100%; display: grid; grid-template-columns: 19px minmax(0,1fr) 14px; align-items: start; gap: 8px; padding: 9px 7px; border: 0; border-radius: 7px; text-align: left; color: var(--text); background: transparent; cursor: pointer; }.permission-popover > button:hover, .permission-popover > button.selected { background: var(--panel-soft); }.permission-popover > button > svg { width: 17px; height: 17px; margin-top: 2px; color: var(--accent); }.permission-popover > button.auto > svg { color: #b36f1a; }.permission-popover > button span { display: grid; gap: 3px; }.permission-popover > button span strong { font-size: 11px; }.permission-popover > button span small { color: var(--muted); font-size: 10px; line-height: 1.35; }.permission-popover > button i { opacity: 0; font-style: normal; color: var(--accent); }.permission-popover > button.selected i { opacity: 1; }
+.agent-composer-tools { position: relative; flex-wrap: nowrap; }.agent-composer .agent-scope { flex: 0 0 auto; overflow: visible; }.agent-composer .agent-scope > div { overflow: visible; }.agent-composer .agent-scope button { min-width: max-content; }.agent-option-wrap { position: relative; flex: 0 0 auto; }.agent-option-trigger { display: inline-flex !important; align-items: center; gap: 6px; width: auto !important; height: 30px !important; padding: 0 8px !important; border: 1px solid var(--border) !important; border-radius: 7px !important; color: var(--muted) !important; background: var(--panel-soft) !important; font-size: 11px !important; white-space: nowrap; }.agent-option-trigger:hover, .agent-option-trigger.active { border-color: #bdb3ef !important; color: var(--accent) !important; background: #f4f1ff !important; }.agent-option-trigger.auto { color: #ad711d !important; border-color: #ead5a9 !important; background: #fff8e9 !important; }.agent-option-trigger svg { width: 13px !important; height: 13px !important; }.agent-option-trigger svg:last-child { width: 11px !important; margin-left: 1px; }.agent-option-popover { position: absolute; z-index: 50; bottom: calc(100% + 7px); left: 0; width: 278px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 9px; border: 1px solid var(--border); border-radius: 11px; color: var(--text); background: var(--panel); box-shadow: 0 14px 35px #080a1035; }.agent-option-popover > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 4px 8px; font-size: 12px; }.agent-option-popover > header > button { width: auto; height: 24px; padding: 0 7px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); background: var(--panel-soft); font-size: 10px; cursor: pointer; }.agent-option-popover > header > button.on { color: var(--accent); border-color: #bdb3ef; background: #f2efff; }.agent-option-popover > p { margin: 0 4px 10px; color: var(--muted); font-size: 11px; line-height: 1.45; }.agent-effort { display: grid; gap: 2px; padding: 3px 0; }.agent-effort button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: 32px; padding: 0 9px; border: 0; border-radius: 7px; color: var(--text); background: transparent; font-size: 12px; cursor: pointer; }.agent-effort button:hover { background: var(--panel-soft); }.agent-effort button.active { color: var(--accent); background: #eeeafd; }.agent-effort button svg { width: 13px; height: 13px; }.permission-popover { width: 322px; }.permission-popover > button { width: 100%; display: grid; grid-template-columns: 19px minmax(0,1fr) 14px; align-items: start; gap: 8px; padding: 9px 7px; border: 0; border-radius: 7px; text-align: left; color: var(--text); background: transparent; cursor: pointer; }.permission-popover > button:hover, .permission-popover > button.selected { background: var(--panel-soft); }.permission-popover > button > svg { width: 17px; height: 17px; margin-top: 2px; color: var(--accent); }.permission-popover > button.auto > svg { color: #b36f1a; }.permission-popover > button span { display: grid; gap: 3px; }.permission-popover > button span strong { font-size: 11px; }.permission-popover > button span small { color: var(--muted); font-size: 10px; line-height: 1.35; }.permission-popover > button i { opacity: 0; font-style: normal; color: var(--accent); }.permission-popover > button.selected i { opacity: 1; }
 .agent-option-popover > header > button { min-width: 52px; white-space: nowrap; }.scope-popover { width: 310px; }.scope-popover > button:not(.scope-load-button) { width: 100%; display: grid; grid-template-columns: 19px minmax(0,1fr) 14px; align-items: start; gap: 8px; padding: 9px 7px; border: 0; border-radius: 7px; text-align: left; color: var(--text); background: transparent; cursor: pointer; }.scope-popover > button:not(.scope-load-button):hover, .scope-popover > button.selected { background: var(--panel-soft); }.scope-popover > button:disabled { opacity: .48; cursor: not-allowed; }.scope-popover > button > svg { width: 17px; height: 17px; margin-top: 2px; color: var(--accent); }.scope-popover > button span { min-width: 0; display: grid; gap: 3px; }.scope-popover > button span strong, .scope-popover > button span small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.scope-popover > button span strong { font-size: 11px; }.scope-popover > button span small { color: var(--muted); font-size: 10px; line-height: 1.35; }.scope-popover > button i { opacity: 0; font-style: normal; color: var(--accent); }.scope-popover > button.selected i { opacity: 1; }.scope-popover .scope-load-button { width: calc(100% - 8px); height: 29px; margin: 5px 4px 2px; border: 1px solid #c8c0f3; border-radius: 7px; color: var(--accent); background: #f5f2ff; font-size: 11px; cursor: pointer; }
 .agent-option-popover { padding: 12px; border-radius: 12px; box-shadow: 0 16px 38px #080a1026; }
 .agent-settings { top: 51px; max-height: calc(50% - 58px); margin: 0; padding: 17px 18px; }
@@ -248,6 +248,25 @@ svg { flex: 0 0 auto; }
 :root[data-theme='dark'] .agent-model-input button, :root[data-theme='dark'] .agent-settings-actions button:not(.agent-test-button), :root[data-theme='dark'] .agent-proposal footer button { border-color: var(--border); color: var(--text); background: var(--panel-soft); }
 :root[data-theme='dark'] .agent-model-input button:hover, :root[data-theme='dark'] .agent-settings-actions button:not(.agent-test-button):hover, :root[data-theme='dark'] .agent-proposal footer button:hover { border-color: #7666c4; background: #262333; }
 :root[data-theme='dark'] .agent-model-input button:active, :root[data-theme='dark'] .agent-settings-actions button:not(.agent-test-button):active, :root[data-theme='dark'] .agent-proposal footer button:active { background: #302b43; }
+
+/* Keep localized Agent controls compact without shrinking their icons. */
+.agent-option-trigger > svg {
+  width: 15px !important;
+  height: 15px !important;
+  flex: 0 0 15px !important;
+  margin: 0 !important;
+  display: block !important;
+  align-self: center !important;
+}
+.agent-option-trigger > svg:last-child {
+  width: 15px !important;
+  height: 15px !important;
+  flex: 0 0 15px !important;
+  margin: 0 !important;
+}
+.agent-reasoning-trigger {
+  gap: 4px !important;
+}
 :root[data-theme='dark'] .agent-settings-actions .agent-test-button:hover { border-color: #8a76f2; background: #8068e9; }
 :root[data-theme='dark'] .agent-settings-actions .agent-test-button:active { background: #624bd0; }
 :root[data-theme='dark'] .agent-effort button:hover { color: var(--text); background: #262333; }
@@ -479,7 +498,7 @@ svg { flex: 0 0 auto; }
 .settings-panel > header strong, .settings-panel > header small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-panel > header strong { font-size: 15px; }
 .settings-panel > header small { color: var(--muted); font-size: 12px; }
-.reset-settings-button { display: inline-flex; align-items: center; gap: 5px; height: 29px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: var(--panel); cursor: pointer; font-size: 12px; transition: .16s ease; }
+.reset-settings-button { display: inline-flex; align-items: center; flex: 0 0 auto; min-width: max-content; gap: 5px; height: 29px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: var(--panel); cursor: pointer; font-size: 12px; white-space: nowrap; transition: .16s ease; }
 .reset-settings-button:hover { border-color: #b9b0e8; color: var(--text); background: var(--panel-soft); }
 .reset-settings-button svg { width: 14px; height: 14px; }
 .settings-body, .github-body, .help-body { min-height: 0; max-height: calc(100dvh - 95px); overflow: auto; }
@@ -554,7 +573,7 @@ svg { flex: 0 0 auto; }
 .github-body { padding: 20px; }
 .github-bind-form, .github-bound-settings { display: grid; gap: 17px; }
 .repository-settings-tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; margin-bottom: 18px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-soft); }
-.repository-settings-tabs button { min-width: 0; height: 40px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; }
+.repository-settings-tabs button { min-width: 0; height: 40px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: 12px; white-space: nowrap; cursor: pointer; }
 .repository-settings-tabs button.active { color: var(--accent); background: var(--panel); box-shadow: 0 3px 12px #29204712; }
 .repository-settings-tabs svg { width: 16px; height: 16px; }
 .repository-settings-tabs b { min-width: 18px; height: 18px; display: grid; place-items: center; padding: 0 5px; border-radius: 9px; color: var(--muted); background: color-mix(in srgb,var(--muted) 10%,transparent); font-size: 9px; }
@@ -768,6 +787,7 @@ svg { flex: 0 0 auto; }
 .export-color-control code { min-width: 64px; color: var(--muted); font: 11px "JetBrains Mono Variable",monospace; letter-spacing: .02em; }
 .export-color-presets { display: flex; align-items: center; gap: 7px; margin-top: -3px; }
 .export-color-presets::before { content: '预设'; margin-right: 2px; color: var(--muted); font-size: 11px; }
+html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .export-color-presets button { width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); cursor: pointer; }
 .export-color-presets button:hover, .export-color-presets button.active { border-color: var(--accent); box-shadow: 0 0 0 2px #7056e812; }
 .export-color-presets button:disabled { opacity: .45; cursor: not-allowed; }
@@ -1126,38 +1146,44 @@ svg { flex: 0 0 auto; }
 
 /* On narrow screens, give each Agent tool a deliberate hit box instead of relying on its label width. */
 @media (max-width: 560px) {
-  .agent-composer-tools .agent-option-trigger:is([title='思考'], [title='Reasoning']) {
+  .agent-composer-tools .agent-reasoning-trigger {
     width: max-content !important;
-    min-width: 78px !important;
+    min-width: 0 !important;
     max-width: none !important;
     height: 32px !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     flex: 0 0 auto !important;
-    gap: 5px !important;
+    gap: 4px !important;
     padding: 0 8px !important;
     line-height: 1 !important;
     white-space: nowrap !important;
   }
-  .agent-composer-tools .agent-option-trigger:is([title='编辑范围'], [title='Edit scope'], [title='操作许可'], [title='Action permissions']) {
+  .agent-composer-tools .agent-scope-trigger,
+  .agent-composer-tools .agent-permission-trigger {
     width: 32px !important;
     min-width: 32px !important;
     height: 32px !important;
     display: grid !important;
     place-items: center !important;
-    gap: 0 !important;
+    gap: 4px !important;
     padding: 0 !important;
+    overflow: hidden !important;
+    font-size: 0 !important;
     line-height: 0 !important;
+    white-space: nowrap !important;
   }
-  .agent-composer-tools .agent-option-trigger:is([title='编辑范围'], [title='Edit scope'], [title='操作许可'], [title='Action permissions']) > svg {
+  .agent-composer-tools .agent-scope-trigger > svg,
+  .agent-composer-tools .agent-permission-trigger > svg {
     display: block !important;
-    flex: 0 0 14px !important;
-    width: 14px !important;
-    height: 14px !important;
+    flex: 0 0 15px !important;
+    width: 15px !important;
+    height: 15px !important;
     margin: 0 !important;
     justify-self: center !important;
     align-self: center !important;
+    display: block !important;
   }
 }
 
@@ -1306,41 +1332,36 @@ svg { flex: 0 0 auto; }
 .agent-drawer-backdrop.portal { -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
 
 /* Agent composer tools: keep reasoning first and center icon-only controls. */
-.agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='思考']),
-.agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='Reasoning']) { order: 0; }
-.agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='编辑范围']),
-.agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='Edit scope']),
-.agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='操作许可']),
-.agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='Action permissions']) { order: 1; }
+.agent-composer-tools > .agent-option-wrap:has(.agent-reasoning-trigger) { order: 0; }
+.agent-composer-tools > .agent-option-wrap:has(.agent-scope-trigger),
+.agent-composer-tools > .agent-option-wrap:has(.agent-permission-trigger) { order: 1; }
 .agent-composer-tools > .agent-send-button { order: 2; }
-.agent-option-trigger:is([title='思考'], [title='Reasoning']) { font-size: 0 !important; }
-.agent-option-trigger:is([title='思考'], [title='Reasoning'])::after { content: attr(title); font-size: 11px; line-height: 1; }
 
 @media (max-width: 560px) {
-  .agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='编辑范围']) .agent-option-trigger,
-  .agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='Edit scope']) .agent-option-trigger,
-  .agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='操作许可']) .agent-option-trigger,
-  .agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='Action permissions']) .agent-option-trigger {
+  .agent-composer-tools > .agent-option-wrap:has(.agent-scope-trigger) .agent-option-trigger,
+  .agent-composer-tools > .agent-option-wrap:has(.agent-permission-trigger) .agent-option-trigger {
     width: 32px !important;
     min-width: 32px !important;
     height: 32px !important;
     padding: 0 !important;
-    display: grid !important;
-    place-items: center !important;
-    justify-content: center !important;
-    gap: 0 !important;
+    position: relative !important;
+    display: block !important;
+    gap: 4px !important;
+    overflow: hidden !important;
+    font-size: 0 !important;
     line-height: 1 !important;
     text-indent: 0;
   }
-  .agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='编辑范围']) .agent-option-trigger > svg,
-  .agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='Edit scope']) .agent-option-trigger > svg,
-  .agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='操作许可']) .agent-option-trigger > svg,
-  .agent-composer-tools > .agent-option-wrap:has(.agent-option-trigger[title='Action permissions']) .agent-option-trigger > svg {
+  .agent-composer-tools > .agent-option-wrap:has(.agent-scope-trigger) .agent-option-trigger > svg,
+  .agent-composer-tools > .agent-option-wrap:has(.agent-permission-trigger) .agent-option-trigger > svg {
     display: block !important;
-    width: 14px !important;
-    height: 14px !important;
+    width: 15px !important;
+    height: 15px !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
     margin: 0 !important;
-    justify-self: center;
+    transform: translate(-50%, -50%) !important;
   }
 }
 
