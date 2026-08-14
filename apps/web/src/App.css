@@ -42,9 +42,17 @@ svg { flex: 0 0 auto; }
 .desktop-app-menu button { min-width: 0; min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 11px; border: 0; border-radius: 8px; color: inherit; background: transparent; font-size: 12px; text-align: left; cursor: pointer; }
 .desktop-app-menu button:hover, .desktop-app-menu nav button.active { color: var(--accent); background: color-mix(in srgb,var(--accent) 9%,transparent); }
 .desktop-app-menu button:disabled { opacity: .38; cursor: not-allowed; }
-.desktop-app-menu nav svg { width: 13px; height: 13px; }
 .desktop-app-menu > section { display: grid; align-content: start; gap: 2px; padding: 8px; }
 .desktop-app-menu > section hr { width: calc(100% - 12px); margin: 4px 6px; border: 0; border-top: 1px solid var(--border); }
+.desktop-menu-arrow { flex: 0 0 auto; color: var(--muted); font-size: 17px; font-weight: 400; line-height: 1; }
+.desktop-menu-submenu-header { min-width: 0; min-height: 38px; display: flex; align-items: center; gap: 9px; margin-bottom: 4px; padding: 0 2px 8px; border-bottom: 1px solid var(--border); }
+.desktop-menu-submenu-header strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; }
+.desktop-menu-back { min-width: 0 !important; min-height: 30px !important; display: inline-flex !important; align-items: center; justify-content: flex-start !important; gap: 4px !important; padding: 0 6px !important; color: var(--muted) !important; font-size: 11px !important; }
+.desktop-menu-back:hover { color: var(--accent) !important; background: color-mix(in srgb,var(--accent) 9%,transparent) !important; }
+.desktop-menu-back > span:first-child { font-size: 18px; line-height: 1; }
+.desktop-menu-language-options { display: grid; gap: 3px; padding-top: 7px; }
+.desktop-menu-language-options button { min-height: 40px; padding: 0 10px; font-size: 12px; }
+.desktop-menu-language-options button.active { color: var(--accent); background: color-mix(in srgb,var(--accent) 9%,transparent); font-weight: 650; }
 .desktop-app-menu kbd { flex: 0 0 auto; color: var(--muted); font: 10px "JetBrains Mono Variable", monospace; }
 .brand-mark { display: grid; place-items: center; width: 34px; height: 34px; overflow: hidden; }
 .brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -528,6 +536,26 @@ svg { flex: 0 0 auto; }
 .field input[type='text']:focus, .field input[type='password']:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent); }
 .help-panel { width: min(520px, 100%); }
 .help-body { min-height: 0; max-height: calc(100dvh - 95px); display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
+.about-panel { width: min(460px, 100%); }
+.about-body { min-height: 0; display: grid; gap: 18px; overflow: auto; padding: 22px; }
+.about-hero { display: flex; align-items: center; gap: 14px; padding: 4px 0 8px; }
+.about-hero img { width: 72px; height: 72px; flex: 0 0 72px; border-radius: 16px; box-shadow: 0 8px 24px #7056e82b; }
+.about-hero > div { min-width: 0; display: grid; gap: 5px; }
+.about-hero strong { font-size: 22px; letter-spacing: -.02em; }
+.about-hero span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.about-meta { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin: 0; }
+.about-meta > div { min-width: 0; display: grid; gap: 5px; padding: 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-soft); }
+.about-meta dt { color: var(--muted); font-size: 10px; }
+.about-meta dd { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; }
+.about-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.about-actions button { min-width: 0; height: 40px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--panel-soft); font-size: 12px; cursor: pointer; }
+.about-actions button:hover { border-color: color-mix(in srgb,var(--accent) 48%,var(--border)); color: var(--accent); background: color-mix(in srgb,var(--accent) 7%,var(--panel-soft)); }
+.about-actions svg { width: 16px; height: 16px; }
+.about-credit { display: grid; gap: 8px; padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-soft); }
+.about-credit strong { font-size: 12px; }
+.about-credit p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.about-credit a { color: var(--accent); font-size: 12px; text-decoration: none; }
+.about-credit a:hover { text-decoration: underline; }
 .help-tip-stage { min-width: 0; min-height: 0; flex: 1 1 auto; display: grid; grid-template-columns: 34px minmax(0,1fr) 34px; align-items: stretch; gap: 7px; padding: 15px 10px 8px; touch-action: pan-y; }
 .help-tip-nav { align-self: center; width: 30px; height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 9px; color: var(--muted); background: var(--panel-soft); cursor: pointer; transition: .16s ease; }
 .help-tip-nav:hover { border-color: color-mix(in srgb,var(--accent) 48%,var(--border)); color: var(--accent); background: color-mix(in srgb,var(--accent) 8%,var(--panel)); }
@@ -871,6 +899,14 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
   .brand-name { font-size: 17px; }
   .brand-mark { width: 31px; height: 31px; }
   .actions { gap: 5px; }
+  .desktop-app-menu { position: fixed; top: calc(58px + var(--native-titlebar-height, 0px) + 8px); right: 8px; left: 8px; width: auto; max-height: calc(100dvh - 76px); grid-template-columns: 96px minmax(0,1fr); overflow: auto; }
+  .desktop-app-menu nav { min-width: 0; }
+  .desktop-app-menu button { min-height: 40px; gap: 8px; padding: 0 8px; font-size: 11px; }
+  .desktop-app-menu > section { min-width: 0; overflow: auto; }
+  .desktop-app-menu > section button { white-space: normal; line-height: 1.25; }
+  .about-panel { width: 100%; }
+  .about-body { padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
+  .about-meta, .about-actions { grid-template-columns: 1fr; }
   .actions > .locale-toggle,
   .actions > .icon-button:not(.mobile-tabs-trigger):not(.more-action) { display: none; }
   .button { width: 34px; height: 34px; justify-content: center; padding: 0; }

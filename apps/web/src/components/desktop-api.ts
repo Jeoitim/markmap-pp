@@ -5,6 +5,14 @@ export interface DesktopOpenedFile {
   content: string
 }
 
+export interface DesktopAppInfo {
+  appVersion: string
+  electronVersion: string
+  platform: string
+  arch: string
+  packaged: boolean
+}
+
 export interface DesktopLocalGitFile {
   path: string
   size: number
@@ -58,13 +66,7 @@ export interface DesktopLocalGitState {
 }
 
 export interface MarkmapDesktopApi {
-  getAppInfo(): Promise<{
-    appVersion: string
-    electronVersion: string
-    platform: string
-    arch: string
-    packaged: boolean
-  }>
+  getAppInfo(): Promise<DesktopAppInfo>
   setNativeTheme(theme: 'dark' | 'light' | 'system'): Promise<{ shouldUseDarkColors: boolean }>
   onNativeThemeChanged(listener: (state: { shouldUseDarkColors: boolean; themeSource: 'dark' | 'light' | 'system' }) => void): () => void
   openExternal(url: string): Promise<boolean>

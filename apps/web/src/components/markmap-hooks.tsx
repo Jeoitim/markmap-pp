@@ -18,7 +18,7 @@ import guideEnglish from '../content/markmap++ guide.md?raw'
 import guideChinese from '../content/markmap++ 操作指南.md?raw'
 import { useI18n } from '../i18n-hook'
 import type { Locale } from '../i18n'
-import { desktopApi, saveBlob, type DesktopLocalGitCommit, type DesktopLocalGitFile, type DesktopLocalGitGraph, type DesktopLocalGitState } from './desktop-api'
+import { desktopApi, saveBlob, type DesktopAppInfo, type DesktopLocalGitCommit, type DesktopLocalGitFile, type DesktopLocalGitGraph, type DesktopLocalGitState } from './desktop-api'
 import { inspectMarkdown } from './markdown-lint'
 import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
 import { indexRepositoryNote, repositoryLinkHref, repositoryMarkdownLink, resolveHeading, resolveRepositoryLink, rewriteRepositoryLinks } from './repository-links'
@@ -59,7 +59,7 @@ const MARKMAP_PREVIEW_ID = 'markmap-preview'
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/markmap-plus-plus-icon.png`
 
 type Pane = 'editor' | 'preview'
-type Panel = Pane | 'export' | 'github' | 'help' | 'links' | null
+type Panel = Pane | 'export' | 'github' | 'help' | 'about' | 'links' | null
 const HELP_TIP_COUNT = 5
 type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html'
 type ExportTextTheme = 'auto' | 'light' | 'dark'
@@ -621,7 +621,7 @@ function readUserPreviewBackground(style: string) {
 }
 
 export default function MarkmapHooks() {
-  const { locale, toggleLocale, t } = useI18n()
+  const { locale, setLocale, t } = useI18n()
   const desktopWorkspaceSessionRef = useRef(loadDesktopWorkspaceSession())
   const initialSettingsRef = useRef(loadInitialSettings())
   const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [createDocumentTab(locale === 'en-US' ? 'markmap++ guide.md' : 'markmap++ 操作指南.md', loadDocument(locale), 'starter')])
@@ -650,9 +650,11 @@ export default function MarkmapHooks() {
   const [canUndo, setCanUndo] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [desktopPlatform, setDesktopPlatform] = useState<string | null>(null)
+  const [desktopAppInfo, setDesktopAppInfo] = useState<DesktopAppInfo | null>(null)
   const [desktopWindowMaximized, setDesktopWindowMaximized] = useState(false)
   const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const [desktopMenuOpen, setDesktopMenuOpen] = useState(false)
+  const [desktopMenuLanguageOpen, setDesktopMenuLanguageOpen] = useState(false)
   const [desktopMenuSection, setDesktopMenuSection] = useState<'file' | 'edit' | 'view' | 'help'>('file')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
   const [exportScale, setExportScale] = useState(2)
@@ -918,6 +920,19 @@ export default function MarkmapHooks() {
     setDark(shouldUseDarkTheme(defaultSettings.previewBackgroundColor))
   }
   const openHelpPanel = () => { setHelpTipIndex(0); setActivePanel('help') }
+  const openAboutPanel = () => setActivePanel('about')
+  const toggleDesktopMenu = () => setDesktopMenuOpen((value) => {
+    if (value) setDesktopMenuLanguageOpen(false)
+    return !value
+  })
+  const openExternalLink = (url: string) => {
+    const api = desktopApi()
+    if (api) {
+      void api.openExternal(url)
+      return
+    }
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
   const moveHelpTip = (direction: number) => setHelpTipIndex((current) => (current + direction + HELP_TIP_COUNT) % HELP_TIP_COUNT)
   const startHelpSwipe = (event: React.TouchEvent<HTMLElement>) => {
     const touch = event.touches[0]
@@ -2731,6 +2746,17 @@ export default function MarkmapHooks() {
   }, [activePanel])
 
   useEffect(() => {
+    if (activePanel !== 'about') return
+    const api = desktopApi()
+    if (!api) return
+    let current = true
+    void api.getAppInfo().then((info) => {
+      if (current) setDesktopAppInfo(info)
+    }).catch(() => undefined)
+    return () => { current = false }
+  }, [activePanel])
+
+  useEffect(() => {
     if (!activePanel) return
     panelReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const frame = window.requestAnimationFrame(() => settingsPanelRef.current?.focus())
@@ -2973,9 +2999,17 @@ export default function MarkmapHooks() {
   useEffect(() => {
     if (!desktopMenuOpen) return
     const closeMenu = (event: PointerEvent) => {
-      if (!desktopMenuRef.current?.contains(event.target as Node)) setDesktopMenuOpen(false)
+      if (!desktopMenuRef.current?.contains(event.target as Node)) {
+        setDesktopMenuOpen(false)
+        setDesktopMenuLanguageOpen(false)
+      }
     }
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setDesktopMenuOpen(false) }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDesktopMenuOpen(false)
+        setDesktopMenuLanguageOpen(false)
+      }
+    }
     document.addEventListener('pointerdown', closeMenu)
     document.addEventListener('keydown', closeOnEscape)
     return () => { document.removeEventListener('pointerdown', closeMenu); document.removeEventListener('keydown', closeOnEscape) }
@@ -3630,15 +3664,64 @@ ${documentRenderConfig.style}
     <main className="app-shell">
       {documentRenderConfig.style && <style>{documentRenderConfig.style}</style>}
       <header className="topbar">
-        <div className="brand-area" ref={desktopMenuRef}>{desktopApi() && <button type="button" className="desktop-menu-trigger" aria-label="应用菜单" title="应用菜单" aria-expanded={desktopMenuOpen} onClick={() => setDesktopMenuOpen((value) => !value)}><Icon name="menu" /></button>}<div className="brand" aria-label="markmap++"><span className="brand-mark"><img src={brandIconUrl} alt="" /></span><span className="brand-name">markmap<span>++</span></span></div>{desktopMenuOpen && <div className="desktop-app-menu" role="menu" aria-label="markmap++ 应用菜单"><nav><button className={desktopMenuSection === 'file' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('file')} onClick={() => setDesktopMenuSection('file')}>文件<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'edit' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('edit')} onClick={() => setDesktopMenuSection('edit')}>编辑<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'view' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('view')} onClick={() => setDesktopMenuSection('view')}>视图<Icon name="chevron-right" /></button><button className={desktopMenuSection === 'help' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('help')} onClick={() => setDesktopMenuSection('help')}>帮助<Icon name="chevron-right" /></button></nav><section>{desktopMenuSection === 'file' ? <><button onClick={() => { setDesktopMenuOpen(false); createBlankDocumentTab() }}><span>新建标签页</span><kbd>{shortcut('T')}</kbd></button><button onClick={() => { setDesktopMenuOpen(false); void chooseMarkdownFile() }}><span>打开文件…</span><kbd>{shortcut('O')}</kbd></button><button onClick={() => { setDesktopMenuOpen(false); void openLocalGitFolder() }}><span>打开本地文件夹…</span></button><hr/><button disabled={Boolean(activeRepoPath) || !activeTabUnsaved} onClick={() => { setDesktopMenuOpen(false); if (activeLocalFile) void saveActiveLocalDocument(); else void saveStandaloneDocument() }}><span>保存</span><kbd>{shortcut('S')}</kbd></button><button onClick={() => { setDesktopMenuOpen(false); setExportError(''); setExportFormat('md'); setExportTab('file'); setActivePanel('export') }}><span>另存 / 导出…</span></button><hr/><button onClick={() => { setDesktopMenuOpen(false); closeDocumentTab(activeTabId) }}><span>关闭标签页</span><kbd>{shortcut('W')}</kbd></button></> : desktopMenuSection === 'edit' ? <><button disabled={!canUndo} onClick={() => { setDesktopMenuOpen(false); undoLastChange() }}><span>撤销上次修改</span><kbd>{shortcut('Z')}</kbd></button><button onClick={() => { setDesktopMenuOpen(false); setActivePanel('editor') }}><span>编辑器偏好设置</span></button></> : desktopMenuSection === 'view' ? <><button onClick={() => { setDesktopMenuOpen(false); setEditorView('markdown') }}><span>Markdown 编辑器</span></button><button onClick={() => { setDesktopMenuOpen(false); openGitHubPanel() }}><span>仓库</span></button><button onClick={() => { setDesktopMenuOpen(false); setEditorView('agent') }}><span>Agent</span></button><hr/><button onClick={() => { setDesktopMenuOpen(false); setActivePanel('preview') }}><span>预览设置</span></button><button onClick={() => { setDesktopMenuOpen(false); void toggleFullscreen() }}><span>{fullscreen ? '退出全屏' : '进入全屏'}</span></button></> : <><button onClick={() => { setDesktopMenuOpen(false); openHelpPanel() }}><span>使用说明</span></button><button onClick={() => { setDesktopMenuOpen(false); void desktopApi()?.openExternal('https://github.com/Jeoitim/markmap-pp') }}><span>GitHub 项目</span></button></>}</section></div>}</div>
+        <div className="brand-area" ref={desktopMenuRef}>
+          <button type="button" className="desktop-menu-trigger" aria-label={t('应用菜单')} title={t('应用菜单')} aria-expanded={desktopMenuOpen} onClick={toggleDesktopMenu}><Icon name="menu" /></button>
+          <div className="brand" aria-label="markmap++"><span className="brand-mark"><img src={brandIconUrl} alt="" /></span><span className="brand-name">markmap<span>++</span></span></div>
+          {desktopMenuOpen && <div className="desktop-app-menu" role="menu" aria-label={t('markmap++ 应用菜单')}>
+            <nav>
+              <button className={desktopMenuSection === 'file' ? 'active' : ''} onMouseEnter={() => { setDesktopMenuSection('file'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('file'); setDesktopMenuLanguageOpen(false) }}>{t('文件')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+              <button className={desktopMenuSection === 'edit' ? 'active' : ''} onMouseEnter={() => { setDesktopMenuSection('edit'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('edit'); setDesktopMenuLanguageOpen(false) }}>{t('编辑')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+              <button className={desktopMenuSection === 'view' ? 'active' : ''} onMouseEnter={() => { setDesktopMenuSection('view'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('view'); setDesktopMenuLanguageOpen(false) }}>{t('视图')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+              <button className={desktopMenuSection === 'help' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('help')} onClick={() => setDesktopMenuSection('help')}>{t('帮助')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+            </nav>
+            <section>
+              {desktopMenuLanguageOpen ? <>
+                <div className="desktop-menu-submenu-header">
+                  <button type="button" className="desktop-menu-back" onClick={() => setDesktopMenuLanguageOpen(false)} aria-label={t('返回')}>
+                    <span aria-hidden="true">‹</span>
+                    <span>{t('返回')}</span>
+                  </button>
+                  <strong>{t('语言')}</strong>
+                </div>
+                <div className="desktop-menu-language-options" role="group" aria-label={t('语言')}>
+                  <button className={locale === 'zh-CN' ? 'active' : ''} onClick={() => { setLocale('zh-CN'); setDesktopMenuOpen(false); setDesktopMenuLanguageOpen(false) }} aria-pressed={locale === 'zh-CN'}><span>{t('简体中文')}</span></button>
+                  <button className={locale === 'en-US' ? 'active' : ''} onClick={() => { setLocale('en-US'); setDesktopMenuOpen(false); setDesktopMenuLanguageOpen(false) }} aria-pressed={locale === 'en-US'}><span>{t('English')}</span></button>
+                </div>
+              </> : desktopMenuSection === 'file' ? <>
+                <button onClick={() => { setDesktopMenuOpen(false); createBlankDocumentTab() }}><span>{t('新建标签页')}</span><kbd>{shortcut('T')}</kbd></button>
+                <button onClick={() => { setDesktopMenuOpen(false); void chooseMarkdownFile() }}><span>{t('打开文件…')}</span><kbd>{shortcut('O')}</kbd></button>
+                {desktopApi() && <button onClick={() => { setDesktopMenuOpen(false); void openLocalGitFolder() }}><span>{t('打开本地文件夹…')}</span></button>}
+                <hr />
+                <button disabled={Boolean(activeRepoPath) || !activeTabUnsaved} onClick={() => { setDesktopMenuOpen(false); if (activeLocalFile) void saveActiveLocalDocument(); else void saveStandaloneDocument() }}><span>{t('保存')}</span><kbd>{shortcut('S')}</kbd></button>
+                <button onClick={() => { setDesktopMenuOpen(false); setExportError(''); setExportFormat('md'); setExportTab('file'); setActivePanel('export') }}><span>{t('另存 / 导出…')}</span></button>
+                <hr />
+                <button onClick={() => { setDesktopMenuOpen(false); closeDocumentTab(activeTabId) }}><span>{t('关闭标签页')}</span><kbd>{shortcut('W')}</kbd></button>
+              </> : desktopMenuSection === 'edit' ? <>
+                <button disabled={!canUndo} onClick={() => { setDesktopMenuOpen(false); undoLastChange() }}><span>{t('撤回上一次修改')}</span><kbd>{shortcut('Z')}</kbd></button>
+                <button onClick={() => { setDesktopMenuOpen(false); setActivePanel('editor') }}><span>{t('编辑器偏好设置')}</span></button>
+              </> : desktopMenuSection === 'view' ? <>
+                <button onClick={() => { setDesktopMenuOpen(false); setEditorView('markdown') }}><span>{t('Markdown 编辑器')}</span></button>
+                <button onClick={() => { setDesktopMenuOpen(false); openGitHubPanel() }}><span>{t('仓库')}</span></button>
+                <button onClick={() => { setDesktopMenuOpen(false); setEditorView('agent') }}><span>{t('Agent')}</span></button>
+                <hr />
+                <button onClick={() => { setDesktopMenuOpen(false); setActivePanel('preview') }}><span>{t('预览设置')}</span></button>
+                <button onClick={() => { setDesktopMenuOpen(false); void toggleFullscreen() }}><span>{fullscreen ? t('退出全屏') : t('进入全屏')}</span></button>
+              </> : <>
+                <button onClick={() => { setDesktopMenuOpen(false); openHelpPanel() }}><span>{t('使用说明')}</span></button>
+                <button className={desktopMenuLanguageOpen ? 'active' : ''} onClick={() => setDesktopMenuLanguageOpen((value) => !value)}><span>{t('语言')}</span><span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+                {desktopApi() && <button onClick={() => { setDesktopMenuOpen(false); openAboutPanel() }}><span>{t('关于 markmap++')}</span></button>}
+                <hr />
+                <button onClick={() => { setDesktopMenuOpen(false); openExternalLink('https://github.com/Jeoitim/markmap-pp') }}><span>{t('GitHub 项目')}</span></button>
+              </>}
+            </section>
+          </div>}
+        </div>
         <div className="document-name" title={fileName || '当前没有打开文件'}>{hasOpenDocument && <span className={`save-dot ${titleSyncState}`} />}<span>{fileName || '当前没有打开文件'}</span><small>{hasOpenDocument ? titleSyncText : '打开或新建 Markdown'}</small></div>
         <nav ref={actionsRef} className="actions" aria-label="文档操作">
           <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
           <button type="button" className="button secondary collapsible-action" onClick={() => void chooseMarkdownFile()}><Icon name="folder" /><span>打开</span></button>
-          <button type="button" className="button secondary collapsible-action" onClick={openHelpPanel}><Icon name="help" /><span>说明</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" disabled={!hasOpenDocument} onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
-          <button type="button" className="locale-toggle" aria-label={locale === 'en-US' ? t('切换到中文') : t('切换到英文')} title={locale === 'en-US' ? t('切换到中文') : t('切换到英文')} onClick={toggleLocale}><Icon name="globe" /></button>
           <button type="button" className="icon-button" aria-label={fullscreen ? t('退出全屏') : t('进入全屏')} title={fullscreen ? t('退出全屏') : t('全屏')} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
           <button type="button" className="icon-button" aria-label={previewDarkMode ? '切换浅色模式' : '切换深色模式'} title={previewDarkMode ? '浅色模式 · 雾白背景' : '深色模式 · 深灰背景'} onClick={() => updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d')}><Icon name={previewDarkMode ? 'sun' : 'moon'} /></button>
           <button type="button" className="icon-button mobile-tabs-trigger" aria-label={`打开文档标签页，共 ${documentTabs.length} 个`} title={t('文档标签页')} aria-expanded={mobileTabsOpen} onClick={() => setMobileTabsOpen(true)}><Icon name="tabs" /><b>{documentTabs.length}</b></button>
@@ -3647,7 +3730,6 @@ ${documentRenderConfig.style}
             <button type="button" onClick={() => { setActionMenuOpen(false); void chooseMarkdownFile() }}><Icon name="folder" /><span>{t('打开 Markdown')}</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); openHelpPanel() }}><Icon name="help" /><span>{t('使用说明')}</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); undoLastChange() }} disabled={!canUndo}><Icon name="undo" /><span>{t('撤回修改')}</span></button>
-            <button type="button" onClick={() => { setActionMenuOpen(false); toggleLocale() }}><Icon name="globe" /><span>{locale === 'en-US' ? t('切换到中文') : t('切换到英文')}</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); void toggleFullscreen() }}><Icon name={fullscreen ? 'collapse' : 'expand'} /><span>{fullscreen ? t('退出全屏') : t('进入全屏')}</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d') }}><Icon name={previewDarkMode ? 'sun' : 'moon'} /><span>{previewDarkMode ? t('切换浅色模式') : t('切换深色模式')}</span></button>
           </div>}
@@ -3799,8 +3881,8 @@ ${documentRenderConfig.style}
       {linkNotice && <div className="link-notice" role="status" aria-live="polite">{linkNotice}</div>}
 
       {activePanel && <div className="panel-backdrop" onMouseDown={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }}>
-        <section ref={settingsPanelRef} tabIndex={-1} className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><strong>{activePanel === 'editor' ? t('编辑器设置') : activePanel === 'preview' ? t('预览设置') : activePanel === 'github' ? t('仓库设置') : activePanel === 'help' ? t('使用说明') : activePanel === 'links' ? t('笔记链接') : exportTab === 'repository' ? t('另存到 Git 仓库') : t('导出思维导图')}</strong>{activePanel !== 'help' && <small>{activePanel === 'export' ? exportTab === 'repository' ? t('选择仓库位置并暂存当前 Markdown') : t('选择格式与清晰度') : activePanel === 'github' ? t('在远程仓库与本地文件夹之间随时切换') : activePanel === 'links' ? t('反向链接、出站链接与失效目标') : t('更改会立即生效')}</small>}</div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />{t('恢复默认设置')}</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label={t('关闭')}><Icon name="x" /></button></div></header>
+        <section ref={settingsPanelRef} tabIndex={-1} className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'about' ? 'about-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><strong>{activePanel === 'editor' ? t('编辑器设置') : activePanel === 'preview' ? t('预览设置') : activePanel === 'github' ? t('仓库设置') : activePanel === 'help' ? t('使用说明') : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? t('笔记链接') : exportTab === 'repository' ? t('另存到 Git 仓库') : t('导出思维导图')}</strong>{activePanel !== 'help' && <small>{activePanel === 'export' ? exportTab === 'repository' ? t('选择仓库位置并暂存当前 Markdown') : t('选择格式与清晰度') : activePanel === 'github' ? t('在远程仓库与本地文件夹之间随时切换') : activePanel === 'about' ? t('版本、作者与上游项目鸣谢') : activePanel === 'links' ? t('反向链接、出站链接与失效目标') : t('更改会立即生效')}</small>}</div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />{t('恢复默认设置')}</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label={t('关闭')}><Icon name="x" /></button></div></header>
           {activePanel === 'github' && <div className="github-body">
             <div className="repository-settings-tabs" role="tablist"><button role="tab" aria-selected={repositorySettingsTab === 'remote'} className={repositorySettingsTab === 'remote' ? 'active' : ''} onClick={() => { setRepositorySettingsTab('remote'); if (githubConfig) setRepositorySource('remote') }}><Icon name="github" /><span>{t('远程仓库')}</span><b>{githubProfiles.length}</b></button><button role="tab" aria-selected={repositorySettingsTab === 'local'} className={repositorySettingsTab === 'local' ? 'active' : ''} onClick={() => { setRepositorySettingsTab('local'); if (localGitState.activeId) setRepositorySource('local') }}><Icon name="folder" /><span>{t('本地文件夹')}</span><b>{localGitState.repositories.length}</b></button></div>
             {repositorySettingsTab === 'remote' ? !githubConfig || addingRemoteRepository ? <div className="github-bind-form repository-bind-panel">
@@ -3827,6 +3909,12 @@ ${documentRenderConfig.style}
             </div>}
           </div>}
           {activePanel === 'links' && activeRepoPath && <NoteLinksPanel embedded activePath={activeRepoPath} backlinks={backlinks} outgoing={outgoingLinks} indexedCount={repositoryIndexes.length} totalCount={repositoryPaths.length} loading={githubBusyAction === 'load-repository'} onOpenBacklink={(entry) => { setActivePanel(null); void openRepositoryLocation(entry.sourcePath, entry.line) }} onOpenOutgoing={(entry) => { if (!entry.broken) { setActivePanel(null); void openRepositoryLink(entry.href) } }} onIndexAll={() => void loadAllRepositoryNotes()} />}
+          {activePanel === 'about' && <div className="about-body">
+            <div className="about-hero"><img src={brandIconUrl} alt={t('应用图标')} /><div><strong>markmap++</strong><span>{t('Markdown 思维导图工作台')}</span></div></div>
+            <dl className="about-meta"><div><dt>{t('版本')}</dt><dd>{desktopAppInfo?.appVersion || t('正在读取版本信息…')}</dd></div><div><dt>{t('作者')}</dt><dd>Jeoitim</dd></div><div><dt>{t('许可证')}</dt><dd>MIT</dd></div></dl>
+            <div className="about-actions"><button type="button" onClick={() => openExternalLink('https://github.com/Jeoitim/markmap-pp')}><Icon name="github" /><span>{t('在 GitHub 上查看')}</span></button><button type="button" onClick={() => openExternalLink('https://github.com/Tem-man/markmap-plus')}><Icon name="github" /><span>{t('上游项目')}</span></button></div>
+            <section className="about-credit"><strong>{t('上游项目与贡献者鸣谢')}</strong><p>{t('本项目基于 Tem-man/markmap-plus 开发，感谢上游项目及所有贡献者。')}</p><a href="https://github.com/Tem-man/markmap-plus/graphs/contributors" target="_blank" rel="noreferrer">{t('查看上游贡献者')}</a></section>
+          </div>}
           {activePanel === 'help' && <div className="help-body">
             <div className="help-tip-stage" role="region" aria-roledescription="carousel" aria-label="使用说明提示卡片" onTouchStart={startHelpSwipe} onTouchEnd={endHelpSwipe}>
               <button type="button" className="help-tip-nav" onClick={() => moveHelpTip(-1)} aria-label="上一条说明"><Icon name="chevron-left" /></button>

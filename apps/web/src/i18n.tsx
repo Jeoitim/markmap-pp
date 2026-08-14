@@ -1,6 +1,6 @@
 export type Locale = 'zh-CN' | 'en-US'
 
-const LOCALE_KEY = 'markmap-plus-plus:locale'
+export const LOCALE_KEY = 'markmap-plus-plus:locale'
 
 const translations: Record<string, string> = {
   '使用说明': 'Guide',
@@ -27,6 +27,19 @@ const translations: Record<string, string> = {
   '编辑': 'Edit',
   '视图': 'View',
   '帮助': 'Help',
+  '关于 markmap++': 'About markmap++',
+  '版本、作者与上游项目鸣谢': 'Version, author and upstream acknowledgements',
+  'Markdown 思维导图工作台': 'Markdown mind-map workspace',
+  '应用图标': 'Application icon',
+  '版本': 'Version',
+  '作者': 'Author',
+  '许可证': 'License',
+  '在 GitHub 上查看': 'View on GitHub',
+  '上游项目': 'Upstream project',
+  '上游项目与贡献者鸣谢': 'Upstream project and contributors',
+  '本项目基于 Tem-man/markmap-plus 开发，感谢上游项目及所有贡献者。': 'Built on Tem-man/markmap-plus. Thanks to the upstream project and all contributors.',
+  '查看上游贡献者': 'View upstream contributors',
+  '正在读取版本信息…': 'Loading version information…',
   '新建标签页': 'New tab',
   '打开文件…': 'Open file…',
   '打开': 'Open',
@@ -57,6 +70,9 @@ const translations: Record<string, string> = {
   '预览设置': 'Preview',
   '导出': 'Export',
   '语言': 'Language',
+  '返回': 'Back',
+  '简体中文': 'Simplified Chinese',
+  'English': 'English',
   '中文': '中文',
   '英文': 'English',
   '切换到英文': 'Switch to English',
