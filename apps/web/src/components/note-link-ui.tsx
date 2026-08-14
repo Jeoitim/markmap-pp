@@ -18,6 +18,8 @@ interface SelectionActionMenuProps {
   onLink: () => void
   onRemoveLink: () => void
   onNativeMenu: () => void
+  showNativeMenu: boolean
+  shortcutModifier: string
 }
 
 export function SelectionActionMenu(props: SelectionActionMenuProps) {
@@ -28,14 +30,13 @@ export function SelectionActionMenu(props: SelectionActionMenuProps) {
   useEffect(() => { menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus() }, [])
   return <div ref={menuRef} className="selection-action-menu" role="menu" aria-label={t('所选文字操作')} style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
     <div className="selection-action-summary" title={props.text}>{props.text}</div>
-    <button role="menuitem" onClick={props.onCopy}><span>{t('复制')}</span><kbd>Ctrl C</kbd></button>
-    <button role="menuitem" onClick={props.onCut}><span>{t('剪切')}</span><kbd>Ctrl X</kbd></button>
-    <button role="menuitem" onClick={props.onPaste}><span>{t('粘贴')}</span><kbd>Ctrl V</kbd></button>
+    <button role="menuitem" onClick={props.onCopy}><span>{t('复制')}</span><kbd>{props.shortcutModifier} C</kbd></button>
+    <button role="menuitem" onClick={props.onCut}><span>{t('剪切')}</span><kbd>{props.shortcutModifier} X</kbd></button>
+    <button role="menuitem" onClick={props.onPaste}><span>{t('粘贴')}</span><kbd>{props.shortcutModifier} V</kbd></button>
     <hr />
-    <button role="menuitem" className="link-action" onClick={props.onLink}><span>{props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')}</span><kbd>⌘ K</kbd></button>
+    <button role="menuitem" className="link-action" onClick={props.onLink}><span>{props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')}</span><kbd>{props.shortcutModifier} K</kbd></button>
     {props.hasLink && <button role="menuitem" onClick={props.onRemoveLink}><span>{t('移除链接')}</span></button>}
-    <hr />
-    <button role="menuitem" className="native-menu-action" onClick={props.onNativeMenu}><span>{t('更多浏览器选项')}</span><kbd>{t('再次右键')}</kbd></button>
+    {props.showNativeMenu && <><hr /><button role="menuitem" className="native-menu-action" onClick={props.onNativeMenu}><span>{t('更多浏览器选项')}</span><kbd>{t('再次右键')}</kbd></button></>}
   </div>
 }
 

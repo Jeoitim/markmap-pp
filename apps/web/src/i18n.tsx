@@ -462,6 +462,7 @@ const translations: Record<string, string> = {
   '检查本地与远端状态': 'Check local and remote status',
   '浏览器未允许读取剪贴板，请使用 Ctrl+C': 'The browser denied clipboard access. Use Ctrl+C.',
   '浏览器未允许读取剪贴板，请使用 Ctrl+V': 'The browser denied clipboard access. Use Ctrl+V.',
+  '浏览器未允许读取剪贴板，请使用': 'The browser denied clipboard access. Use',
   '没有待同步修改': 'No changes to sync',
   '名称无效，Markdown 文件必须以 .md 结尾': 'Invalid name. Markdown files must end in .md',
   '目标笔记不存在': 'The target note does not exist',
