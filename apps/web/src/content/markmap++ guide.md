@@ -2,7 +2,6 @@
 title: markmap++ guide
 options:
   colorFreezeLevel: 2
-  maxWidth: 360
 ---
 
 # markmap++
@@ -31,7 +30,7 @@ options:
 ### Text styles
 
 - **Bold**, *italic*, ~~strikethrough~~, ==highlight== and `inline code`.
-- Long text wraps automatically according to `maxWidth`, which is useful for full notes.
+- Long text wraps automatically to the available width, which is useful for full notes.
 - A simple workflow:
   1. Select text in the left editor.
   2. Type or paste Markdown.

@@ -3913,7 +3913,7 @@ ${documentRenderConfig.style}
             <div className="about-hero"><img src={brandIconUrl} alt={t('应用图标')} /><div><strong>markmap++</strong><span>{t('Markdown 思维导图工作台')}</span></div></div>
             <dl className="about-meta"><div><dt>{t('版本')}</dt><dd>{desktopAppInfo?.appVersion || t('正在读取版本信息…')}</dd></div><div><dt>{t('作者')}</dt><dd>Jeoitim</dd></div><div><dt>{t('许可证')}</dt><dd>MIT</dd></div></dl>
             <div className="about-actions"><button type="button" onClick={() => openExternalLink('https://github.com/Jeoitim/markmap-pp')}><Icon name="github" /><span>{t('在 GitHub 上查看')}</span></button><button type="button" onClick={() => openExternalLink('https://github.com/Tem-man/markmap-plus')}><Icon name="github" /><span>{t('上游项目')}</span></button></div>
-            <section className="about-credit"><strong>{t('上游项目与贡献者鸣谢')}</strong><p>{t('本项目基于 Tem-man/markmap-plus 开发，感谢上游项目及所有贡献者。')}</p><a href="https://github.com/Tem-man/markmap-plus/graphs/contributors" target="_blank" rel="noreferrer">{t('查看上游贡献者')}</a></section>
+            <section className="about-credit"><strong>{t('上游项目与贡献者鸣谢')}</strong><p>{t('本项目基于 Tem-man/markmap-plus 开发，感谢上游项目及所有贡献者。')}</p><a href="https://github.com/Jeoitim/markmap-pp/graphs/contributors" target="_blank" rel="noreferrer">{t('查看项目贡献者')}</a></section>
           </div>}
           {activePanel === 'help' && <div className="help-body">
             <div className="help-tip-stage" role="region" aria-roledescription="carousel" aria-label="使用说明提示卡片" onTouchStart={startHelpSwipe} onTouchEnd={endHelpSwipe}>

@@ -18,7 +18,6 @@ function run(label, args) {
     process.exit(code ?? 0);
   });
   child.on('error', (err) => {
-    // eslint-disable-next-line no-console
     console.error(`[${label}] failed to start`, err);
     process.exit(1);
   });

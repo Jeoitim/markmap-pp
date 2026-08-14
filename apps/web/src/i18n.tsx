@@ -38,7 +38,7 @@ const translations: Record<string, string> = {
   '上游项目': 'Upstream project',
   '上游项目与贡献者鸣谢': 'Upstream project and contributors',
   '本项目基于 Tem-man/markmap-plus 开发，感谢上游项目及所有贡献者。': 'Built on Tem-man/markmap-plus. Thanks to the upstream project and all contributors.',
-  '查看上游贡献者': 'View upstream contributors',
+  '查看项目贡献者': 'View project contributors',
   '正在读取版本信息…': 'Loading version information…',
   '新建标签页': 'New tab',
   '打开文件…': 'Open file…',

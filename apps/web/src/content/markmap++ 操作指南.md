@@ -2,7 +2,6 @@
 title: markmap++ 操作指南
 options:
   colorFreezeLevel: 2
-  maxWidth: 360
 ---
 
 # markmap++
@@ -31,7 +30,7 @@ options:
 ### 文字样式
 
 - **粗体**、*斜体*、~~删除线~~、==高亮== 与 `行内代码`
-- 很长很长的文字会根据 maxWidth 自动换行，适合记录完整说明
+- 很长很长的文字会根据可用宽度自动换行，适合记录完整说明
 - 有序步骤
   1. 在左侧拖动光标选中文字
   2. 输入或粘贴 Markdown
