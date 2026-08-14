@@ -23,11 +23,17 @@ const enNav = [
 const zhSidebar = {
   '/': [{
     text: 'markmap++ 指南',
+    collapsed: false,
     items: [
       { text: '项目概览', link: '/introduction/' },
       { text: '快速开始', link: '/installation/' },
       { text: 'App 介绍', link: '/app/' },
       { text: 'Electron 桌面应用', link: '/desktop/' },
+    ],
+  }, {
+    text: '功能模块',
+    collapsed: false,
+    items: [
       { text: '编辑与思维导图', link: '/mind-map-usage/' },
       { text: 'Agent 知识与仓库操作', link: '/agent/' },
       { text: 'GitHub 仓库同步', link: '/example/' },
@@ -39,11 +45,17 @@ const zhSidebar = {
 const enSidebar = {
   '/en/': [{
     text: 'markmap++ guide',
+    collapsed: false,
     items: [
       { text: 'Overview', link: '/en/introduction/' },
       { text: 'Quick start', link: '/en/installation/' },
       { text: 'App', link: '/en/app/' },
       { text: 'Electron desktop app', link: '/en/desktop/' },
+    ],
+  }, {
+    text: 'Features',
+    collapsed: false,
+    items: [
       { text: 'Editing and mind maps', link: '/en/mind-map-usage/' },
       { text: 'Agent knowledge and repository actions', link: '/en/agent/' },
       { text: 'GitHub repository sync', link: '/en/example/' },

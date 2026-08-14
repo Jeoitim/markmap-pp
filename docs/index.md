@@ -10,6 +10,9 @@ hero:
       text: 打开 markmap++
       link: https://jeoitim.github.io/markmap-pp/
     - theme: alt
+      text: App 介绍与下载
+      link: /app/
+    - theme: alt
       text: 快速开始
       link: /installation/
     - theme: alt
@@ -39,3 +42,23 @@ features:
 ## 从这里开始
 
 markmap++ 完全运行在浏览器中。第一次使用可以直接打开应用并修改欢迎示例；示例会在下次打开时恢复，因此需要保留的内容应导出为 Markdown，或者绑定 GitHub 仓库进行持久保存。
+
+<section class="home-app-spotlight" aria-labelledby="home-app-title">
+  <div class="home-app-copy">
+    <div class="home-app-brand">
+      <img src="./brand/markmap-plus-plus-icon.svg" alt="markmap++ 应用图标" />
+      <div>
+        <span class="home-app-kicker">Web + Desktop</span>
+        <h2 id="home-app-title">把笔记变成可以继续工作的导图</h2>
+      </div>
+    </div>
+    <p>浏览器版适合随时打开，桌面 App 适合直接读写本地 Markdown 和 Git 工作区。两者共享编辑器、导图、Agent 与 GitHub 同步能力。</p>
+    <div class="home-app-actions">
+      <a class="home-app-primary" href="./app/">了解 App 与下载方式</a>
+      <a class="home-app-secondary" href="https://jeoitim.github.io/markmap-pp/">立即打开 Web 版</a>
+    </div>
+  </div>
+  <div class="home-map-art">
+    <img src="./markmap-art.png" alt="markmap++ 彩色思维导图示例" />
+  </div>
+</section>

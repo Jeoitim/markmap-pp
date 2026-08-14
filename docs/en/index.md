@@ -10,6 +10,9 @@ hero:
       text: Open markmap++
       link: https://jeoitim.github.io/markmap-pp/
     - theme: alt
+      text: App overview and downloads
+      link: /en/app/
+    - theme: alt
       text: Quick start
       link: /en/installation/
     - theme: alt
@@ -39,3 +42,23 @@ features:
 ## Start here
 
 markmap++ runs entirely in the browser. Open the app and edit the welcome guide to try live preview. The guide is restored on the next fresh start, so export important content as Markdown or connect a GitHub repository for persistent storage.
+
+<section class="home-app-spotlight" aria-labelledby="home-app-title">
+  <div class="home-app-copy">
+    <div class="home-app-brand">
+      <img src="../brand/markmap-plus-plus-icon.svg" alt="markmap++ app icon" />
+      <div>
+        <span class="home-app-kicker">Web + Desktop</span>
+        <h2 id="home-app-title">Turn notes into a workspace you can keep using</h2>
+      </div>
+    </div>
+    <p>Use the Web app anywhere, or download the desktop app for direct local Markdown and Git workspace access. Both versions share the editor, mind map, Agent and GitHub sync experience.</p>
+    <div class="home-app-actions">
+      <a class="home-app-primary" href="./app/">App overview and downloads</a>
+      <a class="home-app-secondary" href="https://jeoitim.github.io/markmap-pp/">Open the Web app</a>
+    </div>
+  </div>
+  <div class="home-map-art">
+    <img src="../markmap-art.png" alt="Colorful markmap++ mind-map example" />
+  </div>
+</section>
