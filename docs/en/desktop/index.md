@@ -1,64 +1,54 @@
 ---
-title: Electron desktop app
+title: Electron desktop development
 outline: deep
 ---
 
-# Electron desktop app
+# Electron desktop development
 
-The markmap++ desktop app shares the editor and mind-map UI with the web app. Electron provides native windows, an isolated renderer, Markdown file access and local Git workspaces; the browser version remains available online.
+This page is for local development, packaging and desktop-specific behavior. For version choice, downloads and first use, see [Web and desktop apps](/en/app/); this page keeps the Electron workflow in one place.
 
-To download a ready-to-use build, visit [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases). For the Web / desktop comparison, see the [App overview](/en/app/).
+## What the desktop app adds
 
-## Download and install
-
-Release builds are published on [GitHub Releases](https://github.com/Jeoitim/markmap-pp/releases). After a version tag is pushed, the release workflow builds these x64 artifacts:
-
-| Platform | File | Use |
+| Capability | Web app | Desktop app |
 | --- | --- | --- |
-| Windows | `markmap-plus-plus-*-windows-x64-setup.exe` | Run the installer |
-| Windows | `markmap-plus-plus-*-windows-x64-portable.7z` | Extract and run `markmap-plus-plus.exe` |
-| Linux | `markmap-plus-plus-*-linux-x86_64.AppImage` | Grant execute permission and run |
+| Markdown editing, mind maps, Agent and GitHub sync | Yes | Yes |
+| Native file dialogs | Browser-limited | Native open and save |
+| Local Git workspace | Not directly available | Available inside a selected folder |
+| Window and system integration | Browser tab | Standalone Electron window |
+
+The desktop renderer shares the Web UI. The Electron main process handles windows, files, paths and local Git; the workspace stays inside a folder selected by the user.
+
+## Development environment
+
+- Node.js 22 or newer
+- pnpm 10
+- Local Git when using a local Git workspace
+
+Install dependencies and start the desktop development environment from the repository root:
 
 ```bash
-chmod +x markmap-plus-plus-*.AppImage
-./markmap-plus-plus-*.AppImage
-```
-
-Some Linux distributions require a FUSE compatibility package for AppImage.
-
-::: warning Unsigned Windows installer
-Windows packages are not currently code-signed. SmartScreen may show a warning; download releases only from this project's GitHub repository.
-:::
-
-## macOS: no prebuilt package yet
-
-macOS DMG builds are not currently included in Releases. macOS users can build locally:
-
-```bash
-git clone https://github.com/Jeoitim/markmap-pp.git
-cd markmap-pp
 corepack enable
 pnpm install
-pnpm --filter markmap-plus-plus-desktop make:mac
+pnpm dev:desktop
 ```
 
-Artifacts are written to `apps/desktop/release/`. The first launch of an unsigned app may require approval in **System Settings → Privacy & Security**.
-
-## Local development and packaging
-
-Run these commands from the repository root:
+## Build and package
 
 ```bash
-pnpm dev:desktop
+# Compile the desktop main process and renderer assets
 pnpm build:desktop
+
+# Build a package for the selected platform
 pnpm --filter markmap-plus-plus-desktop make:win
 pnpm --filter markmap-plus-plus-desktop make:linux
 pnpm --filter markmap-plus-plus-desktop make:mac
 ```
 
-## Local files and Git
+Windows and Linux release artifacts are built by GitHub Actions on native runners. Releases currently provide Windows x64 and Linux x64 packages; the macOS command is for local builds only. Artifacts are written to `apps/desktop/release/`.
 
-- **Open** and **Save** use native file dialogs; the desktop app can read and write selected Markdown files.
-- Local workspaces stay inside the folder selected by the user.
-- Local Git features require `git` on `PATH`.
-- Sensitive Linux configuration uses the system keyring; if no key service is available, the app refuses to save sensitive cache in plain text.
+## Local files, Git and security boundaries
+
+- **Open** and **Save** use native file dialogs and do not scan folders the user has not selected.
+- Local Git requires `git` on `PATH`; Windows can use Git for Windows and macOS can use the Git provided by Xcode Command Line Tools.
+- The Electron renderer is isolated from the main process; file and Git operations go through controlled IPC interfaces.
+- Linux sensitive settings prefer the system keyring. If no key service is available, the app refuses to save sensitive cache in plain text.

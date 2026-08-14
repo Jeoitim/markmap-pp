@@ -1,9 +1,9 @@
 ---
-title: App overview
+title: Web and desktop apps
 outline: deep
 ---
 
-# App overview
+# Web and desktop apps
 
 markmap++ is a mind-map workspace where Markdown is the only source file. Use the Web app without installing anything, or download the desktop app when you need local files and a local Git workspace.
 
@@ -22,7 +22,7 @@ Download the latest build from [GitHub Releases](https://github.com/Jeoitim/mark
 - **Windows portable package**: extract `*-windows-x64-portable.7z` and run the app.
 - **Linux AppImage**: download it, make it executable, and run it.
 
-Published packages currently target Windows x64 and Linux x64. There is no automated prebuilt macOS package yet; build it locally from source using the [desktop documentation](/en/desktop/).
+Published packages currently target Windows x64 and Linux x64. There is no automated prebuilt macOS package yet; see the [Electron desktop development guide](/en/desktop/) for local builds and platform details.
 
 ::: warning Download safely
 Windows packages are currently unsigned, so SmartScreen may show a warning. Confirm that the download comes from this project's GitHub Releases page and verify the release before running it.

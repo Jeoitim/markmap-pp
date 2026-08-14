@@ -1,9 +1,9 @@
 ---
-title: App 介绍
+title: Web 与桌面 App
 outline: deep
 ---
 
-# App 介绍
+# Web 与桌面 App
 
 markmap++ 是一个以 Markdown 为唯一源文件的思维导图工作台。你可以直接使用 Web 版，也可以下载桌面 App，在本地文件和 Git 工作区中继续整理笔记。
 
@@ -22,7 +22,7 @@ markmap++ 是一个以 Markdown 为唯一源文件的思维导图工作台。你
 - **Windows 便携包**：解压 `*-windows-x64-portable.7z` 后直接运行应用。
 - **Linux AppImage**：下载后授予执行权限即可运行。
 
-当前发布包面向 Windows x64 和 Linux x64。macOS 暂无自动发布的预构建包，需要在本机从源码构建；具体步骤见[桌面应用文档](/desktop/)。
+当前发布包面向 Windows x64 和 Linux x64。macOS 暂无自动发布的预构建包，需要在本机从源码构建；具体构建和 Electron 系统能力见 [Electron 桌面开发文档](/desktop/)。
 
 ::: warning 下载安全提示
 Windows 发布包目前未进行代码签名，SmartScreen 可能显示警告。请确认下载地址为本项目的 GitHub Releases，并核对发布版本后再运行。

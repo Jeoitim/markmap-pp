@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 450" role="img" aria-labelledby="title desc">
+  <title id="title">Markdown to mind map animation</title>
+  <desc id="desc">A Markdown editor on the left gradually generates a single-root mind map that grows to the right.</desc>
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f3f0ff"/>
+    </linearGradient>
+    <linearGradient id="mapSurface" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfaff"/>
+      <stop offset="1" stop-color="#f0edff"/>
+    </linearGradient>
+    <linearGradient id="editorSurface" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#292443"/>
+      <stop offset="1" stop-color="#181625"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#342174" flood-opacity=".16"/>
+    </filter>
+    <style>
+      .frame { fill: none; stroke: none; }
+      .panel { stroke: none; }
+      .caption { fill: #7b748f; font: 700 11px Inter, Arial, sans-serif; letter-spacing: 1.4px; }
+      .code { fill: #e9e4ff; font: 15px 'SFMono-Regular', Consolas, monospace; }
+      .code-muted { fill: #a6a0bf; font: 15px 'SFMono-Regular', Consolas, monospace; }
+      .code-key { fill: #c3a8ff; font: 15px 'SFMono-Regular', Consolas, monospace; }
+      .map-label { fill: #4c465d; font: 600 13px Inter, Arial, sans-serif; }
+      .map-root-label { fill: #4b3c9f; font: 700 14px Inter, Arial, sans-serif; }
+      .map-node { fill: #fff; stroke-width: 2; }
+      .branch { fill: none; stroke-linecap: round; stroke-width: 3; stroke-dasharray: 340; stroke-dashoffset: 340; animation: draw 1.2s cubic-bezier(.22,.8,.32,1) forwards; }
+      .branch.b2 { animation-delay: .18s; }
+      .branch.b3 { animation-delay: .36s; }
+      .branch.b4 { animation-delay: .54s; }
+      .branch.b5 { animation-delay: .72s; }
+      .branch.b6 { animation-delay: .9s; }
+      .node { opacity: 0; animation: appear .45s ease forwards; }
+      .node.n2 { animation-delay: .35s; }
+      .node.n3 { animation-delay: .52s; }
+      .node.n4 { animation-delay: .69s; }
+      .node.n5 { animation-delay: .86s; }
+      .node.n6 { animation-delay: 1.03s; }
+      .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.8s ease-in-out infinite; }
+      .caret { animation: blink 1s steps(2, jump-none) infinite; }
+      @keyframes draw { to { stroke-dashoffset: 0; } }
+      @keyframes appear { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+      @keyframes blink { 50% { opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) {
+        .branch, .node, .pulse, .caret { animation: none; }
+        .node { opacity: 1; }
+        .branch { stroke-dashoffset: 0; }
+      }
+    </style>
+  </defs>
+
+  <rect class="frame" x="8" y="8" width="744" height="434" rx="28"/>
+  <rect class="panel" x="26" y="26" width="262" height="398" rx="18" fill="url(#editorSurface)"/>
+  <rect class="panel" x="304" y="26" width="430" height="398" rx="18" fill="url(#mapSurface)"/>
+
+  <text class="caption" x="50" y="57">MARKDOWN</text>
+  <circle cx="265" cy="52" r="5" fill="#d49b48"/>
+  <text class="caption" x="328" y="57">LIVE MIND MAP</text>
+  <circle cx="696" cy="52" r="5" fill="#4db884"/>
+
+  <rect x="44" y="78" width="226" height="1" fill="#4b4563"/>
+  <text class="code-muted" x="50" y="112">---</text>
+  <text class="code-key" x="50" y="140">title:</text>
+  <text class="code" x="106" y="140">my notes</text>
+  <text class="code-key" x="50" y="168">options:</text>
+  <text class="code" x="66" y="196">colorFreezeLevel: 2</text>
+  <text class="code-muted" x="50" y="224">---</text>
+  <text class="code-key" x="50" y="266"># My notes</text>
+  <text class="code" x="50" y="298">## Ideas</text>
+  <text class="code" x="66" y="326">- write in Markdown</text>
+  <text class="code" x="66" y="354">- see the map update</text>
+  <rect class="caret" x="66" y="369" width="2" height="19" rx="1" fill="#a985ff"/>
+  <circle cx="50" cy="394" r="4" fill="#7056e8"/>
+  <text class="code-muted" x="64" y="399">editing source</text>
+
+  <path class="branch" d="M366 225 C404 225 420 145 466 145" stroke="#f08a3c"/>
+  <path class="branch b2" d="M366 225 H466" stroke="#7056e8"/>
+  <path class="branch b3" d="M366 225 C404 225 420 305 466 305" stroke="#3aaf83"/>
+  <path class="branch b4" d="M492 145 C532 145 544 112 580 112" stroke="#e26977"/>
+  <path class="branch b5" d="M492 145 C532 145 544 178 580 178" stroke="#f1bb50"/>
+  <path class="branch b6" d="M492 305 C532 305 544 272 580 272" stroke="#9b7bd5"/>
+  <path class="branch b6" d="M492 305 C532 305 544 338 580 338" stroke="#65a8d8"/>
+
+  <g class="pulse">
+    <circle cx="346" cy="225" r="39" fill="#fff" stroke="#7056e8" stroke-width="3"/>
+    <circle cx="346" cy="225" r="30" fill="#7056e8"/>
+    <path d="M332 225h28M346 211v28" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <text class="map-root-label" x="346" y="282" text-anchor="middle">My notes</text>
+
+  <g class="node n2">
+    <circle class="map-node" cx="478" cy="145" r="13" stroke="#f08a3c"/>
+    <text class="map-label" x="504" y="150">Writing</text>
+  </g>
+  <g class="node n3">
+    <circle class="map-node" cx="478" cy="225" r="13" stroke="#7056e8"/>
+    <text class="map-label" x="504" y="230">Preview</text>
+  </g>
+  <g class="node n4">
+    <circle class="map-node" cx="478" cy="305" r="13" stroke="#3aaf83"/>
+    <text class="map-label" x="504" y="310">Workspace</text>
+  </g>
+  <g class="node n5">
+    <circle class="map-node" cx="592" cy="112" r="10" stroke="#e26977"/>
+    <text class="map-label" x="612" y="117">Markdown</text>
+  </g>
+  <g class="node n6">
+    <circle class="map-node" cx="592" cy="178" r="10" stroke="#f1bb50"/>
+    <text class="map-label" x="612" y="183">Nodes</text>
+  </g>
+  <g class="node n6">
+    <circle class="map-node" cx="592" cy="272" r="10" stroke="#9b7bd5"/>
+    <text class="map-label" x="612" y="277">GitHub</text>
+  </g>
+  <g class="node n6">
+    <circle class="map-node" cx="592" cy="338" r="10" stroke="#65a8d8"/>
+    <text class="map-label" x="612" y="343">Agent</text>
+  </g>
+</svg>
