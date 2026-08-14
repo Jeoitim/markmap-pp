@@ -30,6 +30,7 @@ const translations: Record<string, string> = {
   '新建标签页': 'New tab',
   '打开文件…': 'Open file…',
   '打开': 'Open',
+  '打开 Markdown': 'Open Markdown',
   '说明': 'Guide',
   '撤回': 'Undo',
   '撤回修改': 'Undo change',
@@ -61,9 +62,7 @@ const translations: Record<string, string> = {
   '切换到英文': 'Switch to English',
   '切换到中文': 'Switch to Chinese',
   '打开的文档': 'Open documents',
-  '新建空白文档标签': 'New blank document tab',
-  '新建标签': 'New tab',
-  '关闭标签': 'Close tab',
+  '新建空白文档标签页': 'New blank document tab',
   '有未保存的修改': 'Unsaved changes',
   'Git 仓库文档': 'Git repository document',
   '本地文件夹文档': 'Local folder document',
@@ -76,7 +75,8 @@ const translations: Record<string, string> = {
   '适应画布': 'Fit canvas',
   '调整编辑器与预览宽度': 'Resize editor and preview',
   '思维导图预览': 'Mind map preview',
-  '文档标签': 'Document tabs',
+  '文档标签页': 'Document tabs',
+  '关闭文档标签页': 'Close document tabs',
   '个打开的文档': ' open documents',
   '当前没有打开文件': 'No file is open',
   '行': 'lines',
@@ -185,8 +185,8 @@ const translations: Record<string, string> = {
   '下载副本': 'Download a copy',
   '保存并关闭': 'Save and close',
   '下载副本并关闭': 'Download a copy and close',
-  '可以先下载一份 Markdown 副本，再关闭标签。': 'Download a Markdown copy before closing the tab.',
-  '保存会把当前内容写回磁盘，然后关闭标签。': 'Save the current content to disk, then close the tab.',
+  '可以先下载一份 Markdown 副本，再关闭标签页。': 'Download a Markdown copy before closing the tab.',
+  '保存会把当前内容写回磁盘，然后关闭标签页。': 'Save the current content to disk, then close the tab.',
   '取消': 'Cancel',
   '确认': 'Confirm',
   '放弃': 'Discard',
@@ -435,12 +435,12 @@ const translations: Record<string, string> = {
   '打开本地历史版本失败': 'Could not open the local historical version',
   '打开历史版本失败': 'Could not open the historical version',
   '打开或新建 Markdown': 'Open or create Markdown',
-  '打开现有 Markdown，或新建一个空白标签。': 'Open an existing Markdown file or create a blank tab.',
+  '打开现有 Markdown，或新建一个空白标签页。': 'Open an existing Markdown file or create a blank tab.',
   '单文件模式不能新建其他文件，请先打开 Git 仓库。': 'Single-file mode cannot create other files. Open a Git repository first.',
   '单文件模式只能修改当前文件。': 'Single-file mode can only modify the current file.',
   '当前本地仓库上下文已切换，请重新读取后再新建。': 'The local repository changed. Reload it before creating a file.',
   '当前本地仓库上下文已切换，请重新读取后再修改。': 'The local repository changed. Reload it before editing.',
-  '当前标签还没有可持续写入的位置': 'The current tab has no persistent save location',
+  '当前标签页还没有可持续写入的位置': 'The current tab has no persistent save location',
   '当前是普通本地文件夹，不能创建 Git 提交。': 'This is a regular local folder, so Git commits are unavailable.',
   '当前文件不属于 Git 仓库，无法提交。': 'The current file is not in a Git repository and cannot be committed.',
   '读取 Git 历史失败': 'Could not load Git history',
@@ -662,7 +662,7 @@ const agentTranslations: Record<string, string> = {
   '修改、新建或提交 Git 前逐项确认。': 'Confirm each edit, new file or Git commit.',
   '修改当前文件前逐项确认。': 'Confirm each edit to the current file.',
   '收到方案后直接暂存修改与提交请求。': 'Stage changes and commit requests directly after receiving a plan.',
-  '收到方案后直接应用到当前标签。': 'Apply the plan directly to the current tab.',
+  '收到方案后直接应用到当前标签页。': 'Apply the plan directly to the current tab.',
   '停止回答': 'Stop response',
   '发送': 'Send',
   'AI 配置': 'AI settings',
@@ -747,7 +747,7 @@ function translateUiText(locale: Locale, value: string) {
   if (locale === 'en-US') {
     translated = translated
       .replace(/^(\d+) 个打开的文档$/, '$1 open documents')
-      .replace(/^打开文档标签，共 (\d+) 个$/, 'Open document tabs, $1')
+      .replace(/^打开文档标签页，共 (\d+) 个$/, 'Open document tabs, $1')
       .replace(/^(\d+) 行$/, '$1 lines')
       .replace(/^(\d+) 字符$/, '$1 characters')
       .replace(/^第 (\d+) 行$/, 'Line $1')
