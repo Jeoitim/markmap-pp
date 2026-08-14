@@ -3,12 +3,13 @@ import { indentWithTab } from '@codemirror/commands'
 import { Compartment } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { markdown } from '@codemirror/lang-markdown'
-import { linter, lintGutter } from '@codemirror/lint'
+import { forceLinting, linter, lintGutter } from '@codemirror/lint'
 import { EditorView, keymap } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import { inspectMarkdown } from './markdown-lint'
 import { findMarkdownLinkAt, type ParsedMarkdownLink } from './repository-links'
+import type { Locale } from '../i18n'
 
 export type HighlightScheme = 'violet' | 'github' | 'solarized'
 
@@ -61,6 +62,7 @@ interface MarkdownEditorProps {
   fontFamily: string
   fontWeight: number
   scheme: HighlightScheme
+  locale: Locale
   onSelectionContextMenu?: (selection: MarkdownEditorSelection) => void
   onOpenLink?: (href: string) => void
 }
@@ -83,7 +85,7 @@ export interface MarkdownEditorHandle {
   revealLine: (line: number) => void
 }
 
-const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, scheme, onSelectionContextMenu, onOpenLink }, ref) {
+const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, scheme, locale, onSelectionContextMenu, onOpenLink }, ref) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
@@ -92,11 +94,13 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   const nativeContextMenuOnceRef = useRef(false)
   const themeCompartment = useRef(new Compartment())
   const externalUpdate = useRef(false)
+  const localeRef = useRef(locale)
   const initialConfigRef = useRef({ value, dark, fontSize, fontFamily, fontWeight, scheme })
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onSelectionContextMenuRef.current = onSelectionContextMenu }, [onSelectionContextMenu])
   useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
+  useEffect(() => { localeRef.current = locale }, [locale])
 
   useImperativeHandle(ref, () => ({
     allowNativeContextMenuOnce: () => { nativeContextMenuOnceRef.current = true },
@@ -138,7 +142,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         basicSetup,
         markdown(),
         lintGutter(),
-        linter((editor) => inspectMarkdown(editor.state.doc.toString()), { delay: 250 }),
+        linter((editor) => inspectMarkdown(editor.state.doc.toString(), localeRef.current), { delay: 250 }),
         EditorView.lineWrapping,
         keymap.of([indentWithTab]),
         EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: 'false' }),
@@ -186,6 +190,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
     externalUpdate.current = false
   }, [value])
+
+  useEffect(() => {
+    if (viewRef.current) forceLinting(viewRef.current)
+  }, [locale])
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: themeCompartment.current.reconfigure(editorTheme(dark, fontSize, fontFamily, fontWeight, scheme)) })

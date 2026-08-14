@@ -341,7 +341,7 @@ svg { flex: 0 0 auto; }
 .agent-composer .reasoning-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: 0 0 auto; width: calc(100% - 8px); height: 31px; margin: 0 4px 2px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: var(--panel-soft); font-size: 11px; cursor: pointer; }
 .reasoning-toggle svg { width: 14px; height: 14px; }
 .reasoning-toggle.on { color: var(--accent); border-color: #bdb3ef; background: #f2efff; }
-.editor-status { display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--editor-bg); color: var(--editor-gutter); font-family: "JetBrains Mono Variable", monospace; font-size: 11px; border-top: 1px solid var(--border); }
+.editor-status { display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--editor-bg); color: var(--editor-gutter); font-family: "JetBrains Mono Variable", monospace; font-size: 11px; line-height: 1; border-top: 1px solid var(--border); }
 .editor-status-language { margin-left: auto; }
 .editor-status-actions { display: inline-flex; align-items: center; gap: 2px; }
 .editor-unsaved { display: inline-flex; align-items: center; gap: 5px; color: #c47b19; }
@@ -354,8 +354,10 @@ svg { flex: 0 0 auto; }
 .editor-local-save:hover { background: color-mix(in srgb,var(--accent) 10%,transparent); }
 .editor-local-save:disabled { opacity: .5; cursor: wait; }
 .editor-local-save svg { width: 13px; height: 13px; }
-.lint-status { display: inline-flex; align-items: center; gap: 4px; height: 23px; padding: 0 6px; border: 0; border-radius: 5px; color: var(--editor-gutter); background: transparent; font-size: 11px; }
-.lint-status svg { width: 13px; height: 13px; }
+.lint-status { display: grid; grid-template-columns: 11px auto; align-items: center; justify-content: center; column-gap: 3px; flex: 0 0 auto; height: 23px; min-width: 23px; padding: 0 5px; border: 0; border-radius: 5px; color: var(--editor-gutter); background: transparent; font-size: 11px; line-height: 1; white-space: nowrap; cursor: pointer; }
+.lint-status-mark { display: grid; width: 11px; height: 11px; place-items: center; line-height: 0; }
+.lint-status-mark svg { display: block; width: 11px; height: 11px; }
+.lint-status-count { display: block; min-width: 1ch; font-size: inherit; font-weight: inherit; line-height: inherit; text-align: center; }
 .lint-status.has-issues { color: #bf8429; background: #d39b3513; cursor: pointer; }
 .lint-status.has-issues:hover { background: #d39b3522; }
 .lint-status:disabled { opacity: 1; }
@@ -368,6 +370,8 @@ svg { flex: 0 0 auto; }
 .diagnostics-popover > button span { display: grid; gap: 2px; }
 .diagnostics-popover > button strong { font-size: 11px; }
 .diagnostics-popover > button small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.diagnostics-empty { display: flex; align-items: center; gap: 9px; padding: 16px 13px; color: var(--muted); font-size: 11px; }
+.diagnostics-empty svg { width: 15px; color: #4da678; }
 .fit-button { display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; padding: 0; border-radius: 7px; color: var(--muted); }
 .map-canvas { position: relative; min-height: 0; overflow: hidden; background-color: var(--preview-background, var(--panel-soft)); background-image: radial-gradient(circle, color-mix(in srgb,var(--preview-foreground, var(--muted)) 23%,transparent) 1px, transparent 1px); background-size: 22px 22px; }
 .map-canvas.no-grid { background-image: none; }
@@ -921,7 +925,10 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
   .editor-view-tabs::-webkit-scrollbar { display: none; }
   .editor-view-tabs button { flex: 0 0 auto; white-space: nowrap; padding: 0 6px; gap: 4px; font-size: 11px; }
   .mobile-pane-switch { flex: 0 0 auto; white-space: nowrap; }
-  .editor-status { gap: 8px; padding: 0 8px; }
+  .editor-status { gap: 7px; padding: 0 8px; overflow: hidden; }
+  .editor-status > span { flex: 0 0 auto; white-space: nowrap; }
+  .editor-status .editor-unsaved { gap: 0; font-size: 0; }
+  .editor-status .editor-unsaved > i { width: 6px; height: 6px; }
   .editor-status-language { display: none; }
   .editor-status-actions { margin-left: auto; }
   .note-links-panel { inset: 52px 8px 36px; width: auto; max-height: none; }

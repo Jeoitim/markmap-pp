@@ -152,6 +152,12 @@ const translations: Record<string, string> = {
   '语法检查包括标题层级、代码块闭合与缩进一致性，问题会直接标记在编辑器中。': 'Syntax checks cover heading levels, closed code blocks and consistent indentation. Problems are marked directly in the editor.',
   '语法正常': 'Syntax looks good',
   '语法问题': 'Syntax issues',
+  '语法检查': 'Syntax check',
+  '没有发现语法错误': 'No syntax errors found',
+  '行数': 'Line count',
+  '字符数': 'Character count',
+  '建议使用空格缩进，Tab 在不同设备上的层级可能不一致': 'Use spaces for indentation; tabs may create different nesting on different devices',
+  '代码块没有闭合，请补充结束的 ```': 'Code block is not closed; add the closing ```',
   '上一条说明': 'Previous tip',
   '下一条说明': 'Next tip',
   '使用说明提示卡片': 'Guide tip cards',
@@ -245,6 +251,14 @@ const translations: Record<string, string> = {
   '关闭历史记录': 'Close history',
   '关闭本地提交历史': 'Close local commit history',
   '关闭仓库提交历史': 'Close repository commit history',
+  '刷新当前分支': 'Refresh current branch',
+  '查看仓库 Git Graph 与切换分支': 'View repository Git Graph and switch branches',
+  '正在读取仓库提交历史…': 'Loading repository commit history…',
+  '没有找到仓库提交记录': 'No repository commit history found',
+  '没有可用分支': 'No branches available',
+  '文件夹设置': 'Folder settings',
+  '放弃所有未提交的 Markdown 修改': 'Discard all uncommitted Markdown changes',
+  '查看本地仓库分支与提交历史': 'View local repository branches and commit history',
   '关闭问题列表': 'Close issue list',
   '加载全部': 'Load all',
   '笔记': 'notes',
@@ -748,6 +762,7 @@ function translateUiText(locale: Locale, value: string) {
     translated = translated
       .replace(/^(\d+) 个打开的文档$/, '$1 open documents')
       .replace(/^打开文档标签页，共 (\d+) 个$/, 'Open document tabs, $1')
+      .replace(/^标题从 H(\d+) 跳到了 H(\d+)，可能产生意外层级$/, 'Heading jumps from H$1 to H$2, which may create an unexpected hierarchy')
       .replace(/^(\d+) 行$/, '$1 lines')
       .replace(/^(\d+) 字符$/, '$1 characters')
       .replace(/^第 (\d+) 行$/, 'Line $1')
