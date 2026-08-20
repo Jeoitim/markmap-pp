@@ -572,31 +572,53 @@ function wireMermaidPreviewAction(button: HTMLButtonElement, action: () => void)
 }
 
 function positionMarkmapMermaidPreview(pre: HTMLElement, preview: HTMLElement) {
-  if (!pre.isConnected) {
-    preview.remove()
-    return false
-  }
+  // Markmap may replace the foreignObject during a transition. Keep the old
+  // overlay alive until hydration rebinds it to the replacement node.
+  if (!pre.isConnected) return true
   const rect = pre.getBoundingClientRect()
   const visible = rect.width > 0 && rect.height > 0
-  preview.style.display = visible ? 'block' : 'none'
+  preview.style.visibility = visible ? 'visible' : 'hidden'
   if (!visible) return true
   const hostRect = preview.parentElement?.getBoundingClientRect()
-  preview.style.left = `${rect.left - (hostRect?.left || 0)}px`
-  preview.style.top = `${rect.top - (hostRect?.top || 0)}px`
-  preview.style.width = `${rect.width}px`
-  preview.style.height = `${Math.max(rect.height, 86)}px`
+  const left = rect.left - (hostRect?.left || 0)
+  const top = rect.top - (hostRect?.top || 0)
+  const transform = `translate3d(${left}px, ${top}px, 0)`
+  const width = `${rect.width}px`
+  const height = `${Math.max(rect.height, 86)}px`
+  if (preview.style.transform !== transform) preview.style.transform = transform
+  if (preview.style.width !== width) preview.style.width = width
+  if (preview.style.height !== height) preview.style.height = height
   return true
 }
 
-function createMarkmapMermaidPreview(svg: SVGSVGElement, pre: HTMLElement, source: string, svgMarkup: string) {
+function updateMarkmapMermaidPreview(preview: HTMLElement, pre: HTMLElement, source: string, svgMarkup: string, theme: 'dark' | 'default') {
+  const diagram = preview.querySelector<HTMLElement>('.markmap-mermaid-diagram')
+  if (!diagram) return
+  const contentChanged = preview.dataset.mermaidSource !== source || preview.dataset.mermaidTheme !== theme
+  if (contentChanged) diagram.innerHTML = svgMarkup
+  preview.dataset.mermaidSource = source
+  preview.dataset.mermaidTheme = theme
+  preview.dataset.mermaidReady = 'true'
+  pre.classList.remove('markmap-mermaid-error')
+  pre.removeAttribute('title')
+  pre.style.visibility = 'hidden'
+  pre.setAttribute(MARKMAP_MERMAID_HIDDEN_ATTRIBUTE, 'true')
+  mermaidPreviewTargets.set(preview, pre)
+  positionMarkmapMermaidPreview(pre, preview)
+}
+
+function createMarkmapMermaidPreview(svg: SVGSVGElement, pre: HTMLElement, source: string, svgMarkup: string, theme: 'dark' | 'default', key: string) {
   const doc = pre.ownerDocument
   const preview = createXhtmlElement<HTMLDivElement>(doc, 'div')
   preview.className = `${MARKMAP_MERMAID_PREVIEW_CLASS} ${MARKMAP_MERMAID_OVERLAY_CLASS}`
   preview.dataset.markmapMermaidOwner = markmapMermaidOwner(svg)
-  preview.dataset.mermaidSource = source
+  preview.dataset.markmapMermaidKey = key
   preview.style.position = 'absolute'
+  preview.style.left = '0'
+  preview.style.top = '0'
   preview.style.boxSizing = 'border-box'
   preview.style.margin = '0'
+  preview.style.visibility = 'hidden'
 
   const header = createXhtmlElement<HTMLDivElement>(doc, 'div')
   header.className = 'markmap-mermaid-header'
@@ -621,40 +643,68 @@ function createMarkmapMermaidPreview(svg: SVGSVGElement, pre: HTMLElement, sourc
 
   const diagram = createXhtmlElement<HTMLDivElement>(doc, 'div')
   diagram.className = 'markmap-mermaid-diagram'
-  diagram.innerHTML = svgMarkup
   preview.append(header, diagram)
   const host = svg.parentElement || doc.body
   host.append(preview)
-  pre.style.visibility = 'hidden'
-  pre.setAttribute(MARKMAP_MERMAID_HIDDEN_ATTRIBUTE, 'true')
-  mermaidPreviewTargets.set(preview, pre)
-  positionMarkmapMermaidPreview(pre, preview)
+  updateMarkmapMermaidPreview(preview, pre, source, svgMarkup, theme)
   return preview
 }
 
 async function hydrateMarkmapMermaidPreviews(svg: SVGSVGElement, theme: 'dark' | 'default', disposed: () => boolean) {
-  markmapMermaidOverlays(svg).forEach((overlay) => overlay.remove())
   const rawBlocks = Array.from(svg.querySelectorAll<HTMLElement>('pre > code.language-mermaid')).map((code, index) => ({
     code,
     pre: code.parentElement as HTMLElement,
     index,
   }))
-  const jobs = rawBlocks.map(async ({ code, pre, index }) => {
+  const blocks = rawBlocks.map(({ code, pre, index }) => {
       const source = mermaidSourceFromCode(code)
-      if (!source.trim()) return
-      const nodePath = code.closest('g.markmap-node')?.getAttribute('data-path') || 'root'
+      const node = code.closest('g.markmap-node')
+      const nodePath = node?.getAttribute('data-path') || 'root'
+      const nodeMermaidIndex = node ? Array.from(node.querySelectorAll('pre > code.language-mermaid')).indexOf(code) : index
+      return { code, pre, source, nodePath, key: `${nodePath}:${nodeMermaidIndex}` }
+    }).filter((block) => block.source.trim())
+  const blocksByKey = new Map(blocks.map((block) => [block.key, block]))
+  const overlays = markmapMermaidOverlays(svg)
+  const activeKeys = new Set(blocks.map((block) => block.key))
+  overlays.forEach((overlay) => {
+    const key = overlay.dataset.markmapMermaidKey
+    const block = key ? blocksByKey.get(key) : undefined
+    if (!block) {
+      overlay.remove()
+      return
+    }
+    // Rebind before awaiting Mermaid. This closes the one-frame gap where the
+    // old pre has been replaced but the new SVG is still being rendered.
+    mermaidPreviewTargets.set(overlay, block.pre)
+    block.pre.style.visibility = 'hidden'
+    block.pre.setAttribute(MARKMAP_MERMAID_HIDDEN_ATTRIBUTE, 'true')
+    positionMarkmapMermaidPreview(block.pre, overlay)
+  })
+  const jobs = blocks.map(async ({ pre, source, key }) => {
+      const existing = overlays.find((overlay) => overlay.dataset.markmapMermaidKey === key)
+      if (existing && existing.dataset.mermaidSource === source && existing.dataset.mermaidTheme === theme && existing.dataset.mermaidReady === 'true') return
       try {
-        const svgMarkup = await renderMermaidSvg(source, mermaidRenderId(`${nodePath}:${index}:${source}`), theme)
+        const svgMarkup = await renderMermaidSvg(source, mermaidRenderId(`${key}:${source}`), theme)
         if (disposed() || !pre.isConnected) return
-        createMarkmapMermaidPreview(svg, pre, source, svgMarkup)
+        const current = markmapMermaidOverlays(svg).find((overlay) => overlay.dataset.markmapMermaidKey === key)
+        if (current) updateMarkmapMermaidPreview(current, pre, source, svgMarkup, theme)
+        else createMarkmapMermaidPreview(svg, pre, source, svgMarkup, theme, key)
       } catch {
         if (!disposed() && pre.isConnected) {
+          const current = markmapMermaidOverlays(svg).find((overlay) => overlay.dataset.markmapMermaidKey === key)
+          current?.remove()
+          pre.style.visibility = ''
+          pre.removeAttribute(MARKMAP_MERMAID_HIDDEN_ATTRIBUTE)
           pre.classList.add('markmap-mermaid-error')
           pre.title = 'Mermaid 图表语法无法渲染'
         }
       }
     })
   await Promise.all(jobs)
+  // Remove overlays whose source node no longer exists after hydration settles.
+  markmapMermaidOverlays(svg).forEach((overlay) => {
+    if (!activeKeys.has(overlay.dataset.markmapMermaidKey || '')) overlay.remove()
+  })
 }
 
 interface MermaidPreviewViewerState {
@@ -3437,7 +3487,8 @@ export default function MarkmapHooks() {
     const svg = svgRef.current
     if (!mm || !svg) return
     let disposed = false
-    const trackedImages: HTMLImageElement[] = []
+    const trackedImages: Array<{ image: HTMLImageElement; onLoad: () => void }> = []
+    const relayoutedImageSources = new Set<string>()
     const scheduleRelayout = () => {
       if (disposed) return
       if (imageRelayoutTimerRef.current !== null) window.clearTimeout(imageRelayoutTimerRef.current)
@@ -3453,18 +3504,24 @@ export default function MarkmapHooks() {
       await mm.setData(documentRenderConfig.root, viewOptions(effectiveMarkmapOptions))
       if (disposed) return
       svg.querySelectorAll('img').forEach((image) => {
-        if (!image.complete) {
-          trackedImages.push(image)
-          image.addEventListener('load', scheduleRelayout, { once: true })
-          image.addEventListener('error', scheduleRelayout, { once: true })
+        if (image.complete) return
+        const source = image.currentSrc || image.src
+        if (!source || relayoutedImageSources.has(source)) return
+        const onLoad = () => {
+          if (relayoutedImageSources.has(source)) return
+          relayoutedImageSources.add(source)
+          scheduleRelayout()
         }
+        trackedImages.push({ image, onLoad })
+        // A failed image must not trigger setData: the next render creates a
+        // new failed image and would otherwise start an endless relayout loop.
+        image.addEventListener('load', onLoad, { once: true })
       })
     })()
     return () => {
       disposed = true
-      trackedImages.forEach((image) => {
-        image.removeEventListener('load', scheduleRelayout)
-        image.removeEventListener('error', scheduleRelayout)
+      trackedImages.forEach(({ image, onLoad }) => {
+        image.removeEventListener('load', onLoad)
       })
       if (imageRelayoutTimerRef.current !== null) {
         window.clearTimeout(imageRelayoutTimerRef.current)

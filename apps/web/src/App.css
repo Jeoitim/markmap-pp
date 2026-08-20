@@ -495,7 +495,7 @@ svg { flex: 0 0 auto; }
 .standalone-mermaid-error, .standalone-mermaid-pending { display: inline-flex; align-items: center; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb,var(--panel) 88%,transparent); }
 .standalone-mermaid-error { color: var(--danger); }
 .standalone-mermaid-error svg { width: 17px; height: 17px; flex: 0 0 auto; }
-.markmap-mermaid-preview { position: absolute; z-index: 4; display: block; width: min(100%, 420px); max-width: 100%; margin: .45em 0; overflow: hidden; border: 1px solid color-mix(in srgb,var(--border) 86%,transparent); border-radius: 8px; background: color-mix(in srgb,var(--markmap-code-bg, var(--panel-soft)) 86%,var(--panel)); pointer-events: auto; }
+.markmap-mermaid-preview { position: absolute; z-index: 4; display: block; width: min(100%, 420px); max-width: 100%; margin: .45em 0; overflow: hidden; border: 1px solid color-mix(in srgb,var(--border) 86%,transparent); border-radius: 8px; background: color-mix(in srgb,var(--markmap-code-bg, var(--panel-soft)) 86%,var(--panel)); pointer-events: auto; will-change: transform; backface-visibility: hidden; }
 .markmap-mermaid-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 0 6px 0 9px; border-bottom: 1px solid color-mix(in srgb,var(--border) 80%,transparent); color: var(--muted); font: 600 10px/1 "JetBrains Mono Variable",monospace; }
 .markmap-mermaid-actions { display: inline-flex; gap: 2px; }
 .markmap-mermaid-actions button { width: 24px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; color: var(--muted); background: transparent; font: 14px/1 sans-serif; cursor: pointer; }
