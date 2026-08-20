@@ -165,12 +165,57 @@ svg { flex: 0 0 auto; }
 .editor-view-tabs button.active::after { content: ''; position: absolute; left: 7px; right: 7px; bottom: 0; height: 2px; border-radius: 2px; background: var(--accent); }
 .editor-view-tabs button > svg { width: 14px; }
 .editor-view-tabs button > b { min-width: 16px; height: 16px; display: grid; place-items: center; padding: 0 4px; border-radius: 8px; color: #fff; background: #d8872d; font-size: 9px; }
+.document-editor-mode-tabs { height: 28px; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-soft); }
+.document-editor-mode-tabs button { min-width: 42px; height: 22px; padding: 0 8px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 10px; cursor: pointer; }
+.document-editor-mode-tabs button.active { color: var(--text); background: var(--panel); box-shadow: 0 1px 4px #0b0d1312; }
+.document-editor-mode-tabs button:disabled { opacity: .45; cursor: not-allowed; }
 .code-editor { min-height: 0; overflow: hidden; background: var(--editor-bg); }
 .code-editor .cm-editor { height: 100%; }
 .code-editor .cm-scroller { scrollbar-color: color-mix(in srgb,var(--muted) 55%,transparent) transparent; scrollbar-width: thin; }
 .code-editor .cm-scroller::-webkit-scrollbar { width: 10px; height: 10px; }
 .code-editor .cm-scroller::-webkit-scrollbar-track { background: transparent; }
 .code-editor .cm-scroller::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 10px; background: color-mix(in srgb,var(--muted) 55%,transparent); background-clip: padding-box; }
+.visual-markdown-editor { min-height: 0; overflow: hidden; background: var(--editor-bg); color: var(--text); }
+.visual-markdown-scroll { height: 100%; overflow: auto; scrollbar-color: color-mix(in srgb,var(--muted) 55%,transparent) transparent; scrollbar-width: thin; }
+.visual-markdown-surface { width: min(100%, 920px); min-height: 100%; box-sizing: border-box; margin: 0 auto; padding: 34px 52px 70px; font-family: var(--visual-editor-font-family); font-size: var(--visual-editor-font-size); font-weight: var(--visual-editor-font-weight); line-height: 1.75; }
+.visual-markdown-content { min-height: 260px; }
+.visual-markdown-content .milkdown { min-height: 260px; outline: 0; }
+.visual-markdown-content .ProseMirror { min-height: 260px; outline: 0; white-space: pre-wrap; word-wrap: break-word; caret-color: var(--accent); }
+.visual-markdown-content .ProseMirror:focus { outline: 0; }
+.visual-markdown-content .ProseMirror > :first-child { margin-top: 0; }
+.visual-markdown-content .ProseMirror > :last-child { margin-bottom: 0; }
+.visual-markdown-content h1, .visual-markdown-content h2, .visual-markdown-content h3, .visual-markdown-content h4, .visual-markdown-content h5, .visual-markdown-content h6 { color: var(--text); font-weight: 750; line-height: 1.25; letter-spacing: -.025em; }
+.visual-markdown-content h1 { margin: 0 0 20px; font-size: 2em; }
+.visual-markdown-content h2 { margin: 30px 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--border); font-size: 1.45em; }
+.visual-markdown-content h3 { margin: 24px 0 10px; font-size: 1.2em; }
+.visual-markdown-content h4, .visual-markdown-content h5, .visual-markdown-content h6 { margin: 20px 0 8px; font-size: 1em; }
+.visual-markdown-content p { margin: 0 0 15px; color: var(--text); }
+.visual-markdown-content strong { font-weight: 760; }
+.visual-markdown-content em { font-style: italic; }
+.visual-markdown-content del { opacity: .72; }
+.visual-markdown-content a { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in srgb,var(--accent) 45%,transparent); text-underline-offset: 3px; }
+.visual-markdown-content ul, .visual-markdown-content ol { margin: 0 0 15px; padding-left: 1.7em; }
+.visual-markdown-content li { padding-left: .2em; }
+.visual-markdown-content li > p { margin-bottom: 5px; }
+.visual-markdown-content blockquote { margin: 18px 0; padding: 8px 18px; border-left: 3px solid color-mix(in srgb,var(--accent) 60%,var(--border)); color: var(--muted); background: color-mix(in srgb,var(--accent) 5%,transparent); }
+.visual-markdown-content blockquote p { color: inherit; }
+.visual-markdown-content code { padding: .13em .35em; border: 1px solid color-mix(in srgb,var(--border) 75%,transparent); border-radius: 5px; color: var(--accent); background: color-mix(in srgb,var(--editor-bg) 65%,var(--panel)); font: .88em "JetBrains Mono Variable", monospace; }
+.visual-markdown-content pre { margin: 18px 0; padding: 15px 17px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: color-mix(in srgb,var(--editor-bg) 76%,#000); font: .88em/1.65 "JetBrains Mono Variable", monospace; }
+.visual-markdown-content pre code { padding: 0; border: 0; color: inherit; background: transparent; font: inherit; }
+.visual-markdown-content hr { margin: 25px 0; border: 0; border-top: 1px solid var(--border); }
+.visual-markdown-content img { display: block; max-width: 100%; height: auto; margin: 18px 0; border-radius: 8px; }
+.visual-markdown-content table { width: 100%; margin: 18px 0; border-collapse: collapse; font-size: .94em; }
+.visual-markdown-content th, .visual-markdown-content td { padding: 8px 10px; border: 1px solid var(--border); text-align: left; }
+.visual-markdown-content th { color: var(--text); background: color-mix(in srgb,var(--accent) 6%,var(--panel)); font-weight: 700; }
+.visual-markdown-content li[data-item-type="task"] { position: relative; list-style: none; margin-left: -1.45em; padding-left: 1.6em; }
+.visual-markdown-content li[data-item-type="task"]::before { content: '☐'; position: absolute; left: .05em; top: .05em; color: var(--muted); font-size: 1.05em; line-height: 1.5; }
+.visual-markdown-content li[data-item-type="task"][data-checked="true"]::before { content: '☑'; color: var(--accent); }
+.visual-frontmatter { margin: 0 0 28px; border: 1px solid color-mix(in srgb,var(--accent) 26%,var(--border)); border-radius: 10px; background: color-mix(in srgb,var(--accent) 4%,var(--panel)); }
+.visual-frontmatter-header { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; border-bottom: 1px solid color-mix(in srgb,var(--accent) 18%,var(--border)); color: var(--text); font-size: 11px; font-weight: 700; }
+.visual-frontmatter-header small { color: var(--muted); font-size: 9px; font-weight: 450; }
+.visual-frontmatter textarea { display: block; width: 100%; min-height: 104px; box-sizing: border-box; resize: vertical; padding: 11px 12px; border: 0; border-radius: 0 0 10px 10px; outline: 0; color: var(--text); background: transparent; font: 12px/1.6 "JetBrains Mono Variable", monospace; }
+.visual-frontmatter textarea:focus { box-shadow: inset 0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent); }
+.visual-markdown-loading { color: var(--muted); font-size: 11px; }
 .agent-workspace { position: relative; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--editor-bg); }
 .agent-toolbar { flex: 0 0 45px; height: 45px; display: flex; align-items: center; gap: 8px; padding: 0 11px 0 13px; border-bottom: 1px solid var(--border); background: var(--panel-soft); }
 .agent-toolbar > span { min-width: 0; overflow: hidden; flex: 1; color: var(--muted); font: 10px "JetBrains Mono Variable", monospace; text-overflow: ellipsis; white-space: nowrap; }
@@ -985,6 +1030,9 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
   .editor-view-tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
   .editor-view-tabs::-webkit-scrollbar { display: none; }
   .editor-view-tabs button { flex: 0 0 auto; white-space: nowrap; padding: 0 6px; gap: 4px; font-size: 11px; }
+  .document-editor-mode-tabs { flex: 0 0 auto; }
+  .document-editor-mode-tabs button { min-width: 38px; padding: 0 6px; }
+  .visual-markdown-surface { padding: 24px 22px 52px; }
   .mobile-pane-switch { flex: 0 0 auto; white-space: nowrap; }
   .editor-status { gap: 7px; padding: 0 8px; overflow: hidden; }
   .editor-status > span { flex: 0 0 auto; white-space: nowrap; }

@@ -12,6 +12,7 @@ import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
+import VisualMarkdownEditor from './visual-markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { mermaidRenderId, mermaidViewBoxSize, renderMermaidSvg } from './mermaid-renderer'
 import { inspectMermaid } from './mermaid-lint'
@@ -70,6 +71,7 @@ type ExportTextTheme = 'auto' | 'light' | 'dark'
 type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 type EditorView = 'markdown' | 'repository' | 'agent'
 type DocumentMode = 'markdown' | 'mermaid'
+type DocumentEditorMode = 'source' | 'visual'
 
 const MERMAID_TEXT_TARGET_SELECTOR = 'text, tspan, foreignObject, .label, .nodeLabel, [contenteditable="true"]'
 
@@ -840,6 +842,7 @@ interface DocumentTab {
   name: string
   content: string
   mode: DocumentMode
+  editorMode: DocumentEditorMode
   repositoryPath: string | null
   localRepositoryId: string | null
   localPath: string | null
@@ -848,7 +851,7 @@ interface DocumentTab {
   desktopPath: string | null
 }
 
-type DocumentTabPersistence = Pick<DocumentTab, 'savedContent' | 'desktopFileId' | 'desktopPath'> & { mode?: DocumentMode }
+type DocumentTabPersistence = Pick<DocumentTab, 'savedContent' | 'desktopFileId' | 'desktopPath'> & { mode?: DocumentMode; editorMode?: DocumentEditorMode }
 
 let documentTabSequence = 0
 
@@ -860,6 +863,7 @@ function createDocumentTab(name: string, content: string, sourceKey?: string, re
     name,
     content,
     mode: persistence.mode || documentModeForName(name),
+    editorMode: persistence.editorMode || 'source',
     repositoryPath,
     localRepositoryId,
     localPath,
@@ -1039,6 +1043,7 @@ export default function MarkmapHooks() {
   const activeDocumentTab = documentTabs.find((tab) => tab.id === activeTabId) || documentTabs[0]
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
   const [editorView, setEditorView] = useState<EditorView>(() => desktopWorkspaceSessionRef.current?.editorView || 'markdown')
+  const [documentEditorMode, setDocumentEditorMode] = useState<DocumentEditorMode>(() => documentTabs[0].editorMode)
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
   const [settings, setSettings] = useState(() => initialSettingsRef.current)
   const [dark, setDark] = useState(() => shouldUseDarkTheme(initialSettingsRef.current.previewBackgroundColor))
@@ -1396,6 +1401,7 @@ export default function MarkmapHooks() {
     setRenderedMarkdown(tab.content)
     setFileName(tab.name)
     setDocumentMode(tab.mode)
+    setDocumentEditorMode(tab.mode === 'markdown' ? tab.editorMode : 'source')
     setActiveRepoPath(tab.repositoryPath)
     setActiveLocalFile(tab.localRepositoryId && tab.localPath ? { repositoryId: tab.localRepositoryId, path: tab.localPath } : null)
     setSaveState('saved')
@@ -1410,6 +1416,7 @@ export default function MarkmapHooks() {
     setMarkdown('')
     setRenderedMarkdown('')
     setFileName('')
+    setDocumentEditorMode('source')
     setActiveRepoPath(null)
     setActiveLocalFile(null)
     setCanUndo(false)
@@ -1419,12 +1426,12 @@ export default function MarkmapHooks() {
 
   const persistActiveDocumentTab = useCallback(() => {
     const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId
-      ? { ...tab, name: fileName, content: markdownRef.current, mode: documentMode, repositoryPath: activeRepoPath, localRepositoryId: activeLocalFile?.repositoryId || null, localPath: activeLocalFile?.path || null }
+      ? { ...tab, name: fileName, content: markdownRef.current, mode: documentMode, editorMode: documentEditorMode, repositoryPath: activeRepoPath, localRepositoryId: activeLocalFile?.repositoryId || null, localPath: activeLocalFile?.path || null }
       : tab)
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
     return nextTabs
-  }, [activeLocalFile, activeRepoPath, activeTabId, documentMode, fileName])
+  }, [activeLocalFile, activeRepoPath, activeTabId, documentEditorMode, documentMode, fileName])
 
   const markActiveDocumentSaved = useCallback((content: string) => {
     const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId ? { ...tab, content, savedContent: content } : tab)
@@ -1541,15 +1548,24 @@ export default function MarkmapHooks() {
     setSaveState('saving')
     setMarkdown(value)
   }, [])
+  const changeDocumentEditorMode = useCallback((mode: DocumentEditorMode) => {
+    if (mode === 'visual' && documentMode !== 'markdown') return
+    if (mode === documentEditorMode) return
+    setDocumentEditorMode(mode)
+    const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId ? { ...tab, editorMode: mode } : tab)
+    documentTabsRef.current = nextTabs
+    setDocumentTabs(nextTabs)
+  }, [activeTabId, documentEditorMode, documentMode])
   const setActiveDocumentMode = useCallback((mode: DocumentMode) => {
     const active = documentTabsRef.current.find((tab) => tab.id === activeTabId)
     if (!active || mode === documentMode) return
     const canRenameStandalone = !active.desktopFileId && !active.repositoryPath && !active.localPath
     const nextName = canRenameStandalone ? documentNameForMode(fileName, mode) : fileName
-    const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId ? { ...tab, mode, name: nextName } : tab)
+    const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId ? { ...tab, mode, name: nextName, editorMode: mode === 'mermaid' ? 'source' : tab.editorMode } : tab)
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
     setDocumentMode(mode)
+    if (mode === 'mermaid') setDocumentEditorMode('source')
     if (nextName !== fileName) setFileName(nextName)
     setStandaloneMermaidViewer(null)
     setMermaidViewer(null)
@@ -4344,10 +4360,17 @@ ${documentRenderConfig.style}
       <section ref={workspaceRef} className={`workspace mobile-${mobilePane}`} style={{ gridTemplateColumns: gridColumns }}>
         <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' || editorView === 'agent' ? 'repository-view' : ''}`} aria-label="编辑器">
           {!editorCollapsed && <>
-            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><Icon name="svg-editor" />{t('编辑器')}</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title={t(documentMode === 'mermaid' ? '切换到 Mermaid SVG 预览' : '切换到预览')}><Icon name={documentMode === 'mermaid' ? 'mermaid-svg' : 'map'} /><span>{t('预览')}</span></button></div>
+            <div className="pane-header">
+              <div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><Icon name="svg-editor" />{t('编辑器')}</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div>
+              {editorView === 'markdown' && <div className="document-editor-mode-tabs" role="tablist" aria-label="Markdown 编辑模式">
+                <button type="button" className={documentEditorMode === 'source' ? 'active' : ''} role="tab" aria-selected={documentEditorMode === 'source'} onClick={() => changeDocumentEditorMode('source')}>源码</button>
+                <button type="button" className={documentEditorMode === 'visual' ? 'active' : ''} role="tab" aria-selected={documentEditorMode === 'visual'} onClick={() => changeDocumentEditorMode('visual')} disabled={documentMode !== 'markdown'}>视觉</button>
+              </div>}
+              <button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title={t(documentMode === 'mermaid' ? '切换到 Mermaid SVG 预览' : '切换到预览')}><Icon name={documentMode === 'mermaid' ? 'mermaid-svg' : 'map'} /><span>{t('预览')}</span></button>
+            </div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-              <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
+              {documentEditorMode === 'visual' ? <VisualMarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
               <footer className="editor-status">
                 <button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button>
                 <span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span>
@@ -4360,7 +4383,7 @@ ${documentRenderConfig.style}
                   <button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button>
                 </span>
               </footer>
-              {showDiagnostics && <div className="diagnostics-popover"><header><strong>{t('语法检查')}</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label={t('关闭问题列表')}><Icon name="x" /></button></header>{diagnostics.length ? diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; const lineLabel = locale === 'en-US' ? `Line ${line}` : `第 ${line} 行`; const jumpLabel = locale === 'en-US' ? `Jump to line ${line}` : `跳转到第 ${line} 行`; return <button key={`${item.from}-${index}`} onClick={() => { markdownEditorRef.current?.revealLine(line); setShowDiagnostics(false) }} title={jumpLabel}><Icon name="warning" /><span><strong>{lineLabel}</strong><small>{item.message}</small></span></button> }) : <div className="diagnostics-empty"><Icon name="check" /><span>{t('没有发现语法错误')}</span></div>}</div>}
+              {showDiagnostics && <div className="diagnostics-popover"><header><strong>{t('语法检查')}</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label={t('关闭问题列表')}><Icon name="x" /></button></header>{diagnostics.length ? diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; const lineLabel = locale === 'en-US' ? `Line ${line}` : `第 ${line} 行`; const jumpLabel = locale === 'en-US' ? `Jump to line ${line}` : `跳转到第 ${line} 行`; return <button key={`${item.from}-${index}`} onClick={() => { if (documentEditorMode !== 'source') changeDocumentEditorMode('source'); window.setTimeout(() => markdownEditorRef.current?.revealLine(line), 0); setShowDiagnostics(false) }} title={jumpLabel}><Icon name="warning" /><span><strong>{lineLabel}</strong><small>{item.message}</small></span></button> }) : <div className="diagnostics-empty"><Icon name="check" /><span>{t('没有发现语法错误')}</span></div>}</div>}
             </> : editorView === 'agent' ? <AgentPanel workspaceKey={agentWorkspaceKey} workspaceLabel={agentWorkspaceLabel} workspaceKind={agentWorkspaceKind} workspaceLocator={agentWorkspace.locator} onSelectWorkspace={selectAgentWorkspace} repositoryScopeEnabled={!agentUsesStandaloneFile} canCreateFiles={!agentUsesStandaloneFile} canCommit={!agentUsesStandaloneFile && (!agentUsesLocalRepository || Boolean(agentLocalRepository?.isGitRepository))} files={agentFiles} activePath={agentActivePath} onApplyChange={agentApplyChange} onCreateFile={agentCreateFile} onOpenFile={(path) => { if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else if (!agentUsesStandaloneFile) { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentCommit} getGitContext={agentGitContext} remoteFileCount={agentFileCount} remotePaths={agentPaths} repositoryBranch={agentUsesLocalRepository && agentLocalRepository?.isGitRepository ? agentLocalRepository.branch : agentUsesStandaloneFile ? undefined : githubConfig?.branch} onLoadAllFiles={loadAgentFiles} loadingFiles={agentUsesStandaloneFile ? false : agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize, fontFamily: previewFonts[settings.editorFont].family, fontWeight: settings.editorWeight }}>
               {repositorySource === 'local' ? !activeLocalRepository ? <div className="repository-unbound"><Icon name="folder" /><strong>{t('尚未打开本地文件夹')}</strong><span>{desktopApi() ? t('Git 仓库和普通文件夹都可以打开并编辑 Markdown。') : t('网页端不能直接访问本地文件夹，请使用桌面应用。')}</span><button onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}>{t('管理本地文件夹')}</button></div> : <>
                 <div className="repository-toolbar local-repository-toolbar"><div><strong>{activeLocalRepository.name}</strong><small>{activeLocalRepository.isGitRepository ? `${activeLocalRepository.branch} · ${activeLocalRepository.remoteLabel || '仅本地'} · ${activeLocalRepository.head || '暂无提交'}` : '普通本地文件夹 · 自动保存'}</small></div>{activeLocalRepository.isGitRepository && <button className="discard-button" title="放弃所有未提交的 Markdown 修改" onClick={() => void discardLocalRepositoryChanges()} disabled={localGitBusy || !activeLocalRepository.markdownChangedCount}><Icon name="undo" className={localGitActivity === 'discard' ? 'loading-icon' : undefined} /><span>放弃</span></button>}<button className="repository-icon-button" title="文件夹设置" aria-label="文件夹设置" onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}><i><Icon name="settings" /></i></button><button className="repository-icon-button" title={activeLocalRepository.isGitRepository ? '检查本地与远端状态' : '刷新文件树'} aria-label={activeLocalRepository.isGitRepository ? '检查本地与远端状态' : '刷新文件树'} onClick={() => void refreshLocalGitState()} disabled={localGitBusy}><i><Icon name="refresh" className={localGitActivity === 'refresh' ? 'loading-icon' : undefined} /></i></button>{activeLocalRepository.isGitRepository && <button className={`repository-icon-button local-source-action ${localRepositoryAction}`} title={localRepositoryActionTitle} aria-label={localRepositoryActionTitle} onClick={() => { if (localRepositoryAction === 'sync') void syncLocalRepository(); else if (localRepositoryAction === 'push') void pushLocalRepository(); else if (localRepositoryAction === 'commit') void commitLocalRepository() }} disabled={localGitBusy || localRepositoryAction === 'clean' || (localRepositoryAction === 'sync' && activeTabUnsaved)}><i><Icon name={localRepositoryAction === 'sync' ? 'download' : localRepositoryAction === 'push' ? 'sync' : 'check'} className={localGitActivity === localRepositoryAction ? 'loading-icon' : undefined} /></i>{localRepositoryAction === 'sync' && <b>{activeLocalRepository.behindCount}</b>}{localRepositoryAction === 'push' && activeLocalRepository.aheadCount > 0 && <b>{activeLocalRepository.aheadCount}</b>}</button>}</div>
