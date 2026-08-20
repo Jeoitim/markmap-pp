@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
+import { createPortal } from 'react-dom'
 import DOMPurify from 'dompurify'
 import katex from 'katex'
 import { defaultOptions, deriveOptions, Markmap, toMarkdown, Transformer } from 'markmap-plus'
@@ -128,6 +129,49 @@ type TextSelectionTarget = ({ source: 'editor' } & MarkdownEditorSelection) | Vi
   nodePath: string
   contentElement: HTMLElement
   anchor?: HTMLAnchorElement
+}
+
+function RepositoryContextMenuPortal({ x, y, children }: { x: number; y: number; children: ReactNode }) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const [style, setStyle] = useState<CSSProperties>({ left: x, top: y, visibility: 'hidden' })
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const margin = 8
+    const updatePosition = () => {
+      const rect = menu.getBoundingClientRect()
+      const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+      const viewportHeight = document.documentElement.clientHeight || window.innerHeight
+      const maxLeft = Math.max(margin, viewportWidth - rect.width - margin)
+      const maxTop = Math.max(margin, viewportHeight - rect.height - margin)
+      const left = Math.min(Math.max(x, margin), maxLeft)
+      const top = Math.min(Math.max(y, margin), maxTop)
+      setStyle((current) => current.left === left && current.top === top && current.visibility === 'visible'
+        ? current
+        : { left, top, visibility: 'visible' })
+    }
+    updatePosition()
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition)
+    resizeObserver?.observe(menu)
+    window.addEventListener('resize', updatePosition)
+    window.visualViewport?.addEventListener('resize', updatePosition)
+    window.visualViewport?.addEventListener('scroll', updatePosition)
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updatePosition)
+      window.visualViewport?.removeEventListener('resize', updatePosition)
+      window.visualViewport?.removeEventListener('scroll', updatePosition)
+    }
+  }, [x, y])
+
+  if (typeof document === 'undefined') return null
+  return createPortal(
+    <div ref={menuRef} className="repository-context-menu" style={style} onPointerDown={(event) => event.stopPropagation()}>
+      {children}
+    </div>,
+    document.body,
+  )
 }
 
 interface PendingRepositoryNavigation {
@@ -2095,7 +2139,7 @@ export default function MarkmapHooks() {
 
   const openLocalRepositoryMenu = (event: React.MouseEvent, target: RepositoryTarget) => {
     event.preventDefault(); event.stopPropagation()
-    setLocalRepositoryMenu({ x: Math.min(event.clientX, window.innerWidth - 196), y: Math.min(event.clientY, window.innerHeight - 230), target })
+    setLocalRepositoryMenu({ x: event.clientX, y: event.clientY, target })
   }
 
   const startLocalRepositoryRename = (target: RepositoryTarget) => {
@@ -3032,7 +3076,7 @@ export default function MarkmapHooks() {
 
   const showRepositoryMenu = (x: number, y: number, target: RepositoryTarget) => {
     setRepositoryHistory(null)
-    setRepositoryMenu({ x: Math.max(8, Math.min(x, window.innerWidth - 190)), y: Math.max(8, Math.min(y, window.innerHeight - 290)), target })
+    setRepositoryMenu({ x, y, target })
   }
 
   const openRepositoryMenu = (event: React.MouseEvent, target: RepositoryTarget) => {
@@ -4616,7 +4660,7 @@ ${documentRenderConfig.style}
                   {localRepositoryGraphBranchesOpen && <div className="repository-graph-branches">{localRepositoryGraph.branches.length ? localRepositoryGraph.branches.map((branch) => <button className={branch.current ? 'active' : ''} key={`${branch.remote ? 'remote' : 'local'}:${branch.name}`} disabled={localGitBusy || localRepositoryGraph.loading} onClick={() => void switchLocalRepositoryBranch(branch.name)}><Icon name="branch" /><span>{branch.name}<em>{branch.remote ? '远程' : '本地'}</em></span><small>{branch.sha.slice(0, 7)}</small></button>) : <span>没有可用分支</span>}</div>}
                   {localRepositoryGraph.loading && !localRepositoryGraph.commits.length ? <div className="repository-graph-state"><Icon name="refresh" className="loading-icon" /><span>正在读取本地提交历史…</span></div> : localRepositoryGraph.commits.length ? <div className="repository-graph-list">{localRepositoryGraph.commits.map((commit) => <article className="repository-graph-commit local-graph-commit" key={commit.sha}><span className="repository-graph-rail"><i /></span><span className="repository-graph-commit-info"><strong title={commit.message}>{commit.message.split('\n')[0]}</strong>{commit.refs.length > 0 && <span className="local-commit-refs">{commit.refs.map((ref) => <b className={ref.includes('/') ? 'remote' : ''} key={ref}>{ref}</b>)}</span>}<small><code title={commit.sha}>{commit.sha.slice(0, 7)}</code><em> · {commit.author} · {formatCommitDate(commit.date)}</em></small></span></article>)}</div> : <div className="repository-graph-state"><Icon name="clock" /><span>没有找到提交记录</span></div>}
                 </div>}
-                {localRepositoryMenu && <div className="repository-context-menu" style={{ left: localRepositoryMenu.x, top: localRepositoryMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+                {localRepositoryMenu && <RepositoryContextMenuPortal x={localRepositoryMenu.x} y={localRepositoryMenu.y}>
                   <strong>{localRepositoryMenu.target.name}</strong>
                   {localRepositoryMenu.target.type === 'file' && <button disabled={localRepositoryMenu.target.path.endsWith('/') || activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus === 'D'} onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void openLocalRepositoryFile(activeLocalRepository.id, target.path) }}>{t('打开')}</button>}
                   {activeLocalRepository.isGitRepository && localRepositoryMenu.target.type === 'file' && <button disabled={['?', 'A'].includes(activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus || '')} title={['?', 'A'].includes(activeLocalRepository.files.find((file) => file.path === localRepositoryMenu.target.path)?.gitStatus || '') ? t('新增文件还没有提交历史') : t('查看该文件的历史提交')} onClick={() => { const menu = localRepositoryMenu; if (menu) void openLocalRepositoryHistory(menu.target, menu.x, menu.y) }}>{t('查看历史提交')}</button>}
@@ -4625,7 +4669,7 @@ ${documentRenderConfig.style}
                   {(localRepositoryMenu.target.type === 'folder' || localRepositoryMenu.target.type === 'root') && <><hr/><button disabled={!localRepositoryClipboard} onClick={() => { const folder = localRepositoryMenu.target.path; setLocalRepositoryMenu(null); void pasteLocalRepositoryClipboard(folder) }}>{t('粘贴')}{localRepositoryClipboard ? `“${localRepositoryClipboard.target.name}”` : ''}</button></>}
                   {localRepositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = localRepositoryMenu.target; setLocalRepositoryMenu(null); void removeLocalRepositoryTarget(target) }}>{t('删除')}</button></>}
                   {localRepositoryMenu.target.type === 'root' && <button onClick={() => { void navigator.clipboard.writeText(activeLocalRepository.root); setLocalRepositoryMenu(null); setLocalGitNotice(t('已复制文件夹路径')) }}>{t('复制文件夹路径')}</button>}
-                </div>}
+                </RepositoryContextMenuPortal>}
                 {localRepositoryHistory && <div className="repository-history-popover" style={{ left: localRepositoryHistory.x, top: localRepositoryHistory.y }} onPointerDown={(event) => event.stopPropagation()}>
                   <header><div><strong>文件历史</strong><small title={localRepositoryHistory.target.path}>{localRepositoryHistory.target.path}</small></div><button className="header-icon" aria-label="关闭历史记录" onClick={() => setLocalRepositoryHistory(null)}><Icon name="x" /></button></header>
                   {localRepositoryHistory.error && <div className="repository-history-error"><Icon name="warning" /><span>{localRepositoryHistory.error}</span></div>}
@@ -4655,14 +4699,14 @@ ${documentRenderConfig.style}
                   {repositoryGraphBranchesOpen && <div className="repository-graph-branches">{repositoryGraph.branches.length ? repositoryGraph.branches.map((branch) => <button className={branch.name === githubConfig.branch ? 'active' : ''} key={branch.name} disabled={githubBusy || repositoryGraph.loading} onClick={() => void switchRepositoryBranch(branch)}><Icon name="branch" /><span>{branch.name}</span><small>{branch.sha.slice(0, 7)}</small></button>) : <span>没有可用分支</span>}</div>}
                   {repositoryGraph.loading && !repositoryGraph.commits.length ? <div className="repository-graph-state"><Icon name="refresh" className="loading-icon" /><span>正在读取仓库提交历史…</span></div> : repositoryGraph.commits.length ? <div className="repository-graph-list">{repositoryGraph.commits.map((commit) => <button className={`repository-graph-commit ${repositoryCommitRef === commit.sha ? 'active' : ''}`} key={commit.sha} disabled={repositoryGraph.loading || githubBusy} onClick={() => void openRepositoryCommit(commit)}><span className="repository-graph-rail"><i /></span><span className="repository-graph-commit-info"><strong title={commit.message}>{commit.message.split('\n')[0]}</strong><small><code title={commit.sha}>{commit.sha.slice(0, 7)}</code><em> · {githubConfig.branch} · {commit.author} · {formatCommitDate(commit.date)}</em></small></span><Icon name="chevron-right" /></button>)}</div> : <div className="repository-graph-state"><Icon name="clock" /><span>没有找到仓库提交记录</span></div>}
                 </div>}
-                {repositoryMenu && <div className="repository-context-menu" style={{ left: repositoryMenu.x, top: repositoryMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+                {repositoryMenu && <RepositoryContextMenuPortal x={repositoryMenu.x} y={repositoryMenu.y}>
                   <strong>{repositoryMenu.target.name}</strong>
                   {repositoryMenu.target.type !== 'root' && <><button onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); startRepositoryRename(target) }}>{t('重命名')}</button><button onClick={() => { setRepositoryClipboard({ mode: 'copy', target: repositoryMenu.target }); setRepositoryMenu(null) }}>{t('复制')}</button><button onClick={() => { setRepositoryClipboard({ mode: 'cut', target: repositoryMenu.target }); setRepositoryMenu(null) }}>{t('剪切')}</button></>}
                   {repositoryMenu.target.type === 'file' && <button disabled={!repositoryMenuFile?.remote} title={repositoryMenuFile?.remote ? t('查看该文件的历史提交') : t('本地新增文件还没有远程提交记录')} onClick={() => { const menu = repositoryMenu; if (menu) void openRepositoryHistory(menu.target, menu.x, menu.y) }}>{t('查看历史提交')}</button>}
                   {repositoryMenu.target.type === 'file' && <button disabled={!repositoryMenuFile?.cached || repositoryMenuFile.cached.status === 'clean'} onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); void discardRepositoryFile(target) }}>{t('放弃该文件修改')}</button>}
                   {(repositoryMenu.target.type === 'folder' || repositoryMenu.target.type === 'root') && <><hr/><button disabled={!repositoryClipboard} onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void pasteRepositoryClipboard(folder) }}>{t('粘贴')}{repositoryClipboard ? `“${repositoryClipboard.target.name}”` : ''}</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); void createRepositoryFile(folder) }}>{t('新建 Markdown')}</button><button onClick={() => { const folder = repositoryMenu.target.path; setRepositoryMenu(null); createRepositoryFolder(folder) }}>{t('新建文件夹')}</button></>}
                   {repositoryMenu.target.type !== 'root' && <><hr/><button className="danger" onClick={() => { const target = repositoryMenu.target; setRepositoryMenu(null); void deleteRepositoryTarget(target) }}>{t('删除')}</button></>}
-                </div>}
+                </RepositoryContextMenuPortal>}
                 {repositoryHistory && <div className="repository-history-popover" style={{ left: repositoryHistory.x, top: repositoryHistory.y }} onPointerDown={(event) => event.stopPropagation()}>
                   <header><div><strong>文件历史</strong><small title={repositoryHistory.target.path}>{repositoryHistory.target.path}</small></div><button className="header-icon" aria-label="关闭历史记录" onClick={() => setRepositoryHistory(null)}><Icon name="x" /></button></header>
                   {repositoryHistory.error && <div className="repository-history-error"><Icon name="warning" /><span>{repositoryHistory.error}</span></div>}

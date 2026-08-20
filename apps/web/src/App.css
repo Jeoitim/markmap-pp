@@ -597,8 +597,12 @@ svg { flex: 0 0 auto; }
 .grab-zone span { width: 2px; height: 100%; background: var(--border); transition: .15s; }
 .grab-zone:hover span, .workspace.resizing .grab-zone span { background: var(--accent); }
 
-.panel-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: auto; padding: 20px; background: #14151b40; backdrop-filter: blur(2px); }
-.settings-panel { width: min(430px, 100%); max-width: 100%; max-height: calc(100dvh - 40px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 15px; background: var(--panel); box-shadow: 0 24px 70px #0b0d1338; animation: panel-in .16s ease-out; }
+.panel-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: auto; padding: 20px; background: #14151b40; backdrop-filter: blur(2px); -webkit-app-region: no-drag; }
+.settings-panel { width: min(430px, 100%); max-width: 100%; max-height: calc(100dvh - 40px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 15px; background: var(--panel); box-shadow: 0 24px 70px #0b0d1338; animation: panel-in .16s ease-out; -webkit-app-region: no-drag; }
+:root[data-desktop-platform='win32'] .panel-backdrop,
+:root[data-desktop-platform='darwin'] .panel-backdrop { padding: calc(64px + var(--native-titlebar-height, 0px) + 20px) 20px 20px; }
+:root[data-desktop-platform='win32'] .settings-panel,
+:root[data-desktop-platform='darwin'] .settings-panel { max-height: calc(100dvh - 104px - var(--native-titlebar-height, 0px)); }
 .settings-panel:focus { outline: none; }
 .settings-panel > header { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 17px 18px 14px; border-bottom: 1px solid var(--border); }
 .settings-panel > header > div { min-width: 0; display: grid; gap: 3px; }
@@ -827,7 +831,7 @@ svg { flex: 0 0 auto; }
 .repository-branch-button:hover { color: var(--text); background: color-mix(in srgb,var(--accent) 7%,transparent); }
 .repository-branch-button svg { display: block; width: 14px; height: 14px; margin: 0; }
 .repository-branch-button span { max-width: 100px; overflow: hidden; font: inherit; font-family: "JetBrains Mono Variable",monospace; text-overflow: ellipsis; white-space: nowrap; }
-.repository-context-menu { position: fixed; z-index: 160; width: 180px; max-height: calc(100dvh - 16px); overflow: auto; display: grid; padding: 6px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--panel); box-shadow: 0 14px 40px #090b1235; }
+.repository-context-menu { position: fixed; z-index: 160; width: 180px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; display: grid; padding: 6px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--panel); box-shadow: 0 14px 40px #090b1235; -webkit-app-region: no-drag; }
 .repository-context-menu strong { overflow: hidden; padding: 7px 8px 8px; color: var(--muted); font-size: max(12px, .86em); text-overflow: ellipsis; white-space: nowrap; }
 .repository-context-menu button { height: 32px; padding: 0 9px; border: 0; border-radius: 5px; text-align: left; color: var(--text); background: transparent; font-size: max(12px, .86em); cursor: pointer; }
 .repository-context-menu button:hover { background: var(--panel-soft); }
