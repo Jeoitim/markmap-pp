@@ -10,7 +10,7 @@ description: 按模块浏览 markmap++ 的使用、同步、Agent 与部署文�
 <div class="module-menu-grid">
   <a class="module-menu-card" href="../mind-map-usage/">
     <span class="module-menu-icon"><img src="https://api.iconify.design/simple-icons/markdown.svg?color=%237056e8" alt="" aria-hidden="true" /></span>
-    <span class="module-menu-copy"><strong>编辑与思维导图</strong><small>Markdown 编辑、节点操作、画布与主题设置</small></span>
+    <span class="module-menu-copy"><strong>编辑与思维导图</strong><small>源码 / 视觉编辑、Mermaid、节点操作、画布与主题设置</small></span>
     <span class="module-menu-arrow">↗</span>
   </a>
   <a class="module-menu-card" href="../agent/">
@@ -30,7 +30,7 @@ description: 按模块浏览 markmap++ 的使用、同步、Agent 与部署文�
   </a>
   <a class="module-menu-card" href="../api/">
     <span class="module-menu-icon"><img src="https://api.iconify.design/lucide/download.svg?color=%237056e8" alt="" aria-hidden="true" /></span>
-    <span class="module-menu-copy"><strong>导出、部署与开发</strong><small>导出格式、静态部署、构建和项目开发</small></span>
+    <span class="module-menu-copy"><strong>导出、部署与开发</strong><small>Markdown、Mermaid、PDF 导出、静态部署与项目开发</small></span>
     <span class="module-menu-arrow">↗</span>
   </a>
   <a class="module-menu-card" href="../installation/">

@@ -37,7 +37,7 @@ macOS packages are not built or published in GitHub Actions because the hosted m
 - The packaged renderer is loaded through the private `markmap://app/` protocol, which gives IndexedDB and local storage a stable origin across releases.
 - The renderer has no Node.js access. Context isolation, sandboxing, CSP, sender validation and Electron fuses are enabled; filesystem access goes through a narrow preload API.
 - Native Markdown open/save dialogs are wired into the existing import and export actions.
-- The workspace API can select a local folder, list Markdown files, and safely read/write files inside that folder. The UI for browsing this workspace can be added independently in the next iteration.
+- The local workspace UI lets users select a folder, browse its Markdown files, inspect Git status, open files in the shared editor, and safely read/write files inside that folder.
 - Update IPC and state handling remain disabled while `feedUrl` in `resources/update.json` is empty. Configure a signed update channel before enabling in-app updates for release packages.
 
 Local workspace selection is stored in Electron's per-user `userData/desktop-state.json`. Existing web cache, AI settings, conversations and drafts continue to use the renderer's IndexedDB/local storage under the stable desktop origin.

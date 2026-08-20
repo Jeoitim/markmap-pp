@@ -35,7 +35,7 @@ features:
       src: https://api.iconify.design/lucide/git-branch.svg?color=%237056e8
       alt: Mind-map workspace
     title: Browser-local workspace
-    details: Syntax highlighting, diagnostics, undo, themes and font settings keep drafts available after you leave the page.
+    details: Source / WYSIWYG visual editing, diagnostics, spell check, undo, themes and font settings keep drafts and mode preferences available after you leave the page.
   - icon:
       src: https://api.iconify.design/simple-icons/github.svg?color=%237056e8
       alt: GitHub sync
@@ -55,7 +55,7 @@ features:
       src: https://api.iconify.design/lucide/monitor-smartphone.svg?color=%237056e8
       alt: Desktop and mobile
     title: Desktop and mobile
-    details: The desktop app can resize and collapse the editor; mobile layouts switch between editing and preview.
+    details: The desktop app can resize and collapse the editor; mobile layouts keep the system selection bar and return to the editor when a repository file is tapped.
   - icon:
       src: https://api.iconify.design/lucide/folder-lock.svg?color=%237056e8
       alt: Local-first

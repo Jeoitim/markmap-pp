@@ -15,8 +15,11 @@ outline: deep
 | PNG | Lossless bitmap | Documents, presentations and social platforms |
 | JPEG | Smaller file | Quick sharing and previews |
 | HTML | Standalone page with vector display | Offline viewing and web archives |
+| Mermaid source | Keeps Mermaid code structure | Continue editing a standalone Mermaid document |
 
 PDF, SVG, PNG, JPEG and HTML are available. PDF is a static vector page; the web app opens the print dialog and the desktop app saves it directly. PNG and JPEG support a 1–4× render scale. SVG, PDF and HTML remain sharp because they use vector content.
+
+In Mermaid document mode, the export panel also offers Mermaid source (`.mmd`) plus SVG, PNG, JPEG and PDF. Mermaid PDF uses the current diagram size. Mermaid code-block previews only change the on-screen view; Markmap exports keep the original code block.
 
 ## GitHub Pages
 
@@ -52,7 +55,10 @@ markmap-pp/
 ├─ apps/
 │  ├─ web/                       # markmap++ React app
 │  │  └─ src/components/
-│  │     ├─ markdown-editor.tsx  # CodeMirror editor
+│  │     ├─ markdown-editor.tsx  # CodeMirror source editor
+│  │     ├─ visual-markdown-editor.tsx # WYSIWYG visual editor
+│  │     ├─ mermaid-renderer.ts  # Mermaid rendering and previews
+│  │     ├─ pdf-export.ts        # Static vector PDF export
 │  │     ├─ markdown-lint.ts     # Markdown checks
 │  │     ├─ github-sync.ts       # GitHub API and IndexedDB
 │  │     └─ markmap-hooks.tsx    # workspace and map interaction

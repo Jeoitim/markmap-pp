@@ -15,8 +15,11 @@ outline: deep
 | PNG      | 无损位图                 | 文档、演示文稿、社交平台 |
 | JPEG     | 文件较小                 | 快速分享和预览           |
 | HTML     | 独立网页，保留矢量显示   | 离线查看、网页归档       |
+| Mermaid 源文件 | 保留 Mermaid 代码结构 | 继续编辑独立 Mermaid 文档 |
 
 PDF、SVG、PNG、JPEG 和 HTML 均可导出。PDF 是静态矢量页面；网页端会打开打印对话框，桌面端可直接保存。PNG 和 JPEG 支持 1–4 倍渲染倍率。倍率越高，像素尺寸和文件体积越大。SVG、PDF 与 HTML 本身使用矢量内容，放大后仍保持清晰。
+
+切换到 Mermaid 文档模式后，导出面板会提供 Mermaid 源文件（`.mmd`）以及 SVG、PNG、JPEG、PDF；Mermaid PDF 使用当前图形尺寸。Markdown 中的 Mermaid 代码块预览只影响屏幕显示，Markmap 导出仍保留原始代码块。
 
 ## GitHub Pages
 
@@ -71,7 +74,10 @@ markmap-pp/
 ├─ apps/
 │  ├─ web/                       # markmap++ React 应用
 │  │  └─ src/components/
-│  │     ├─ markdown-editor.tsx  # CodeMirror 编辑器
+│  │     ├─ markdown-editor.tsx  # CodeMirror 源码编辑器
+│  │     ├─ visual-markdown-editor.tsx # WYSIWYG 视觉编辑器
+│  │     ├─ mermaid-renderer.ts  # Mermaid 渲染与预览
+│  │     ├─ pdf-export.ts        # 静态矢量 PDF 导出
 │  │     ├─ markdown-lint.ts     # Markdown 检查
 │  │     ├─ github-sync.ts       # GitHub API 与 IndexedDB
 │  │     └─ markmap-hooks.tsx    # 工作区与导图交互

@@ -35,7 +35,7 @@ features:
       src: https://api.iconify.design/lucide/git-branch.svg?color=%237056e8
       alt: 思维导图工作区
     title: 浏览器本地工作区
-    details: 支持语法高亮、问题诊断、撤回、主题与字体设置，草稿在离开页面后仍可保留。
+    details: 支持源码 / WYSIWYG 视觉编辑、语法诊断、拼写检查、撤回、主题与字体设置，草稿和模式偏好在离开页面后仍可保留。
   - icon:
       src: https://api.iconify.design/simple-icons/github.svg?color=%237056e8
       alt: GitHub 同步
@@ -55,7 +55,7 @@ features:
       src: https://api.iconify.design/lucide/monitor-smartphone.svg?color=%237056e8
       alt: 桌面与移动设备
     title: 桌面与移动设备
-    details: 桌面端可调节和收起编辑区，移动端可在编辑与预览间切换，并支持浏览器全屏。
+    details: 桌面端可调节和收起编辑区，移动端可在编辑与预览间切换，保留系统选中栏并支持点击仓库文件回到编辑器。
   - icon:
       src: https://api.iconify.design/lucide/folder-lock.svg?color=%237056e8
       alt: 本地优先

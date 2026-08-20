@@ -10,7 +10,7 @@ A browser-based Markdown knowledge and mind-map workspace with live editing, an 
 
 ## Overview
 
-markmap++ is built on [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus). Markdown remains the single source of truth, while the rendered mind map is an editable SVG view. The app adds a complete CodeMirror editor, persistent browser drafts, an IDE-style repository tree, an AI note and repository agent, manual GitHub commits, display settings, and multi-format export.
+markmap++ is built on [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus). Markdown remains the single source of truth, while the rendered mind map is an editable SVG view. The app adds a complete CodeMirror editor, Mermaid documents, experimental WYSIWYG editing, persistent browser drafts, an IDE-style repository tree, an AI note and repository agent, manual GitHub commits, display settings, and multi-format export.
 
 The application runs entirely in the browser. No application server or database is required.
 
@@ -18,14 +18,23 @@ The application runs entirely in the browser. No application server or database 
 
 - Live Markdown editing with syntax highlighting, search, line numbers, undo, and common-structure diagnostics.
 - GFM tables, inline and display LaTeX, task checkboxes, and Markdown images, including automatic relayout after images load.
+- Markdown source mode and an experimental WYSIWYG visual mode with live rendering; the browser remembers the selected editor mode.
+- Optional browser spell check for both modes, plus an option to jump from a preview node back to its Markdown content.
 - Interactive mind maps with pan, zoom, branch folding, in-place node editing, creation, deletion, and Markdown write-back.
 - Resizable desktop panes, a collapsible editor, fullscreen mode, and mobile editor/preview tabs.
+- Mobile text selection keeps the system selection bar, including Select all and dictionary actions.
 - Light and dark themes with configurable editor and preview typography.
 - Noto Sans SC, Noto Serif SC, LXGW WenKai, Inter Variable, and JetBrains Mono Variable fonts.
 - Optional dotted preview background.
 - Markdown, SVG, static vector PDF, PNG, JPEG, and standalone HTML export; the web PDF flow uses the print dialog and the desktop app saves directly.
 - GitHub repository browsing, persistent local drafts, file operations, status indicators, and conflict-safe manual pushes.
 - Chat and Edit Agent modes with note retrieval, model knowledge, reviewable diffs, operation memory, and explicit Git commit approval.
+
+## Mermaid documents and previews
+
+- Switch between Markdown and Mermaid document modes from the editor status bar. Standalone Mermaid documents stay in source mode so they do not conflict with WYSIWYG Markdown editing.
+- Mermaid documents export to SVG, PNG, JPEG, PDF and Mermaid source; the web PDF flow uses the print dialog and the desktop app can save directly.
+- Enable the experimental Mermaid code-block preview to render `mermaid` fences as SVG thumbnails with copy-source, fullscreen and SVG-download actions. Markmap exports keep the original code block.
 
 ## AI Agent workflow
 
@@ -76,6 +85,8 @@ Binding requires a fine-grained GitHub personal access token restricted to the t
 See the [detailed GitHub token tutorial](https://jeoitim.github.io/markmap-pp/doc/en/example/). Create the token under **Developer settings → Personal access tokens → Fine-grained tokens**, choose **Only select repositories**, and select only your note repository.
 
 If the remote branch changes before a push, markmap++ refuses to overwrite it and asks the user to refresh. Empty folders remain local because Git does not track true empty directories.
+
+On mobile browsers, tapping a repository Markdown file returns to the editor; long-pressing the file tree still uses the repository context menu.
 
 ## Local development
 

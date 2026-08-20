@@ -11,8 +11,9 @@ markmap++ is a browser-based knowledge and mind-map workspace where Markdown is 
 
 ```text
 Markdown text
-    ├─ CodeMirror editor: input, highlighting, diagnostics and undo
+    ├─ Editor: source / WYSIWYG visual modes, highlighting, spell check and undo
     ├─ Markmap view: zoom, collapse, add, edit and delete nodes
+    ├─ Mermaid documents: source editing, SVG preview and standalone export
     ├─ Browser cache: settings, repository bindings and local drafts
     ├─ Agent: note retrieval, general Q&A, diff review and action memory
     ├─ GitHub repository: multi-device files and commit history
@@ -26,7 +27,7 @@ Editor changes are converted to a mind map in real time. Editing, adding or dele
 | Data | Storage | Synced with the device |
 | --- | --- | --- |
 | Welcome guide | Built into the app | Restored on a fresh start |
-| Display and font settings | `localStorage` | No |
+| Display, font and editor-mode preferences | `localStorage` | No |
 | GitHub binding and token | IndexedDB | No |
 | Agent provider settings and API keys | IndexedDB | No |
 | Agent history and review state | IndexedDB | No |

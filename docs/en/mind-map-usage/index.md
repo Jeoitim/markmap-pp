@@ -35,9 +35,20 @@ The editor settings provide:
 
 - A 12–22px font-size range.
 - Violet, GitHub and Solarized highlighting.
+- Source / visual (WYSIWYG) mode for Markdown; visual mode renders common Markdown structures as you edit, and the browser remembers the last choice.
+- Browser spell check for both source and visual modes.
+- **Jump from preview nodes**, which returns to the matching Markdown content when enabled.
 - A light or dark editor background that follows the page theme.
 
 The editor status bar shows a check when there are no issues and a warning count when issues are found. Click it to inspect line numbers and messages. Checks cover common problems such as missing spaces after headings, skipped heading levels, Tab indentation in lists and unclosed fenced code blocks.
+
+## Markdown and Mermaid documents
+
+Use the document-mode button in the editor status bar to switch between Markdown and Mermaid:
+
+- Markdown defaults to source mode and can use the experimental visual mode from editor settings. Mermaid documents stay in source mode.
+- Mermaid documents have a standalone SVG preview and can export SVG, PNG, JPEG, PDF or `.mmd` source.
+- To preview Mermaid fences inside a Markdown mind map, enable the experimental **Mermaid code-block preview** in preview settings. It renders `mermaid` fences as SVG thumbnails with copy-source, fullscreen and SVG-download actions; mind-map exports keep the original code block.
 
 ## Preview settings
 
@@ -72,3 +83,5 @@ Drag the split handle to resize the editor and preview. Its standalone long butt
 ## Mobile layout
 
 On narrow screens, use the top tabs to switch between Markdown and the mind map. Landscape orientation is recommended for larger maps.
+
+Long-pressing text on a phone keeps the system selection bar, including Select all and dictionary actions. markmap++ only adds note-link actions to the mobile floating controls. When a heading is selected in visual mode, the bottom toolbar can duplicate it, convert it to a paragraph, delete it or change its heading level. Tapping a repository file returns to the editor, while long-pressing the tree keeps the repository menu.

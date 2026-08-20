@@ -10,7 +10,7 @@ Choose a work module below. Each page covers the relevant UI entry points, workf
 <div class="module-menu-grid">
   <a class="module-menu-card" href="../mind-map-usage/">
     <span class="module-menu-icon"><img src="https://api.iconify.design/simple-icons/markdown.svg?color=%237056e8" alt="" aria-hidden="true" /></span>
-    <span class="module-menu-copy"><strong>Editing and mind maps</strong><small>Markdown editing, node operations, canvas and themes</small></span>
+    <span class="module-menu-copy"><strong>Editing and mind maps</strong><small>Source / visual editing, Mermaid, nodes, canvas and themes</small></span>
     <span class="module-menu-arrow">↗</span>
   </a>
   <a class="module-menu-card" href="../agent/">
@@ -30,7 +30,7 @@ Choose a work module below. Each page covers the relevant UI entry points, workf
   </a>
   <a class="module-menu-card" href="../api/">
     <span class="module-menu-icon"><img src="https://api.iconify.design/lucide/download.svg?color=%237056e8" alt="" aria-hidden="true" /></span>
-    <span class="module-menu-copy"><strong>Export, deploy and develop</strong><small>Export formats, static hosting, builds and development</small></span>
+    <span class="module-menu-copy"><strong>Export, deploy and develop</strong><small>Markdown, Mermaid, PDF export, static hosting and development</small></span>
     <span class="module-menu-arrow">↗</span>
   </a>
   <a class="module-menu-card" href="../installation/">
