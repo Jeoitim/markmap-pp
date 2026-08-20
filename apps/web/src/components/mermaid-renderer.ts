@@ -2,6 +2,22 @@ export type MermaidTheme = 'dark' | 'default'
 
 let mermaidModule: Promise<typeof import('mermaid')> | null = null
 
+async function loadMermaid() {
+  mermaidModule ||= import('mermaid')
+  const { default: mermaid } = await mermaidModule
+  return mermaid
+}
+
+type MermaidApi = Awaited<ReturnType<typeof loadMermaid>>
+let mermaidOperationQueue: Promise<void> = Promise.resolve()
+let mermaidRenderSequence = 0
+
+function enqueueMermaidOperation<T>(operation: (mermaid: MermaidApi) => Promise<T>): Promise<T> {
+  const result = mermaidOperationQueue.then(async () => operation(await loadMermaid()))
+  mermaidOperationQueue = result.then(() => undefined, () => undefined)
+  return result
+}
+
 // 暗色模式下，Mermaid 的默认浅色节点背景会和浅色文字形成低对比度。
 // 保留色相与饱和度，只反转过亮颜色的明度，让 SVG 在暗色画布中仍然可读。
 export function adaptDarkMermaidSvg(svg: string): string {
@@ -68,27 +84,37 @@ export function adaptDarkMermaidSvg(svg: string): string {
 }
 
 export async function renderMermaidSvg(chart: string, id: string, theme: MermaidTheme): Promise<string> {
-  mermaidModule ||= import('mermaid')
-  const { default: mermaid } = await mermaidModule
-  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme })
-  const cleanup = () => {
-    document.getElementById(`d${id}`)?.remove()
-    document.querySelectorAll(`[id^="d${id}"]`).forEach((element) => element.remove())
-  }
-  try {
-    const rendered = await mermaid.render(id, chart)
-    return theme === 'dark' ? adaptDarkMermaidSvg(rendered.svg) : rendered.svg
-  } finally {
-    cleanup()
-    if (typeof window !== 'undefined') window.setTimeout(cleanup, 0)
-  }
+  return enqueueMermaidOperation(async (mermaid) => {
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme })
+    const renderOnce = async () => {
+      const renderId = `${id}-${++mermaidRenderSequence}`
+      const cleanup = () => {
+        document.getElementById(`d${renderId}`)?.remove()
+        document.querySelectorAll(`[id^="d${renderId}"]`).forEach((element) => element.remove())
+      }
+      try {
+        const rendered = await mermaid.render(renderId, chart)
+        return theme === 'dark' ? adaptDarkMermaidSvg(rendered.svg) : rendered.svg
+      } finally {
+        cleanup()
+        if (typeof window !== 'undefined') window.setTimeout(cleanup, 0)
+      }
+    }
+    try {
+      return await renderOnce()
+    } catch (reason) {
+      if (!(reason instanceof Error) || !reason.message.includes('Could not find a suitable point for the given distance')) throw reason
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme })
+      return renderOnce()
+    }
+  })
 }
 
 export async function parseMermaidSyntax(chart: string): Promise<void> {
-  mermaidModule ||= import('mermaid')
-  const { default: mermaid } = await mermaidModule
-  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme: 'default' })
-  await mermaid.parse(chart)
+  return enqueueMermaidOperation(async (mermaid) => {
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme: 'default' })
+    await mermaid.parse(chart)
+  })
 }
 
 export function mermaidViewBoxSize(svg: string) {

@@ -71,6 +71,16 @@ type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 type EditorView = 'markdown' | 'repository' | 'agent'
 type DocumentMode = 'markdown' | 'mermaid'
 
+const MERMAID_TEXT_TARGET_SELECTOR = 'text, tspan, foreignObject, .label, .nodeLabel, [contenteditable="true"]'
+
+function isMermaidTextTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(MERMAID_TEXT_TARGET_SELECTOR))
+}
+
+function clearNativeTextSelection() {
+  window.getSelection()?.removeAllRanges()
+}
+
 interface DesktopWorkspaceSession {
   repositorySource: 'remote' | 'local'
   editorView: EditorView
@@ -686,6 +696,10 @@ function MermaidPreviewModal({ viewer, onClose }: { viewer: MermaidPreviewViewer
   const downloadSvg = () => { void saveBlob(new Blob([viewer.svg], { type: 'image/svg+xml;charset=utf-8' }), `mermaid-${Date.now()}.svg`) }
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
+    if (event.pointerType === 'mouse' && isMermaidTextTarget(event.target)) return
+    event.preventDefault()
+    clearNativeTextSelection()
+    event.currentTarget.classList.add('is-dragging')
     event.currentTarget.setPointerCapture(event.pointerId)
     const state = gesture.current
     state.points[event.pointerId] = { x: event.clientX, y: event.clientY }
@@ -705,7 +719,12 @@ function MermaidPreviewModal({ viewer, onClose }: { viewer: MermaidPreviewViewer
       setPan({ x: state.panStart.originX + event.clientX - state.panStart.x, y: state.panStart.originY + event.clientY - state.panStart.y })
     }
   }
-  const pointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => { delete gesture.current.points[event.pointerId]; gesture.current.panStart = undefined; gesture.current.pinchStart = undefined }
+  const pointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    delete gesture.current.points[event.pointerId]
+    gesture.current.panStart = undefined
+    gesture.current.pinchStart = undefined
+    if (!Object.keys(gesture.current.points).length) event.currentTarget.classList.remove('is-dragging')
+  }
   const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => { event.preventDefault(); setZoom((value) => Math.min(8, Math.max(.2, value * (event.deltaY < 0 ? 1.1 : .9)))) }
 
   return <div className="agent-mermaid-modal" role="dialog" aria-modal="true" aria-label="全屏查看 Mermaid 图表"><div className="agent-mermaid-viewport" ref={viewportRef} onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}>{diagramSize && <div ref={zoomLayerRef} className="agent-mermaid-zoom-layer" style={{ '--diagram-w': `${diagramSize.w * zoom}px`, '--diagram-h': `${diagramSize.h * zoom}px`, transform: `translate(${pan.x}px, ${pan.y}px)` } as CSSProperties} />}</div><div className="agent-mermaid-tools"><button type="button" onClick={() => zoomBy(1 / 1.2)} aria-label="缩小" title="缩小"><Icon name="minus" /></button><b title="适应窗口" onClick={fitToViewport}>{Math.round(zoom * 100)}%</b><button type="button" onClick={() => zoomBy(1.2)} aria-label="放大" title="放大"><Icon name="plus" /></button><i aria-hidden="true" /><button type="button" onClick={copySource} aria-label="复制源代码" title="复制源代码"><Icon name="copy" /></button><button type="button" onClick={downloadSvg} aria-label="下载 SVG" title="下载 SVG"><Icon name="download" /></button></div><button type="button" className="agent-mermaid-close" onClick={onClose} aria-label="关闭全屏查看" title="关闭"><Icon name="x" /></button></div>
@@ -723,6 +742,8 @@ function StandaloneMermaidPreview({ source, theme, onRendered, onFitReady }: { s
 
   useEffect(() => {
     let disposed = false
+    // Reset the previous diagram immediately so a stale SVG cannot remain visible while the next source renders.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSvg('')
     setError('')
     setDiagramSize(null)
@@ -768,6 +789,10 @@ function StandaloneMermaidPreview({ source, theme, onRendered, onFitReady }: { s
 
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
+    if (event.pointerType === 'mouse' && isMermaidTextTarget(event.target)) return
+    event.preventDefault()
+    clearNativeTextSelection()
+    event.currentTarget.classList.add('is-dragging')
     event.currentTarget.setPointerCapture(event.pointerId)
     const state = gesture.current
     state.points[event.pointerId] = { x: event.clientX, y: event.clientY }
@@ -793,6 +818,7 @@ function StandaloneMermaidPreview({ source, theme, onRendered, onFitReady }: { s
     delete gesture.current.points[event.pointerId]
     gesture.current.panStart = undefined
     gesture.current.pinchStart = undefined
+    if (!Object.keys(gesture.current.points).length) event.currentTarget.classList.remove('is-dragging')
   }
 
   const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
@@ -2418,6 +2444,13 @@ export default function MarkmapHooks() {
     event.preventDefault()
     event.stopPropagation()
     void openRepositoryLink(target.getAttribute('href') || '', activeRepoPath)
+  }
+
+  const handlePreviewBlankPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('g.markmap-node, .markmap-mermaid-preview, .preview-floating-tools')) return
+    clearNativeTextSelection()
+    void mmRef.current?.setHighlight(null)
   }
 
   const syncPreviewSelection = (selection: Extract<TextSelectionTarget, { source: 'preview' }>) => {
@@ -4414,7 +4447,7 @@ ${documentRenderConfig.style}
                <button type="button" className="document-tab-new" aria-label={t('新建空白文档标签页')} title={t('新建标签页')} onClick={createBlankDocumentTab}><Icon name="plus" /></button>
              </nav>
              {!hasOpenDocument && <div className="document-empty-state preview-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>新建或打开 Markdown 后，这里会显示思维导图。</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-            {documentMode === 'mermaid' ? <div className={`standalone-mermaid-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText, '--mermaid-font-family': previewFonts[settings.previewFont].family, '--mermaid-font-size': `${settings.previewFontSize}px`, '--mermaid-font-weight': settings.previewWeight } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button><button type="button" onClick={() => standaloneMermaidFit?.()} disabled={!standaloneMermaidFit} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button></div><StandaloneMermaidPreview source={renderedMarkdown} theme={previewDarkMode ? 'dark' : 'default'} onRendered={setStandaloneMermaidViewer} onFitReady={registerStandaloneMermaidFit} /></div> : <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button><button type="button" onClick={() => mmRef.current?.fit()} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} style={{ '--markmap-font': effectiveMarkmapFont } as React.CSSProperties} /></div>}
+            {documentMode === 'mermaid' ? <div className={`standalone-mermaid-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText, '--mermaid-font-family': previewFonts[settings.previewFont].family, '--mermaid-font-size': `${settings.previewFontSize}px`, '--mermaid-font-weight': settings.previewWeight } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button><button type="button" onClick={() => standaloneMermaidFit?.()} disabled={!standaloneMermaidFit} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button></div><StandaloneMermaidPreview source={renderedMarkdown} theme={previewDarkMode ? 'dark' : 'default'} onRendered={setStandaloneMermaidViewer} onFitReady={registerStandaloneMermaidFit} /></div> : <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onPointerDown={handlePreviewBlankPointerDown} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button><button type="button" onClick={() => mmRef.current?.fit()} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} style={{ '--markmap-font': effectiveMarkmapFont } as React.CSSProperties} /></div>}
           </>
         </section>
       </section>
