@@ -345,9 +345,9 @@ svg { flex: 0 0 auto; }
 .reasoning-toggle svg { width: 14px; height: 14px; }
 .reasoning-toggle.on { color: var(--accent); border-color: #bdb3ef; background: #f2efff; }
 .editor-status { display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--editor-bg); color: var(--editor-gutter); font-family: "JetBrains Mono Variable", monospace; font-size: 11px; line-height: 1; border-top: 1px solid var(--border); }
-.editor-status-language { margin-left: auto; padding: 2px 7px; border: 1px solid transparent; border-radius: 6px; color: var(--muted); background: transparent; font: inherit; cursor: pointer; }
+.editor-status-language { flex: 0 0 auto; padding: 2px 7px; border: 1px solid transparent; border-radius: 6px; color: var(--muted); background: transparent; font: inherit; cursor: pointer; }
 .editor-status-language:hover { color: var(--accent); border-color: color-mix(in srgb,var(--accent) 35%,var(--border)); background: color-mix(in srgb,var(--accent) 6%,transparent); }
-.editor-status-actions { display: inline-flex; align-items: center; gap: 2px; }
+.editor-status-actions { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; }
 .editor-unsaved { display: inline-flex; align-items: center; gap: 5px; color: #c47b19; }
 .editor-unsaved > i { width: 6px; height: 6px; border-radius: 50%; background: #e39a35; box-shadow: 0 0 0 3px #e39a3518; }
 .editor-status-settings { width: 25px; height: 25px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; color: var(--editor-gutter); background: transparent; cursor: pointer; }
