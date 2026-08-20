@@ -164,6 +164,7 @@ const translations: Record<string, string> = {
   '代码配置优先于此面板。': 'Code configuration takes priority over this panel.',
   '代码配置': 'code settings',
   '代码': 'code',
+  '适应画布后，文字显示大小基本不变；字号主要影响节点排版和换行，通常无需调整。': 'After fitting the canvas, the on-screen text size stays nearly the same; font size mainly affects node layout and wrapping, so it usually does not need adjustment.',
   'Frontmatter 正在控制：': 'Controlled by Frontmatter: ',
   '。代码配置优先于此面板。': '. Code settings take priority over this panel.',
   'Frontmatter': 'Frontmatter',

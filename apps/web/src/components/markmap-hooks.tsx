@@ -186,6 +186,34 @@ function cssLength(value: unknown) {
   if (typeof value === 'string' && value.trim()) return /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${value.trim()}px` : value.trim()
 }
 
+function nextAnimationFrame() {
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+}
+
+async function waitForFontReady(font: string) {
+  if (typeof document === 'undefined' || !document.fonts) return
+  try {
+    await document.fonts.load(font)
+  } catch {
+    // Invalid user-provided font shorthand should not prevent the map from rendering.
+  }
+  await document.fonts.ready
+}
+
+async function renderStableMarkmap(markmap: Markmap) {
+  const duration = markmap.options.duration
+  markmap.setOptions({ duration: 0 })
+  try {
+    await markmap.setData()
+    // Markmap applies node positions through d3 transitions. Flush the zero-duration
+    // transition before cloning the SVG for an export.
+    await nextAnimationFrame()
+    await nextAnimationFrame()
+  } finally {
+    markmap.setOptions({ duration })
+  }
+}
+
 function getForeignContentElement(foreignObject: SVGForeignObjectElement) {
   const content = foreignObject.firstElementChild?.firstElementChild
   return content instanceof HTMLElement ? content : null
@@ -1139,6 +1167,7 @@ export default function MarkmapHooks() {
   const effectiveFontFamily = resolveFontFamily(codeFont.family, selectedFontFamily)
   const effectiveFontSizeCss = codeFont.size || `${settings.previewFontSize}px`
   const effectiveFontWeightCss = codeFont.weight || String(settings.previewWeight)
+  const effectiveMarkmapFont = codeFont.shorthand || `${effectiveFontWeightCss} ${effectiveFontSizeCss}/1.35 ${effectiveFontFamily}`
   const effectiveColorFreezeLevel = documentRenderConfig.colorFreezeLevel ?? settings.colorFreezeLevel
   const effectiveShowGrid = documentRenderConfig.showGrid ?? settings.showGrid
   const userPreviewBackground = readUserPreviewBackground(documentRenderConfig.style)
@@ -3122,7 +3151,11 @@ export default function MarkmapHooks() {
         if (!disposed) void mm.setData()
       }, 40)
     }
-    void mm.setData(documentRenderConfig.root, viewOptions(effectiveMarkmapOptions)).then(() => {
+    svg.style.setProperty('--markmap-font', effectiveMarkmapFont)
+    void (async () => {
+      await waitForFontReady(effectiveMarkmapFont)
+      if (disposed) return
+      await mm.setData(documentRenderConfig.root, viewOptions(effectiveMarkmapOptions))
       if (disposed) return
       svg.querySelectorAll('img').forEach((image) => {
         if (!image.complete) {
@@ -3131,7 +3164,7 @@ export default function MarkmapHooks() {
           image.addEventListener('error', scheduleRelayout, { once: true })
         }
       })
-    })
+    })()
     return () => {
       disposed = true
       trackedImages.forEach((image) => {
@@ -3143,7 +3176,7 @@ export default function MarkmapHooks() {
         imageRelayoutTimerRef.current = null
       }
     }
-  }, [documentRenderConfig, effectiveMarkmapOptions, previewDarkMode, settings.previewMermaid, viewOptions])
+  }, [documentRenderConfig, effectiveMarkmapFont, effectiveMarkmapOptions, previewDarkMode, settings.previewMermaid, viewOptions])
 
   useEffect(() => {
     const svg = svgRef.current
@@ -3244,12 +3277,7 @@ export default function MarkmapHooks() {
 
   useEffect(() => {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch { /* storage may be disabled */ }
-    const svg = svgRef.current
-    if (!svg) return
-    const font = codeFont.shorthand || `${effectiveFontWeightCss} ${effectiveFontSizeCss}/1.35 ${effectiveFontFamily}`
-    svg.style.setProperty('--markmap-font', font)
-    window.setTimeout(() => void mmRef.current?.setData().then(() => mmRef.current?.fit()), 50)
-  }, [codeFont.shorthand, effectiveFontFamily, effectiveFontSizeCss, effectiveFontWeightCss, settings])
+  }, [settings])
 
   useEffect(() => {
     if (!desktopApi() || !desktopWorkspaceRestoredRef.current) return
@@ -3409,6 +3437,7 @@ export default function MarkmapHooks() {
     const exportCodeBackground = codeBackgroundColor(backgroundColor, darkMode)
     const linkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(backgroundColor)
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    clone.style.setProperty('--markmap-font', effectiveMarkmapFont)
     clone.style.setProperty('--markmap-text-color', textColor)
     clone.style.setProperty('--markmap-code-bg', exportCodeBackground)
     clone.style.setProperty('--markmap-code-color', textColor)
@@ -3417,7 +3446,7 @@ export default function MarkmapHooks() {
     clone.querySelectorAll<SVGTextElement>('text, tspan').forEach((element) => element.style.setProperty('fill', textColor, 'important'))
     const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
     style.textContent = `${katexStyles}
-.markmap-foreign { color: ${textColor} !important; font-family: ${effectiveFontFamily}; font-size: ${effectiveFontSizeCss}; line-height: 1.35; }
+.markmap-foreign { color: ${textColor} !important; font: ${effectiveMarkmapFont}; }
 .markmap-foreign, .markmap-foreign * { color: ${textColor} !important; }
 .markmap-foreign a, .markmap-foreign a * { color: ${linkColor} !important; -webkit-text-fill-color: ${linkColor} !important; }
 .markmap-foreign table { border-spacing: 0; font-size: .9em; }
@@ -3812,9 +3841,13 @@ ${documentRenderConfig.style}
       } else {
         if (restorePreviewAfterExport) {
           restoreMarkmapMermaidPreviews(svgRef.current)
-          await mmRef.current?.renderData()
         }
-        await document.fonts.ready
+        const svg = svgRef.current
+        const mm = mmRef.current
+        if (!svg || !mm) throw new Error('思维导图尚未准备好')
+        svg.style.setProperty('--markmap-font', effectiveMarkmapFont)
+        await waitForFontReady(effectiveMarkmapFont)
+        await renderStableMarkmap(mm)
         const { source, width, height } = createExportSvg(previewBackgroundColor, exportDarkMode, exportUsesTransparentBackground, exportFormat === 'pdf' ? 1 : exportScale)
         const exportSource = await prepareExportSvg(source, exportDarkMode)
         if (exportFormat === 'svg') await saveBlob(new Blob([exportSource], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
@@ -4167,7 +4200,7 @@ ${documentRenderConfig.style}
                <button type="button" className="document-tab-new" aria-label={t('新建空白文档标签页')} title={t('新建标签页')} onClick={createBlankDocumentTab}><Icon name="plus" /></button>
              </nav>
              {!hasOpenDocument && <div className="document-empty-state preview-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>新建或打开 Markdown 后，这里会显示思维导图。</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>返回 Markdown</span></button><button type="button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title="预览设置" aria-label="预览设置"><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} /></div>
+            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>返回 Markdown</span></button><button type="button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title="预览设置" aria-label="预览设置"><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} style={{ '--markmap-font': effectiveMarkmapFont } as React.CSSProperties} /></div>
           </>
         </section>
       </section>
@@ -4251,27 +4284,27 @@ ${documentRenderConfig.style}
               <button type="button" className="help-tip-nav" onClick={() => moveHelpTip(1)} aria-label="下一条说明"><Icon name="chevron-right" /></button>
             </div>
             <div className="help-tip-footer"><div className="help-tip-dots" role="tablist" aria-label="选择说明提示"><span className="sr-only">当前提示</span>{helpTips.map((tip, index) => <button type="button" key={tip.kicker} className={index === helpTipIndex ? 'active' : ''} role="tab" aria-selected={index === helpTipIndex} aria-label={`查看第 ${index + 1} 条：${tip.title}`} onClick={() => setHelpTipIndex(index)} />)}</div></div>
+           </div>}
+           {activePanel === 'editor' && <div className="settings-body">
+             <div className="font-samples"><small>{t('编辑器与 AI 聊天预览')}</small><span style={{ fontFamily: previewFonts[settings.editorFont].family, fontSize: `${settings.editorFontSize}px`, fontWeight: settings.editorWeight }}>Markdown AI Chat 0123</span></div>
+             <label className="field"><span>字体</span><select value={settings.editorFont} onChange={(event) => updateSettings('editorFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
+             <label className="field"><span>字号 <b>{settings.editorFontSize}px</b></span><input type="range" min="12" max="22" value={settings.editorFontSize} onChange={(event) => updateSettings('editorFontSize', Number(event.target.value))} /></label>
+             <label className="field"><span>字重 <b>{settings.editorWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.editorWeight} onChange={(event) => updateSettings('editorWeight', Number(event.target.value))} /></label>
+             <label className="field"><span>高亮方案</span><select value={settings.highlightScheme} onChange={(event) => updateSettings('highlightScheme', event.target.value as HighlightScheme)}><option value="violet">Violet</option><option value="github">GitHub</option><option value="solarized">Solarized</option></select></label>
+             <div className="settings-note"><Icon name="warning" /><span>语法检查包括标题层级、代码块闭合与缩进一致性，问题会直接标记在编辑器中。</span></div>
           </div>}
-          {activePanel === 'editor' && <div className="settings-body">
-            <label className="field"><span>字号 <b>{settings.editorFontSize}px</b></span><input type="range" min="12" max="22" value={settings.editorFontSize} onChange={(event) => updateSettings('editorFontSize', Number(event.target.value))} /></label>
-            <label className="field"><span>字体</span><select value={settings.editorFont} onChange={(event) => updateSettings('editorFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
-            <label className="field"><span>字重 <b>{settings.editorWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.editorWeight} onChange={(event) => updateSettings('editorWeight', Number(event.target.value))} /></label>
-            <label className="field"><span>高亮方案</span><select value={settings.highlightScheme} onChange={(event) => updateSettings('highlightScheme', event.target.value as HighlightScheme)}><option value="violet">Violet</option><option value="github">GitHub</option><option value="solarized">Solarized</option></select></label>
-            <div className="font-samples"><small>{t('编辑器与 AI 聊天预览')}</small><span style={{ fontFamily: previewFonts[settings.editorFont].family, fontSize: `${settings.editorFontSize}px`, fontWeight: settings.editorWeight }}>Markdown AI Chat 0123</span></div>
-            <div className="settings-note"><Icon name="warning" /><span>语法检查包括标题层级、代码块闭合与缩进一致性，问题会直接标记在编辑器中。</span></div>
-          </div>}
-          {activePanel === 'preview' && <div className="settings-body">
-            {documentRenderConfig.optionKeys.length > 0 && <div className="settings-note code-options-note"><Icon name="check" /><span>{locale === 'en-US' ? `${t('Frontmatter 正在控制：')}${documentRenderConfig.optionKeys.join(', ')}${t('。代码配置优先于此面板。')}` : `Frontmatter 正在控制：${documentRenderConfig.optionKeys.join('、')}。代码配置优先于此面板。`}</span></div>}
-            <label className={`field ${codeFont.controlsSize ? 'code-controlled' : ''}`}><span>{t('节点字号')} <b>{codeFont.controlsSize ? `${effectiveFontSizeCss} · ${t('代码')}` : `${settings.previewFontSize}px`}</b></span><input type="range" min="12" max="28" value={settings.previewFontSize} disabled={codeFont.controlsSize} onChange={(event) => updateSettings('previewFontSize', Number(event.target.value))} /></label>
-            <label className={`field ${codeFont.controlsFamily ? 'code-controlled' : ''}`}><span>{t('字体')}{codeFont.controlsFamily && <b>{t('由代码控制')}</b>}</span><select value={settings.previewFont} disabled={codeFont.controlsFamily} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
-            <label className={`field ${codeFont.controlsWeight ? 'code-controlled' : ''}`}><span>{t('字重')} <b>{codeFont.controlsWeight ? `${effectiveFontWeightCss} · ${t('代码')}` : settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} disabled={codeFont.controlsWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
+           {activePanel === 'preview' && <div className="settings-body">
+             {documentRenderConfig.optionKeys.length > 0 && <div className="settings-note code-options-note"><Icon name="check" /><span>{locale === 'en-US' ? `${t('Frontmatter 正在控制：')}${documentRenderConfig.optionKeys.join(', ')}${t('。代码配置优先于此面板。')}` : `Frontmatter 正在控制：${documentRenderConfig.optionKeys.join('、')}。代码配置优先于此面板。`}</span></div>}
+             <div className="font-samples"><small>{t('字体预览')}{(codeFont.controlsFamily || codeFont.controlsSize || codeFont.controlsWeight) && ` · ${t('代码配置')}`}</small><span style={fontPreviewStyle}>{t('思维导图')} Mind Map 0123</span></div>
+             <label className={`field ${codeFont.controlsFamily ? 'code-controlled' : ''}`}><span>{t('字体')}{codeFont.controlsFamily && <b>{t('由代码控制')}</b>}</span><select value={settings.previewFont} disabled={codeFont.controlsFamily} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
+             <label className={`field ${codeFont.controlsSize ? 'code-controlled' : ''}`}><span>{t('节点字号')} <b>{codeFont.controlsSize ? `${effectiveFontSizeCss} · ${t('代码')}` : `${settings.previewFontSize}px`}</b></span><input type="range" min="12" max="28" value={settings.previewFontSize} disabled={codeFont.controlsSize} onChange={(event) => updateSettings('previewFontSize', Number(event.target.value))} /><small>{t('适应画布后，文字显示大小基本不变；字号主要影响节点排版和换行，通常无需调整。')}</small></label>
+             <label className={`field ${codeFont.controlsWeight ? 'code-controlled' : ''}`}><span>{t('字重')} <b>{codeFont.controlsWeight ? `${effectiveFontWeightCss} · ${t('代码')}` : settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} disabled={codeFont.controlsWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
             <label className={`field ${documentRenderConfig.colorFreezeLevel !== undefined ? 'code-controlled' : ''}`}><span>{t('颜色层级')} <b>{documentRenderConfig.colorFreezeLevel !== undefined ? `${effectiveColorFreezeLevel} · ${t('代码')}` : effectiveColorFreezeLevel}</b></span><input type="range" min="0" max="6" step="1" value={effectiveColorFreezeLevel} disabled={documentRenderConfig.colorFreezeLevel !== undefined} onChange={(event) => updateSettings('colorFreezeLevel', Number(event.target.value))} /><small>{t('从指定层级开始继承分支颜色，0 表示不锁定')}</small></label>
             <label className={`export-color-field preview-background-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span>{t('画布背景')} <small>{userPreviewBackground ? t('由 Markdown style 控制') : t('WCAG 自动主题')}</small></span><span className="export-color-control"><input type="color" value={settings.previewBackgroundColor} disabled={Boolean(userPreviewBackground)} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{settings.previewBackgroundColor.toUpperCase()}</code></span></label>
-            <div className={`export-color-presets preview-background-presets ${userPreviewBackground ? 'code-controlled' : ''}`} aria-label={t('预览背景颜色预设')}>{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={settings.previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('预览背景色：')}${t(label)}`} disabled={Boolean(userPreviewBackground)} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
-            <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>{t('点阵背景')}</strong><small>{documentRenderConfig.showGrid !== undefined ? t('由 Frontmatter 代码控制') : t('辅助观察画布移动与缩放')}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
-            <label className="switch-field experimental-setting"><span><strong>Mermaid 代码块预览 <b>实验性</b></strong><small>将 Markdown 中的 mermaid 代码块显示为 SVG 缩略图，可全屏查看；不会改变 Markmap 导出内容。</small></span><input type="checkbox" checked={settings.previewMermaid} onChange={(event) => updateSettings('previewMermaid', event.target.checked)} /></label>
-            <div className="font-samples"><small>{t('字体预览')}{(codeFont.controlsFamily || codeFont.controlsSize || codeFont.controlsWeight) && ` · ${t('代码配置')}`}</small><span style={fontPreviewStyle}>{t('思维导图')} Mind Map 0123</span></div>
-          </div>}
+             <div className={`export-color-presets preview-background-presets ${userPreviewBackground ? 'code-controlled' : ''}`} aria-label={t('预览背景颜色预设')}>{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={settings.previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('预览背景色：')}${t(label)}`} disabled={Boolean(userPreviewBackground)} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
+             <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>{t('点阵背景')}</strong><small>{documentRenderConfig.showGrid !== undefined ? t('由 Frontmatter 代码控制') : t('辅助观察画布移动与缩放')}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
+             <label className="switch-field experimental-setting"><span><strong>Mermaid 代码块预览 <b>实验性</b></strong><small>将 Markdown 中的 mermaid 代码块显示为 SVG 缩略图，可全屏查看；不会改变 Markmap 导出内容。</small></span><input type="checkbox" checked={settings.previewMermaid} onChange={(event) => updateSettings('previewMermaid', event.target.checked)} /></label>
+           </div>}
           {activePanel === 'export' && <div className="settings-body export-panel-body">
             <div className="export-tabs" role="tablist" aria-label={t('导出方式')}>
               <button role="tab" aria-selected={exportTab === 'file'} className={exportTab === 'file' ? 'active' : ''} onClick={() => { setExportError(''); cancelRepositorySave(); setExportTab('file') }}><Icon name="download" /><span>{t('导出文件')}</span></button>
