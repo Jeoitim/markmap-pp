@@ -81,6 +81,8 @@ const translations: Record<string, string> = {
   'Markdown 编辑模式': 'Markdown editing mode',
   '源码': 'Source',
   '视觉': 'Visual',
+  '拼写检查': 'Spell check',
+  '默认关闭；开启后，源码与视觉模式都会显示浏览器拼写提示。': 'Off by default; when enabled, the browser marks possible spelling issues in source and visual modes.',
   '标题类型': 'Block type',
   '创建副本': 'Duplicate block',
   '转换为': 'Convert to',

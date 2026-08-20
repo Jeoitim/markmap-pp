@@ -13,6 +13,7 @@ export interface VisualMarkdownEditorProps {
   fontSize: number
   fontFamily: string
   fontWeight: number
+  spellCheck: boolean
   onSelectionContextMenu?: (selection: VisualMarkdownSelection) => void
   onOpenLink?: (href: string) => void
 }
@@ -53,7 +54,7 @@ function joinMarkdown(frontmatter: string, body: string) {
   return frontmatter ? `${frontmatter}${body}` : body
 }
 
-function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, onSelectionContextMenu, onOpenLink }: VisualMarkdownEditorProps) {
+function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, onSelectionContextMenu, onOpenLink }: VisualMarkdownEditorProps) {
   const { t } = useI18n()
   const [initialParts] = useState(() => splitMarkdown(value))
   const [activeHeading, setActiveHeading] = useState<ActiveHeading | null>(null)
@@ -125,6 +126,14 @@ function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily
       view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, nextDoc.content))
     })
   }, [getInstance, loading, value])
+
+  useEffect(() => {
+    const editor = getInstance()
+    if (!editor) return
+    editor.action((ctx) => {
+      ctx.get(editorViewCtx).dom.setAttribute('spellcheck', String(spellCheck))
+    })
+  }, [getInstance, loading, spellCheck])
 
   const handleFrontmatterChange = (nextFrontmatter: string) => {
     latestPartsRef.current = { frontmatter: nextFrontmatter, body: bodyRef.current }

@@ -127,6 +127,7 @@ interface AppSettings {
   editorFontSize: number
   editorFont: PreviewFont
   editorWeight: number
+  editorSpellCheck: boolean
   highlightScheme: HighlightScheme
   previewFontSize: number
   previewFont: PreviewFont
@@ -141,6 +142,7 @@ const defaultSettings: AppSettings = {
   editorFontSize: 14,
   editorFont: 'notoSans',
   editorWeight: 400,
+  editorSpellCheck: false,
   highlightScheme: 'violet',
   previewFontSize: 16,
   previewFont: 'notoSans',
@@ -4373,7 +4375,7 @@ ${documentRenderConfig.style}
             </div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-              {documentEditorMode === 'visual' ? <VisualMarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
+              {documentEditorMode === 'visual' ? <VisualMarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
               <footer className="editor-status">
                 <button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button>
                 <span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span>
@@ -4575,6 +4577,7 @@ ${documentRenderConfig.style}
              <label className="field"><span>{t('字号')} <b>{settings.editorFontSize}px</b></span><input type="range" min="12" max="22" value={settings.editorFontSize} onChange={(event) => updateSettings('editorFontSize', Number(event.target.value))} /></label>
              <label className="field"><span>{t('字重')} <b>{settings.editorWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.editorWeight} onChange={(event) => updateSettings('editorWeight', Number(event.target.value))} /></label>
              <label className="field"><span>{t('高亮方案')}</span><select value={settings.highlightScheme} onChange={(event) => updateSettings('highlightScheme', event.target.value as HighlightScheme)}><option value="violet">Violet</option><option value="github">GitHub</option><option value="solarized">Solarized</option></select></label>
+             <label className="switch-field"><span><strong>{t('拼写检查')}</strong><small>{t('默认关闭；开启后，源码与视觉模式都会显示浏览器拼写提示。')}</small></span><input type="checkbox" checked={settings.editorSpellCheck} onChange={(event) => updateSettings('editorSpellCheck', event.target.checked)} /></label>
              <section className="editor-mode-setting experimental-setting" aria-labelledby="editor-mode-setting-title">
                <div className="editor-mode-setting-copy">
                  <div className="editor-mode-setting-title"><strong id="editor-mode-setting-title">{t('WYSIWYG（即时渲染）')} <b>{t('实验性')}</b></strong></div>

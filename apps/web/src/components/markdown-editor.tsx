@@ -62,6 +62,7 @@ interface MarkdownEditorProps {
   fontSize: number
   fontFamily: string
   fontWeight: number
+  spellCheck: boolean
   scheme: HighlightScheme
   locale: Locale
   mode: 'markdown' | 'mermaid'
@@ -87,7 +88,7 @@ export interface MarkdownEditorHandle {
   revealLine: (line: number) => void
 }
 
-const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, scheme, locale, mode, onSelectionContextMenu, onOpenLink }, ref) {
+const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, scheme, locale, mode, onSelectionContextMenu, onOpenLink }, ref) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
@@ -98,7 +99,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   const externalUpdate = useRef(false)
   const localeRef = useRef(locale)
   const modeRef = useRef(mode)
-  const initialConfigRef = useRef({ value, dark, fontSize, fontFamily, fontWeight, scheme })
+  const initialConfigRef = useRef({ value, dark, fontSize, fontFamily, fontWeight, spellCheck, scheme })
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onSelectionContextMenuRef.current = onSelectionContextMenu }, [onSelectionContextMenu])
@@ -149,7 +150,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         linter((editor) => modeRef.current === 'mermaid' ? inspectMermaid(editor.state.doc.toString(), localeRef.current) : inspectMarkdown(editor.state.doc.toString(), localeRef.current), { delay: 250 }),
         EditorView.lineWrapping,
         keymap.of([indentWithTab]),
-        EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: 'false' }),
+        EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: String(initialConfigRef.current.spellCheck) }),
         EditorView.domEventHandlers({
           contextmenu: (event, editor) => {
             if (event.shiftKey || nativeContextMenuOnceRef.current) {
@@ -186,6 +187,11 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
       viewRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    const content = viewRef.current?.contentDOM
+    if (content) content.setAttribute('spellcheck', String(spellCheck))
+  }, [spellCheck])
 
   useEffect(() => {
     const view = viewRef.current
