@@ -79,7 +79,7 @@ console.log(message)
 | Location | What it does |
 | --- | --- |
 | Split handle | Drag to resize both panes; use the long button to collapse or expand the editor |
-| Editor top-right | Adjust font size and syntax highlighting |
+| Editor settings | Adjust font, size and highlighting, then switch between experimental WYSIWYG source / visual modes |
 | Preview top-right | Fit the canvas, change font/weight and toggle the grid |
 | Page top-right | Open the guide, undo, export, enter fullscreen and switch themes |
 

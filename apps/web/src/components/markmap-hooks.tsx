@@ -12,7 +12,7 @@ import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
-import VisualMarkdownEditor from './visual-markdown-editor'
+import VisualMarkdownEditor, { type VisualMarkdownSelection } from './visual-markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { mermaidRenderId, mermaidViewBoxSize, renderMermaidSvg } from './mermaid-renderer'
 import { inspectMermaid } from './mermaid-lint'
@@ -106,7 +106,7 @@ function loadDesktopWorkspaceSession(): DesktopWorkspaceSession | null {
   } catch { return null }
 }
 
-type TextSelectionTarget = ({ source: 'editor' } & MarkdownEditorSelection) | {
+type TextSelectionTarget = ({ source: 'editor' } & MarkdownEditorSelection) | VisualMarkdownSelection | {
   source: 'preview'
   x: number
   y: number
@@ -2488,6 +2488,7 @@ export default function MarkmapHooks() {
   const cutSelection = async (selection: TextSelectionTarget) => {
     try { await navigator.clipboard.writeText(selection.text) } catch { setLinkNotice('无法写入剪贴板') }
     if (selection.source === 'editor') markdownEditorRef.current?.replaceRange(selection.from, selection.to, '')
+    else if (selection.source === 'visual') selection.replace('')
     else {
       selection.range.deleteContents()
       syncPreviewSelection(selection)
@@ -2499,6 +2500,7 @@ export default function MarkmapHooks() {
     try {
       const text = await navigator.clipboard.readText()
       if (selection.source === 'editor') markdownEditorRef.current?.replaceRange(selection.from, selection.to, text)
+      else if (selection.source === 'visual') selection.replace(text)
       else {
         selection.range.deleteContents()
         selection.range.insertNode(document.createTextNode(text))
@@ -2511,6 +2513,8 @@ export default function MarkmapHooks() {
   const removeSelectionLink = (selection: TextSelectionTarget) => {
     if (selection.source === 'editor') {
       if (selection.link) markdownEditorRef.current?.replaceRange(selection.link.from, selection.link.to, selection.link.label)
+    } else if (selection.source === 'visual') {
+      selection.removeLink()
     } else if (selection.anchor) {
       selection.anchor.replaceWith(...Array.from(selection.anchor.childNodes))
       syncPreviewSelection(selection)
@@ -2523,6 +2527,8 @@ export default function MarkmapHooks() {
     if (selection.source === 'editor') {
       if (selection.link) markdownEditorRef.current?.replaceRange(selection.link.destinationFrom, selection.link.destinationTo, href)
       else markdownEditorRef.current?.replaceRange(selection.from, selection.to, repositoryMarkdownLink(selection.text, target.path, target.heading?.slug))
+    } else if (selection.source === 'visual') {
+      selection.setLink(href)
     } else if (selection.anchor) {
       selection.anchor.setAttribute('href', href)
       syncPreviewSelection(selection)
@@ -2539,6 +2545,7 @@ export default function MarkmapHooks() {
 
   const allowNativeSelectionMenu = (selection: TextSelectionTarget) => {
     if (selection.source === 'editor') markdownEditorRef.current?.allowNativeContextMenuOnce()
+    else if (selection.source === 'visual') selection.allowNative()
     else previewNativeContextMenuOnceRef.current = true
     setSelectionMenu(null)
     setLinkNotice('已切换到浏览器菜单，请在原位置再次右键；也可按住 Shift 右键直接打开。')
@@ -3663,7 +3670,7 @@ export default function MarkmapHooks() {
 .markmap-foreign table, .markmap-foreign th, .markmap-foreign td { background: transparent !important; }
 .markmap-foreign th { font-weight: 650; }
 .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
-.markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
+.markmap-foreign img[alt$='图标'], .markmap-foreign img[alt$='icon'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
 .markmap-foreign pre { max-width: 100%; white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
 .markmap-foreign pre > code { display: block; width: 100%; max-width: 100%; box-sizing: border-box; white-space: inherit !important; overflow-wrap: inherit !important; word-break: inherit !important; }
 .markmap-foreign pre, .markmap-foreign code { color: ${textColor} !important; background: ${exportCodeBackground} !important; }
@@ -4362,15 +4369,11 @@ ${documentRenderConfig.style}
           {!editorCollapsed && <>
             <div className="pane-header">
               <div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><Icon name="svg-editor" />{t('编辑器')}</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div>
-              {editorView === 'markdown' && <div className="document-editor-mode-tabs" role="tablist" aria-label="Markdown 编辑模式">
-                <button type="button" className={documentEditorMode === 'source' ? 'active' : ''} role="tab" aria-selected={documentEditorMode === 'source'} onClick={() => changeDocumentEditorMode('source')}>源码</button>
-                <button type="button" className={documentEditorMode === 'visual' ? 'active' : ''} role="tab" aria-selected={documentEditorMode === 'visual'} onClick={() => changeDocumentEditorMode('visual')} disabled={documentMode !== 'markdown'}>视觉</button>
-              </div>}
               <button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title={t(documentMode === 'mermaid' ? '切换到 Mermaid SVG 预览' : '切换到预览')}><Icon name={documentMode === 'mermaid' ? 'mermaid-svg' : 'map'} /><span>{t('预览')}</span></button>
             </div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-              {documentEditorMode === 'visual' ? <VisualMarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
+              {documentEditorMode === 'visual' ? <VisualMarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
               <footer className="editor-status">
                 <button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button>
                 <span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span>
@@ -4568,11 +4571,22 @@ ${documentRenderConfig.style}
            </div>}
            {activePanel === 'editor' && <div className="settings-body">
              <div className="font-samples"><small>{t('编辑器与 AI 聊天预览')}</small><span style={{ fontFamily: previewFonts[settings.editorFont].family, fontSize: `${settings.editorFontSize}px`, fontWeight: settings.editorWeight }}>Markdown AI Chat 0123</span></div>
-             <label className="field"><span>字体</span><select value={settings.editorFont} onChange={(event) => updateSettings('editorFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
-             <label className="field"><span>字号 <b>{settings.editorFontSize}px</b></span><input type="range" min="12" max="22" value={settings.editorFontSize} onChange={(event) => updateSettings('editorFontSize', Number(event.target.value))} /></label>
-             <label className="field"><span>字重 <b>{settings.editorWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.editorWeight} onChange={(event) => updateSettings('editorWeight', Number(event.target.value))} /></label>
-             <label className="field"><span>高亮方案</span><select value={settings.highlightScheme} onChange={(event) => updateSettings('highlightScheme', event.target.value as HighlightScheme)}><option value="violet">Violet</option><option value="github">GitHub</option><option value="solarized">Solarized</option></select></label>
-             <div className="settings-note"><Icon name="warning" /><span>语法检查包括标题层级、代码块闭合与缩进一致性，问题会直接标记在编辑器中。</span></div>
+             <label className="field"><span>{t('字体')}</span><select value={settings.editorFont} onChange={(event) => updateSettings('editorFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
+             <label className="field"><span>{t('字号')} <b>{settings.editorFontSize}px</b></span><input type="range" min="12" max="22" value={settings.editorFontSize} onChange={(event) => updateSettings('editorFontSize', Number(event.target.value))} /></label>
+             <label className="field"><span>{t('字重')} <b>{settings.editorWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.editorWeight} onChange={(event) => updateSettings('editorWeight', Number(event.target.value))} /></label>
+             <label className="field"><span>{t('高亮方案')}</span><select value={settings.highlightScheme} onChange={(event) => updateSettings('highlightScheme', event.target.value as HighlightScheme)}><option value="violet">Violet</option><option value="github">GitHub</option><option value="solarized">Solarized</option></select></label>
+             <section className="editor-mode-setting experimental-setting" aria-labelledby="editor-mode-setting-title">
+               <div className="editor-mode-setting-copy">
+                 <div className="editor-mode-setting-title"><strong id="editor-mode-setting-title">{t('WYSIWYG（即时渲染）')} <b>{t('实验性')}</b></strong></div>
+                 <small>{t('视觉模式类似 Typora/MarkText，编辑时实时渲染 Markdown。')}</small>
+                 {documentMode === 'mermaid' && <div className="editor-mode-setting-warning"><Icon name="warning" /><span>{t('Mermaid 不支持视觉模式，已自动切换回源码模式。')}</span></div>}
+               </div>
+               <div className="editor-mode-setting-tabs" role="tablist" aria-label={t('Markdown 编辑模式')}>
+                 <button type="button" className={documentEditorMode === 'source' ? 'active' : ''} role="tab" aria-selected={documentEditorMode === 'source'} onClick={() => changeDocumentEditorMode('source')}><Icon name="svg-editor" /><span>{t('源码')}</span></button>
+                 <button type="button" className={documentEditorMode === 'visual' ? 'active' : ''} role="tab" aria-selected={documentEditorMode === 'visual'} onClick={() => changeDocumentEditorMode('visual')} disabled={documentMode !== 'markdown'}><Icon name="map" /><span>{t('视觉')}</span></button>
+               </div>
+             </section>
+             <div className="settings-note"><Icon name="warning" /><span>{t('语法检查包括标题层级、代码块闭合与缩进一致性，问题会直接标记在编辑器中。')}</span></div>
           </div>}
            {activePanel === 'preview' && <div className="settings-body">
              {documentMode === 'mermaid' ? <>
