@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import DOMPurify from 'dompurify'
 import katex from 'katex'
 import { defaultOptions, deriveOptions, Markmap, toMarkdown, Transformer } from 'markmap-plus'
@@ -12,6 +12,7 @@ import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
+import { mermaidRenderId, mermaidViewBoxSize, renderMermaidSvg } from './mermaid-renderer'
 import type { AgentSourceFile } from './agent-client'
 import { normalizeWorkspaceLocator, workspaceKeyFor, type AgentWorkspaceRef, type AgentWorkspaceSelectionResult } from './agent-history'
 import guideEnglish from '../content/markmap++ guide.md?raw'
@@ -117,6 +118,7 @@ interface AppSettings {
   previewWeight: number
   colorFreezeLevel: number
   showGrid: boolean
+  previewMermaid: boolean
   previewBackgroundColor: string
 }
 
@@ -130,6 +132,7 @@ const defaultSettings: AppSettings = {
   previewWeight: 400,
   colorFreezeLevel: 2,
   showGrid: true,
+  previewMermaid: false,
   previewBackgroundColor: '#fafafa',
 }
 
@@ -392,7 +395,7 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'globe' | 'help' | 'link' | 'map' | 'menu' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
+type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'copy' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'globe' | 'help' | 'link' | 'map' | 'menu' | 'minus' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
@@ -403,6 +406,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   'chevron-right': <path d="m9 18 6-6-6-6"/>,
   clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
   collapse: <><path d="M4 14h6v6M20 10h-6V4"/><path d="M14 20v-6h6M10 4v6H4"/></>,
+  copy: <><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></>,
   download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>,
   expand: <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>,
   focus: <><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></>,
@@ -413,6 +417,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   link: <><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></>,
   map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15m6-12v15"/></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
+  minus: <path d="M5 12h14"/>,
   moon: <path d="M20 15.2A8 8 0 1 1 8.8 4 6.5 6.5 0 0 0 20 15.2Z"/>,
   more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
   plus: <path d="M12 5v14M5 12h14"/>,
@@ -431,6 +436,229 @@ const iconPaths: Record<IconName, React.ReactNode> = {
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
   return <svg className={className} aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{iconPaths[name]}</svg>
+}
+
+const XHTML_NS = 'http://www.w3.org/1999/xhtml'
+const MARKMAP_MERMAID_PREVIEW_CLASS = 'markmap-mermaid-preview'
+const MARKMAP_MERMAID_OVERLAY_CLASS = 'markmap-mermaid-preview-overlay'
+const MARKMAP_MERMAID_HIDDEN_ATTRIBUTE = 'data-markmap-mermaid-hidden'
+const MARKMAP_MERMAID_OPEN_EVENT = 'markmap-mermaid-open'
+const MARKMAP_MERMAID_DOWNLOAD_EVENT = 'markmap-mermaid-download'
+
+const mermaidPreviewTargets = new WeakMap<HTMLElement, HTMLElement>()
+
+interface MermaidPreviewEventDetail {
+  source: string
+  svg: string
+}
+
+function createXhtmlElement<T extends Element>(doc: Document, tagName: string) {
+  return doc.createElementNS(XHTML_NS, tagName) as unknown as T
+}
+
+function mermaidSourceFromCode(code: Element) {
+  return String(code.textContent || '').replace(/\n$/, '')
+}
+
+function emitMermaidPreviewEvent(type: string, detail: MermaidPreviewEventDetail) {
+  document.dispatchEvent(new CustomEvent<MermaidPreviewEventDetail>(type, { detail }))
+}
+
+function markmapMermaidOwner(svg: SVGSVGElement) {
+  return svg.id || 'markmap-preview'
+}
+
+function markmapMermaidOverlays(svg: SVGSVGElement) {
+  const owner = markmapMermaidOwner(svg)
+  return Array.from(document.querySelectorAll<HTMLElement>(`.${MARKMAP_MERMAID_OVERLAY_CLASS}`)).filter((overlay) => overlay.dataset.markmapMermaidOwner === owner)
+}
+
+function removeMarkmapMermaidOverlays(svg: SVGSVGElement | null) {
+  if (!svg?.isConnected) return
+  markmapMermaidOverlays(svg).forEach((overlay) => overlay.remove())
+}
+
+function restoreMarkmapMermaidPreviews(svg: SVGSVGElement | null) {
+  if (!svg) return
+  removeMarkmapMermaidOverlays(svg)
+  svg.querySelectorAll<HTMLElement>(`.${MARKMAP_MERMAID_PREVIEW_CLASS}`).forEach((preview) => {
+    const source = preview.dataset.mermaidSource
+    if (source === undefined) return
+    const pre = createXhtmlElement<HTMLPreElement>(preview.ownerDocument, 'pre')
+    const code = createXhtmlElement<HTMLElement>(preview.ownerDocument, 'code')
+    code.className = 'language-mermaid'
+    code.textContent = source
+    pre.append(code)
+    preview.replaceWith(pre)
+  })
+  svg.querySelectorAll<HTMLElement>(`pre[${MARKMAP_MERMAID_HIDDEN_ATTRIBUTE}]`).forEach((pre) => {
+    pre.style.visibility = ''
+    pre.removeAttribute(MARKMAP_MERMAID_HIDDEN_ATTRIBUTE)
+  })
+}
+
+function wireMermaidPreviewAction(button: HTMLButtonElement, action: () => void) {
+  button.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    action()
+  })
+}
+
+function positionMarkmapMermaidPreview(pre: HTMLElement, preview: HTMLElement) {
+  if (!pre.isConnected) {
+    preview.remove()
+    return false
+  }
+  const rect = pre.getBoundingClientRect()
+  const visible = rect.width > 0 && rect.height > 0
+  preview.style.display = visible ? 'block' : 'none'
+  if (!visible) return true
+  const hostRect = preview.parentElement?.getBoundingClientRect()
+  preview.style.left = `${rect.left - (hostRect?.left || 0)}px`
+  preview.style.top = `${rect.top - (hostRect?.top || 0)}px`
+  preview.style.width = `${rect.width}px`
+  preview.style.height = `${Math.max(rect.height, 86)}px`
+  return true
+}
+
+function createMarkmapMermaidPreview(svg: SVGSVGElement, pre: HTMLElement, source: string, svgMarkup: string) {
+  const doc = pre.ownerDocument
+  const preview = createXhtmlElement<HTMLDivElement>(doc, 'div')
+  preview.className = `${MARKMAP_MERMAID_PREVIEW_CLASS} ${MARKMAP_MERMAID_OVERLAY_CLASS}`
+  preview.dataset.markmapMermaidOwner = markmapMermaidOwner(svg)
+  preview.dataset.mermaidSource = source
+  preview.style.position = 'absolute'
+  preview.style.boxSizing = 'border-box'
+  preview.style.margin = '0'
+
+  const header = createXhtmlElement<HTMLDivElement>(doc, 'div')
+  header.className = 'markmap-mermaid-header'
+  const label = createXhtmlElement<HTMLSpanElement>(doc, 'span')
+  label.textContent = 'Mermaid'
+  const actions = createXhtmlElement<HTMLSpanElement>(doc, 'span')
+  actions.className = 'markmap-mermaid-actions'
+
+  const makeAction = (glyph: string, title: string, action: () => void) => {
+    const button = createXhtmlElement<HTMLButtonElement>(doc, 'button')
+    button.type = 'button'
+    button.textContent = glyph
+    button.title = title
+    button.setAttribute('aria-label', title)
+    wireMermaidPreviewAction(button, action)
+    actions.append(button)
+  }
+  makeAction('⧉', '复制 Mermaid 源代码', () => { void navigator.clipboard?.writeText(source) })
+  makeAction('⤢', '全屏查看 Mermaid 图表', () => emitMermaidPreviewEvent(MARKMAP_MERMAID_OPEN_EVENT, { source, svg: svgMarkup }))
+  makeAction('↓', '下载 Mermaid SVG', () => emitMermaidPreviewEvent(MARKMAP_MERMAID_DOWNLOAD_EVENT, { source, svg: svgMarkup }))
+  header.append(label, actions)
+
+  const diagram = createXhtmlElement<HTMLDivElement>(doc, 'div')
+  diagram.className = 'markmap-mermaid-diagram'
+  diagram.innerHTML = svgMarkup
+  preview.append(header, diagram)
+  const host = svg.parentElement || doc.body
+  host.append(preview)
+  pre.style.visibility = 'hidden'
+  pre.setAttribute(MARKMAP_MERMAID_HIDDEN_ATTRIBUTE, 'true')
+  mermaidPreviewTargets.set(preview, pre)
+  positionMarkmapMermaidPreview(pre, preview)
+  return preview
+}
+
+async function hydrateMarkmapMermaidPreviews(svg: SVGSVGElement, theme: 'dark' | 'default', disposed: () => boolean) {
+  markmapMermaidOverlays(svg).forEach((overlay) => overlay.remove())
+  const rawBlocks = Array.from(svg.querySelectorAll<HTMLElement>('pre > code.language-mermaid')).map((code, index) => ({
+    code,
+    pre: code.parentElement as HTMLElement,
+    index,
+  }))
+  const jobs = rawBlocks.map(async ({ code, pre, index }) => {
+      const source = mermaidSourceFromCode(code)
+      if (!source.trim()) return
+      const nodePath = code.closest('g.markmap-node')?.getAttribute('data-path') || 'root'
+      try {
+        const svgMarkup = await renderMermaidSvg(source, mermaidRenderId(`${nodePath}:${index}:${source}`), theme)
+        if (disposed() || !pre.isConnected) return
+        createMarkmapMermaidPreview(svg, pre, source, svgMarkup)
+      } catch (error) {
+        if (!disposed() && pre.isConnected) {
+          pre.classList.add('markmap-mermaid-error')
+          pre.title = 'Mermaid 图表语法无法渲染'
+        }
+      }
+    })
+  await Promise.all(jobs)
+}
+
+interface MermaidPreviewViewerState {
+  source: string
+  svg: string
+}
+
+function MermaidPreviewModal({ viewer, onClose }: { viewer: MermaidPreviewViewerState; onClose: () => void }) {
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [diagramSize, setDiagramSize] = useState<{ w: number; h: number } | null>(null)
+  const viewportRef = useRef<HTMLDivElement | null>(null)
+  const zoomLayerRef = useRef<HTMLDivElement | null>(null)
+  const gesture = useRef<{ points: Record<number, { x: number; y: number }>; panStart?: { x: number; y: number; originX: number; originY: number }; pinchStart?: { distance: number; zoom: number } }>({ points: {} })
+
+  useEffect(() => {
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => { document.body.style.overflow = previous; window.removeEventListener('keydown', closeOnEscape) }
+  }, [onClose])
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const size = mermaidViewBoxSize(viewer.svg)
+    setDiagramSize(size)
+    setPan({ x: 0, y: 0 })
+    setZoom(Math.max(.2, Math.min(8, viewport.clientWidth * .9 / size.w, viewport.clientHeight * .9 / size.h)))
+  }, [viewer.svg])
+
+  useEffect(() => {
+    if (zoomLayerRef.current) zoomLayerRef.current.innerHTML = viewer.svg
+  }, [diagramSize, viewer.svg])
+
+  const zoomBy = (factor: number) => setZoom((value) => Math.min(8, Math.max(.2, value * factor)))
+  const fitToViewport = () => {
+    const viewport = viewportRef.current
+    if (!viewport || !diagramSize) return
+    setPan({ x: 0, y: 0 })
+    setZoom(Math.max(.2, Math.min(8, viewport.clientWidth * .9 / diagramSize.w, viewport.clientHeight * .9 / diagramSize.h)))
+  }
+  const copySource = () => { void navigator.clipboard?.writeText(viewer.source) }
+  const downloadSvg = () => { void saveBlob(new Blob([viewer.svg], { type: 'image/svg+xml;charset=utf-8' }), `mermaid-${Date.now()}.svg`) }
+  const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const state = gesture.current
+    state.points[event.pointerId] = { x: event.clientX, y: event.clientY }
+    const points = Object.values(state.points)
+    if (points.length === 1) state.panStart = { x: event.clientX, y: event.clientY, originX: pan.x, originY: pan.y }
+    if (points.length === 2) state.pinchStart = { distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y), zoom }
+  }
+  const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = gesture.current
+    if (!state.points[event.pointerId]) return
+    state.points[event.pointerId] = { x: event.clientX, y: event.clientY }
+    const points = Object.values(state.points)
+    if (points.length === 2 && state.pinchStart) {
+      const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+      setZoom(Math.min(8, Math.max(.2, state.pinchStart.zoom * distance / Math.max(1, state.pinchStart.distance))))
+    } else if (points.length === 1 && state.panStart) {
+      setPan({ x: state.panStart.originX + event.clientX - state.panStart.x, y: state.panStart.originY + event.clientY - state.panStart.y })
+    }
+  }
+  const pointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => { delete gesture.current.points[event.pointerId]; gesture.current.panStart = undefined; gesture.current.pinchStart = undefined }
+  const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => { event.preventDefault(); setZoom((value) => Math.min(8, Math.max(.2, value * (event.deltaY < 0 ? 1.1 : .9)))) }
+
+  return <div className="agent-mermaid-modal" role="dialog" aria-modal="true" aria-label="全屏查看 Mermaid 图表"><div className="agent-mermaid-viewport" ref={viewportRef} onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}>{diagramSize && <div ref={zoomLayerRef} className="agent-mermaid-zoom-layer" style={{ '--diagram-w': `${diagramSize.w * zoom}px`, '--diagram-h': `${diagramSize.h * zoom}px`, transform: `translate(${pan.x}px, ${pan.y}px)` } as CSSProperties} />}</div><div className="agent-mermaid-tools"><button type="button" onClick={() => zoomBy(1 / 1.2)} aria-label="缩小" title="缩小"><Icon name="minus" /></button><b title="适应窗口" onClick={fitToViewport}>{Math.round(zoom * 100)}%</b><button type="button" onClick={() => zoomBy(1.2)} aria-label="放大" title="放大"><Icon name="plus" /></button><i aria-hidden="true" /><button type="button" onClick={copySource} aria-label="复制源代码" title="复制源代码"><Icon name="copy" /></button><button type="button" onClick={downloadSvg} aria-label="下载 SVG" title="下载 SVG"><Icon name="download" /></button></div><button type="button" className="agent-mermaid-close" onClick={onClose} aria-label="关闭全屏查看" title="关闭"><Icon name="x" /></button></div>
 }
 
 function loadDocument(locale: Locale) {
@@ -658,6 +886,7 @@ export default function MarkmapHooks() {
   const [desktopMenuLanguageOpen, setDesktopMenuLanguageOpen] = useState(false)
   const [desktopMenuSection, setDesktopMenuSection] = useState<'file' | 'edit' | 'view' | 'help'>('file')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
+  const [mermaidViewer, setMermaidViewer] = useState<MermaidPreviewViewerState | null>(null)
   const [exportScale, setExportScale] = useState(2)
   const [exportTransparentBackground, setExportTransparentBackground] = useState(false)
   const [exportTextTheme, setExportTextTheme] = useState<ExportTextTheme>('auto')
@@ -747,6 +976,22 @@ export default function MarkmapHooks() {
   const previewNativeContextMenuOnceRef = useRef(false)
   const imageRelayoutTimerRef = useRef<number | null>(null)
   const suppressRepositoryClickRef = useRef(false)
+  useEffect(() => {
+    const openViewer = (event: Event) => {
+      const detail = (event as CustomEvent<MermaidPreviewEventDetail>).detail
+      if (detail?.source && detail.svg) setMermaidViewer(detail)
+    }
+    const downloadViewer = (event: Event) => {
+      const detail = (event as CustomEvent<MermaidPreviewEventDetail>).detail
+      if (detail?.svg) void saveBlob(new Blob([detail.svg], { type: 'image/svg+xml;charset=utf-8' }), `mermaid-${Date.now()}.svg`)
+    }
+    document.addEventListener(MARKMAP_MERMAID_OPEN_EVENT, openViewer)
+    document.addEventListener(MARKMAP_MERMAID_DOWNLOAD_EVENT, downloadViewer)
+    return () => {
+      document.removeEventListener(MARKMAP_MERMAID_OPEN_EVENT, openViewer)
+      document.removeEventListener(MARKMAP_MERMAID_DOWNLOAD_EVENT, downloadViewer)
+    }
+  }, [])
   const repositoryTouchGestureRef = useRef<{
     target: RepositoryTarget
     element: HTMLElement
@@ -2898,7 +3143,65 @@ export default function MarkmapHooks() {
         imageRelayoutTimerRef.current = null
       }
     }
-  }, [documentRenderConfig, effectiveMarkmapOptions, viewOptions])
+  }, [documentRenderConfig, effectiveMarkmapOptions, previewDarkMode, settings.previewMermaid, viewOptions])
+
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    if (!settings.previewMermaid) {
+      restoreMarkmapMermaidPreviews(svg)
+      return
+    }
+
+    let disposed = false
+    let running = false
+    let scheduled = false
+    let pending = false
+    let hydrationFrame = 0
+    let trackingFrame = 0
+    const hasRawMermaidBlocks = () => Boolean(svg.querySelector('pre > code.language-mermaid'))
+    const schedule = () => {
+      if (disposed || !hasRawMermaidBlocks()) return
+      if (running) {
+        pending = true
+        return
+      }
+      if (scheduled) return
+      scheduled = true
+      hydrationFrame = window.requestAnimationFrame(() => {
+        hydrationFrame = 0
+        scheduled = false
+        if (disposed || running || !hasRawMermaidBlocks()) return
+        running = true
+        void hydrateMarkmapMermaidPreviews(svg, previewDarkMode ? 'dark' : 'default', () => disposed).finally(() => {
+          running = false
+          if (!disposed && pending) {
+            pending = false
+            schedule()
+          }
+        })
+      })
+    }
+    const trackOverlays = () => {
+      if (disposed) return
+      markmapMermaidOverlays(svg).forEach((overlay) => {
+        const pre = mermaidPreviewTargets.get(overlay)
+        if (!pre || !positionMarkmapMermaidPreview(pre, overlay)) overlay.remove()
+      })
+      trackingFrame = window.requestAnimationFrame(trackOverlays)
+    }
+    const observer = new MutationObserver(schedule)
+    observer.observe(svg, { childList: true, subtree: true })
+    schedule()
+    trackingFrame = window.requestAnimationFrame(trackOverlays)
+    return () => {
+      disposed = true
+      observer.disconnect()
+      if (hydrationFrame) window.cancelAnimationFrame(hydrationFrame)
+      if (trackingFrame) window.cancelAnimationFrame(trackingFrame)
+      restoreMarkmapMermaidPreviews(svg)
+    }
+  }, [previewDarkMode, settings.previewMermaid])
 
   useEffect(() => {
     document.documentElement.dataset.theme = previewDarkMode ? 'dark' : 'light'
@@ -3098,6 +3401,8 @@ export default function MarkmapHooks() {
     const width = Math.max(1, Math.ceil(x2 - x1 + padding * 2))
     const height = Math.max(1, Math.ceil(y2 - y1 + padding * 2))
     const clone = svg.cloneNode(true) as SVGSVGElement
+    // Mermaid 预览只属于屏幕显示。导出副本还原为原始代码块，保持既有 Markmap 导出内容。
+    restoreMarkmapMermaidPreviews(clone)
     const tablePadding = clone.querySelectorAll('foreignObject table').length * 20
     const outputHeight = height + tablePadding
     const textColor = darkMode ? previewLightText : previewDarkText
@@ -3500,10 +3805,15 @@ ${documentRenderConfig.style}
     const baseName = fileName.replace(/\.(md|markdown)$/i, '') || 'markmap'
     const desktop = desktopApi()
     const printWindow = exportFormat === 'pdf' && !desktop ? openPdfPrintWindow() : null
+    const restorePreviewAfterExport = settings.previewMermaid && exportFormat !== 'md'
     try {
       if (exportFormat === 'md') {
         await saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), `${baseName}.md`)
       } else {
+        if (restorePreviewAfterExport) {
+          restoreMarkmapMermaidPreviews(svgRef.current)
+          await mmRef.current?.renderData()
+        }
         await document.fonts.ready
         const { source, width, height } = createExportSvg(previewBackgroundColor, exportDarkMode, exportUsesTransparentBackground, exportFormat === 'pdf' ? 1 : exportScale)
         const exportSource = await prepareExportSvg(source, exportDarkMode)
@@ -3534,7 +3844,12 @@ ${documentRenderConfig.style}
     } catch (error) {
       if (printWindow && !printWindow.closed) printWindow.close()
       setExportError(error instanceof Error ? error.message : '导出失败，请重试')
-    } finally { setExporting(false) }
+    } finally {
+      if (restorePreviewAfterExport && svgRef.current && mmRef.current) {
+        await hydrateMarkmapMermaidPreviews(svgRef.current, previewDarkMode ? 'dark' : 'default', () => false)
+      }
+      setExporting(false)
+    }
   }
 
   const gridColumns = editorCollapsed ? '0 18px 1fr' : `${editorWidth}% 18px 1fr`
@@ -3954,6 +4269,7 @@ ${documentRenderConfig.style}
             <label className={`export-color-field preview-background-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span>{t('画布背景')} <small>{userPreviewBackground ? t('由 Markdown style 控制') : t('WCAG 自动主题')}</small></span><span className="export-color-control"><input type="color" value={settings.previewBackgroundColor} disabled={Boolean(userPreviewBackground)} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{settings.previewBackgroundColor.toUpperCase()}</code></span></label>
             <div className={`export-color-presets preview-background-presets ${userPreviewBackground ? 'code-controlled' : ''}`} aria-label={t('预览背景颜色预设')}>{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={settings.previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('预览背景色：')}${t(label)}`} disabled={Boolean(userPreviewBackground)} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
             <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>{t('点阵背景')}</strong><small>{documentRenderConfig.showGrid !== undefined ? t('由 Frontmatter 代码控制') : t('辅助观察画布移动与缩放')}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
+            <label className="switch-field experimental-setting"><span><strong>Mermaid 代码块预览 <b>实验性</b></strong><small>将 Markdown 中的 mermaid 代码块显示为 SVG 缩略图，可全屏查看；不会改变 Markmap 导出内容。</small></span><input type="checkbox" checked={settings.previewMermaid} onChange={(event) => updateSettings('previewMermaid', event.target.checked)} /></label>
             <div className="font-samples"><small>{t('字体预览')}{(codeFont.controlsFamily || codeFont.controlsSize || codeFont.controlsWeight) && ` · ${t('代码配置')}`}</small><span style={fontPreviewStyle}>{t('思维导图')} Mind Map 0123</span></div>
           </div>}
           {activePanel === 'export' && <div className="settings-body export-panel-body">
@@ -4007,6 +4323,7 @@ ${documentRenderConfig.style}
           </div>}
         </section>
       </div>}
+      {mermaidViewer && <MermaidPreviewModal viewer={mermaidViewer} onClose={() => setMermaidViewer(null)} />}
     </main>
   )
 }

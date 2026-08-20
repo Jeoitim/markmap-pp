@@ -7,6 +7,7 @@ import { buildAgentDiff } from './agent-diff'
 import { activeContent, AGENT_WELCOME_MESSAGE, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, normalizeStoredWorkspaceKey, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation, type AgentWorkspaceRef, type AgentWorkspaceSelectionResult } from './agent-history'
 import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
 import { saveBlob } from './desktop-api'
+import { renderMermaidSvg } from './mermaid-renderer'
 import { useI18n } from '../i18n-hook'
 
 type AgentMode = 'chat' | 'edit'
@@ -64,71 +65,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-// 暗色模式下节点背景若是浅色（classDef/style 里写的浅色填充），与浅色文字对比度不足。
-// 处理：保留色相与饱和度，反相明度——纯白变纯黑，浅彩变深彩，文字仍是浅色，对比度达标。
-function adaptDarkMermaidSvg(svg: string): string {
-  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
-  const cache = new Map<string, string>()
-  const parseColor = (raw: string): [number, number, number] | null => {
-    const value = raw.trim()
-    const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
-    if (hex) {
-      const full = hex[1].length === 3 ? hex[1].split('').map((c) => c + c).join('') : hex[1]
-      return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)]
-    }
-    const rgb = value.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/)
-    if (rgb) return [Math.min(255, Number(rgb[1])), Math.min(255, Number(rgb[2])), Math.min(255, Number(rgb[3]))]
-    return null
-  }
-  const toHex = (r: number, g: number, b: number) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')
-  const rgbToHsl = (rgb: [number, number, number]): [number, number, number] => {
-    const [r, g, b] = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255]
-    const max = Math.max(r, g, b), min = Math.min(r, g, b)
-    const l = (max + min) / 2
-    if (max === min) return [0, 0, l]
-    const d = max - min
-    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-    let h = 0
-    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
-    else if (max === g) h = ((b - r) / d + 2) / 6
-    else h = ((r - g) / d + 4) / 6
-    return [h, s, l]
-  }
-  const hslToHex = ([h, s, l]: [number, number, number]): string => {
-    if (s === 0) return toHex(l * 255, l * 255, l * 255)
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-    const p = 2 * l - q
-    const channel = (t: number) => {
-      const tt = ((t % 1) + 1) % 1
-      return tt < 1 / 6 ? p + (q - p) * 6 * tt : tt < 1 / 2 ? q : tt < 2 / 3 ? p + (q - p) * (2 / 3 - tt) * 6 : p
-    }
-    return toHex(channel(h + 1 / 3) * 255, channel(h) * 255, channel(h - 1 / 3) * 255)
-  }
-  const transform = (raw: string) => {
-    const rgb = parseColor(raw)
-    if (!rgb) return raw
-    const [h, s, l] = rgbToHsl(rgb)
-    if (l < 0.55) return raw // 本身够深，浅色文字可读
-    return hslToHex([h, s, 1 - l]) // 色相/饱和度不变，明度反相
-  }
-  doc.querySelectorAll('g.node > rect, g.node > circle, g.node > ellipse, g.node > polygon, g.node > path').forEach((shape) => {
-    const style = shape.getAttribute('style') || ''
-    const match = style.match(/fill\s*:\s*([^;!]+)/i)
-    if (!match) return
-    const key = match[1].trim()
-    if (!cache.has(key)) cache.set(key, transform(key))
-    const next = cache.get(key)
-    if (next === key) return
-    shape.setAttribute('style', style.replace(/fill\s*:\s*[^;!]+/i, 'fill:' + next))
-    const label = shape.parentElement?.querySelector(':scope > .label') ?? shape.parentElement?.querySelector('.label')
-    if (label) {
-      const current = label.getAttribute('style') || ''
-      label.setAttribute('style', /fill\s*:/.test(current) ? current.replace(/fill\s*:\s*[^;!]+/i, 'fill:#ccc') : current + (current ? ';' : '') + 'fill:#ccc')
-    }
-  })
-  return new XMLSerializer().serializeToString(doc)
-}
-
 function MermaidDiagram({ chart }: { chart: string }) {
   const { t } = useI18n()
   const [result, setResult] = useState<{ chart: string; svg: string; error: string }>({ chart: '', svg: '', error: '' })
@@ -153,11 +89,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
 
   useEffect(() => {
     let active = true
-    void import('mermaid').then(({ default: mermaid }) => {
-      // htmlLabels: false 让节点标签渲染为 SVG <text>（纯矢量），放大时保持清晰；否则标签是 foreignObject（HTML 位图），缩放会变糊。
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme })
-      return mermaid.render(`agent-mermaid-${id}`, chart)
-    }).then((rendered) => { if (active) setResult({ chart, svg: theme === 'dark' ? adaptDarkMermaidSvg(rendered.svg) : rendered.svg, error: '' }) }).catch(() => { if (active) setResult({ chart, svg: '', error: '图表语法无法渲染，以下保留原始 Mermaid 代码。' }) })
+    void renderMermaidSvg(chart, `agent-mermaid-${id}`, theme).then((svg) => { if (active) setResult({ chart, svg, error: '' }) }).catch(() => { if (active) setResult({ chart, svg: '', error: '图表语法无法渲染，以下保留原始 Mermaid 代码。' }) })
     return () => { active = false }
   }, [chart, id, theme])
 

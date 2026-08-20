@@ -422,6 +422,15 @@ svg { flex: 0 0 auto; }
 .map-canvas .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
 .map-canvas .markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
 .map-canvas .markmap-foreign .katex-display { margin: .2em 0; }
+.markmap-mermaid-preview { position: absolute; z-index: 4; display: block; width: min(100%, 420px); max-width: 100%; margin: .45em 0; overflow: hidden; border: 1px solid color-mix(in srgb,var(--border) 86%,transparent); border-radius: 8px; background: color-mix(in srgb,var(--markmap-code-bg, var(--panel-soft)) 86%,var(--panel)); pointer-events: auto; }
+.markmap-mermaid-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 0 6px 0 9px; border-bottom: 1px solid color-mix(in srgb,var(--border) 80%,transparent); color: var(--muted); font: 600 10px/1 "JetBrains Mono Variable",monospace; }
+.markmap-mermaid-actions { display: inline-flex; gap: 2px; }
+.markmap-mermaid-actions button { width: 24px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; color: var(--muted); background: transparent; font: 14px/1 sans-serif; cursor: pointer; }
+.markmap-mermaid-actions button:hover { color: var(--accent); background: color-mix(in srgb,var(--accent) 10%,transparent); }
+.markmap-mermaid-diagram { display: flex; align-items: center; justify-content: center; width: 100%; height: calc(100% - 27px); min-height: 0; padding: 8px 10px; box-sizing: border-box; overflow: hidden; }
+.markmap-mermaid-diagram svg { display: block; width: auto !important; height: auto !important; max-width: 100% !important; max-height: 100% !important; }
+.markmap-mermaid-error { outline: 1px dashed #c45454; outline-offset: -2px; }
+.experimental-setting strong b { margin-left: 5px; padding: 2px 5px; border-radius: 999px; color: #a86b1d; background: #d8872d1c; font-size: 9px; font-weight: 700; }
 
 .selection-action-menu { position: fixed; z-index: 210; width: 244px; display: grid; padding: 7px; border: 1px solid var(--border); border-radius: 12px; color: var(--text); background: color-mix(in srgb,var(--panel) 96%,transparent); box-shadow: 0 18px 52px #080a103f; backdrop-filter: blur(14px); }
 .selection-action-summary { overflow: hidden; margin: 2px 4px 7px; padding: 7px 8px; border-radius: 7px; color: var(--muted); background: var(--panel-soft); font-size: 12px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
