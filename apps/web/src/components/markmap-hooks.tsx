@@ -3,6 +3,7 @@ import DOMPurify from 'dompurify'
 import katex from 'katex'
 import { defaultOptions, deriveOptions, Markmap, toMarkdown, Transformer } from 'markmap-plus'
 import type { IMarkmapJSONOptions, IMarkmapOptions } from 'markmap-plus'
+import type { Diagnostic } from '@codemirror/lint'
 import katexStyles from 'katex/dist/katex.min.css?inline'
 import 'katex/dist/katex.min.css'
 import '@fontsource-variable/inter'
@@ -13,6 +14,7 @@ import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { mermaidRenderId, mermaidViewBoxSize, renderMermaidSvg } from './mermaid-renderer'
+import { inspectMermaid } from './mermaid-lint'
 import type { AgentSourceFile } from './agent-client'
 import { normalizeWorkspaceLocator, workspaceKeyFor, type AgentWorkspaceRef, type AgentWorkspaceSelectionResult } from './agent-history'
 import guideEnglish from '../content/markmap++ guide.md?raw'
@@ -67,6 +69,7 @@ type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html' | 'pdf'
 type ExportTextTheme = 'auto' | 'light' | 'dark'
 type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 type EditorView = 'markdown' | 'repository' | 'agent'
+type DocumentMode = 'markdown' | 'mermaid'
 
 interface DesktopWorkspaceSession {
   repositorySource: 'remote' | 'local'
@@ -356,6 +359,23 @@ function baseName(path: string) {
   return path.slice(path.lastIndexOf('/') + 1)
 }
 
+function documentModeForName(name: string): DocumentMode {
+  return /\.mmd$/i.test(name) ? 'mermaid' : 'markdown'
+}
+
+function documentStem(name: string) {
+  return baseName(name.replaceAll('\\', '/')).replace(/\.(?:md|markdown|mmd)$/i, '')
+}
+
+function documentNameForMode(name: string, mode: DocumentMode) {
+  const stem = documentStem(name).trim() || '未命名'
+  return `${stem}.${mode === 'mermaid' ? 'mmd' : 'md'}`
+}
+
+function documentMimeType(mode: DocumentMode) {
+  return mode === 'mermaid' ? 'text/plain;charset=utf-8' : 'text/markdown;charset=utf-8'
+}
+
 function historicalFileName(path: string, commitSha: string) {
   const name = baseName(path)
   const match = name.match(/^(.*?)(\.(?:md|markdown))$/i)
@@ -423,7 +443,7 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
     .filter((row) => !Array.from(collapsedFolders).some((folder) => row.path !== folder && row.path.startsWith(`${folder}/`)))
 }
 
-type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'copy' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'globe' | 'help' | 'link' | 'map' | 'menu' | 'minus' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'sync' | 'tabs' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
+type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'copy' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'globe' | 'help' | 'link' | 'map' | 'menu' | 'mermaid-svg' | 'minus' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'svg-editor' | 'sync' | 'tabs' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
@@ -445,6 +465,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   link: <><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></>,
   map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15m6-12v15"/></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
+  'mermaid-svg': <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8M8 12h5M8 16h8"/><circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none"/></>,
   minus: <path d="M5 12h14"/>,
   moon: <path d="M20 15.2A8 8 0 1 1 8.8 4 6.5 6.5 0 0 0 20 15.2Z"/>,
   more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
@@ -452,6 +473,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   refresh: <><path d="M20 7v5h-5"/><path d="M18.2 16.5A8 8 0 1 1 19.8 9L20 12"/></>,
   settings: <><path d="M4 7h10m4 0h2M4 12h3m4 0h9M4 17h8m4 0h4"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="14" cy="17" r="2"/></>,
   sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></>,
+  'svg-editor': <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m8 9-3 3 3 3m8-6 3 3-3 3m-3-7-2 8"/></>,
   sync: <><path d="m8 15 4-4 4 4m-4-4v9"/><path d="M7 18H5.8A3.8 3.8 0 0 1 5 10.5 7 7 0 0 1 18.5 9a4.5 4.5 0 0 1 .5 8.9"/></>,
   tabs: <><rect x="7" y="4" width="13" height="15" rx="2"/><path d="M4 8v10a2 2 0 0 0 2 2h10"/></>,
   undo: <><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6v1"/></>,
@@ -609,7 +631,7 @@ async function hydrateMarkmapMermaidPreviews(svg: SVGSVGElement, theme: 'dark' |
         const svgMarkup = await renderMermaidSvg(source, mermaidRenderId(`${nodePath}:${index}:${source}`), theme)
         if (disposed() || !pre.isConnected) return
         createMarkmapMermaidPreview(svg, pre, source, svgMarkup)
-      } catch (error) {
+      } catch {
         if (!disposed() && pre.isConnected) {
           pre.classList.add('markmap-mermaid-error')
           pre.title = 'Mermaid 图表语法无法渲染'
@@ -689,6 +711,99 @@ function MermaidPreviewModal({ viewer, onClose }: { viewer: MermaidPreviewViewer
   return <div className="agent-mermaid-modal" role="dialog" aria-modal="true" aria-label="全屏查看 Mermaid 图表"><div className="agent-mermaid-viewport" ref={viewportRef} onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}>{diagramSize && <div ref={zoomLayerRef} className="agent-mermaid-zoom-layer" style={{ '--diagram-w': `${diagramSize.w * zoom}px`, '--diagram-h': `${diagramSize.h * zoom}px`, transform: `translate(${pan.x}px, ${pan.y}px)` } as CSSProperties} />}</div><div className="agent-mermaid-tools"><button type="button" onClick={() => zoomBy(1 / 1.2)} aria-label="缩小" title="缩小"><Icon name="minus" /></button><b title="适应窗口" onClick={fitToViewport}>{Math.round(zoom * 100)}%</b><button type="button" onClick={() => zoomBy(1.2)} aria-label="放大" title="放大"><Icon name="plus" /></button><i aria-hidden="true" /><button type="button" onClick={copySource} aria-label="复制源代码" title="复制源代码"><Icon name="copy" /></button><button type="button" onClick={downloadSvg} aria-label="下载 SVG" title="下载 SVG"><Icon name="download" /></button></div><button type="button" className="agent-mermaid-close" onClick={onClose} aria-label="关闭全屏查看" title="关闭"><Icon name="x" /></button></div>
 }
 
+function StandaloneMermaidPreview({ source, theme, onRendered, onFitReady }: { source: string; theme: 'dark' | 'default'; onRendered: (viewer: MermaidPreviewViewerState | null) => void; onFitReady: (fit: (() => void) | null) => void }) {
+  const [svg, setSvg] = useState('')
+  const [error, setError] = useState('')
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [diagramSize, setDiagramSize] = useState<{ w: number; h: number } | null>(null)
+  const viewportRef = useRef<HTMLDivElement | null>(null)
+  const zoomLayerRef = useRef<HTMLDivElement | null>(null)
+  const gesture = useRef<{ points: Record<number, { x: number; y: number }>; panStart?: { x: number; y: number; originX: number; originY: number }; pinchStart?: { distance: number; zoom: number } }>({ points: {} })
+
+  useEffect(() => {
+    let disposed = false
+    setSvg('')
+    setError('')
+    setDiagramSize(null)
+    setPan({ x: 0, y: 0 })
+    setZoom(1)
+    onRendered(null)
+    onFitReady(null)
+    if (!source.trim()) return () => { disposed = true }
+    void renderMermaidSvg(source, mermaidRenderId(`standalone:${source}`), theme).then((rendered) => {
+      if (disposed) return
+      setSvg(rendered)
+      setDiagramSize(mermaidViewBoxSize(rendered))
+      onRendered({ source, svg: rendered })
+    }).catch((reason) => {
+      if (disposed) return
+      setError(reason instanceof Error ? reason.message : 'Mermaid 图表语法无法渲染')
+      onRendered(null)
+    })
+    return () => { disposed = true }
+  }, [onFitReady, onRendered, source, theme])
+
+  const fitToViewport = useCallback(() => {
+    const viewport = viewportRef.current
+    if (!viewport || !diagramSize) return
+    setPan({ x: 0, y: 0 })
+    setZoom(Math.max(.2, Math.min(8, viewport.clientWidth * .9 / diagramSize.w, viewport.clientHeight * .9 / diagramSize.h)))
+  }, [diagramSize])
+
+  useEffect(() => {
+    onFitReady(diagramSize ? fitToViewport : null)
+    return () => onFitReady(null)
+  }, [diagramSize, fitToViewport, onFitReady])
+
+  useEffect(() => {
+    if (!svg || !diagramSize) return
+    const frame = window.requestAnimationFrame(fitToViewport)
+    return () => window.cancelAnimationFrame(frame)
+  }, [diagramSize, fitToViewport, svg])
+
+  useEffect(() => {
+    if (zoomLayerRef.current) zoomLayerRef.current.innerHTML = svg
+  }, [diagramSize, svg])
+
+  const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const state = gesture.current
+    state.points[event.pointerId] = { x: event.clientX, y: event.clientY }
+    const points = Object.values(state.points)
+    if (points.length === 1) state.panStart = { x: event.clientX, y: event.clientY, originX: pan.x, originY: pan.y }
+    if (points.length === 2) state.pinchStart = { distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y), zoom }
+  }
+
+  const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = gesture.current
+    if (!state.points[event.pointerId]) return
+    state.points[event.pointerId] = { x: event.clientX, y: event.clientY }
+    const points = Object.values(state.points)
+    if (points.length === 2 && state.pinchStart) {
+      const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+      setZoom(Math.min(8, Math.max(.2, state.pinchStart.zoom * distance / Math.max(1, state.pinchStart.distance))))
+    } else if (points.length === 1 && state.panStart) {
+      setPan({ x: state.panStart.originX + event.clientX - state.panStart.x, y: state.panStart.originY + event.clientY - state.panStart.y })
+    }
+  }
+
+  const pointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    delete gesture.current.points[event.pointerId]
+    gesture.current.panStart = undefined
+    gesture.current.pinchStart = undefined
+  }
+
+  const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setZoom((value) => Math.min(8, Math.max(.2, value * (event.deltaY < 0 ? 1.1 : .9))))
+  }
+
+  const viewer = svg ? { source, svg } : null
+  return <div className="standalone-mermaid-preview"><div className="standalone-mermaid-viewport" ref={viewportRef} onWheel={zoomWithWheel} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd}>{viewer && diagramSize ? <div ref={zoomLayerRef} className="standalone-mermaid-zoom-layer" style={{ '--diagram-w': `${diagramSize.w * zoom}px`, '--diagram-h': `${diagramSize.h * zoom}px`, transform: `translate(${pan.x}px, ${pan.y}px)` } as CSSProperties} /> : error ? <div className="standalone-mermaid-error"><Icon name="warning" /><span>{error}</span></div> : <div className="standalone-mermaid-pending">正在渲染 Mermaid…</div>}</div></div>
+}
+
 function loadDocument(locale: Locale) {
   return locale === 'en-US' ? guideEnglish : guideChinese
 }
@@ -698,6 +813,7 @@ interface DocumentTab {
   sourceKey: string
   name: string
   content: string
+  mode: DocumentMode
   repositoryPath: string | null
   localRepositoryId: string | null
   localPath: string | null
@@ -706,7 +822,7 @@ interface DocumentTab {
   desktopPath: string | null
 }
 
-type DocumentTabPersistence = Pick<DocumentTab, 'savedContent' | 'desktopFileId' | 'desktopPath'>
+type DocumentTabPersistence = Pick<DocumentTab, 'savedContent' | 'desktopFileId' | 'desktopPath'> & { mode?: DocumentMode }
 
 let documentTabSequence = 0
 
@@ -717,6 +833,7 @@ function createDocumentTab(name: string, content: string, sourceKey?: string, re
     sourceKey: sourceKey || `document:${Date.now()}:${documentTabSequence}`,
     name,
     content,
+    mode: persistence.mode || documentModeForName(name),
     repositoryPath,
     localRepositoryId,
     localPath,
@@ -892,6 +1009,7 @@ export default function MarkmapHooks() {
   const [markdown, setMarkdown] = useState(() => documentTabs[0].content)
   const [renderedMarkdown, setRenderedMarkdown] = useState(markdown)
   const [fileName, setFileName] = useState(() => documentTabs[0].name)
+  const [documentMode, setDocumentMode] = useState<DocumentMode>(() => documentTabs[0].mode)
   const activeDocumentTab = documentTabs.find((tab) => tab.id === activeTabId) || documentTabs[0]
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
   const [editorView, setEditorView] = useState<EditorView>(() => desktopWorkspaceSessionRef.current?.editorView || 'markdown')
@@ -915,13 +1033,20 @@ export default function MarkmapHooks() {
   const [desktopMenuSection, setDesktopMenuSection] = useState<'file' | 'edit' | 'view' | 'help'>('file')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
   const [mermaidViewer, setMermaidViewer] = useState<MermaidPreviewViewerState | null>(null)
+  const [standaloneMermaidViewer, setStandaloneMermaidViewer] = useState<MermaidPreviewViewerState | null>(null)
+  const [standaloneMermaidFit, setStandaloneMermaidFit] = useState<(() => void) | null>(null)
+  const registerStandaloneMermaidFit = useCallback((fit: (() => void) | null) => setStandaloneMermaidFit(() => fit), [])
   const [exportScale, setExportScale] = useState(2)
   const [exportTransparentBackground, setExportTransparentBackground] = useState(false)
   const [exportTextTheme, setExportTextTheme] = useState<ExportTextTheme>('auto')
   const [exportTab, setExportTab] = useState<'file' | 'repository'>('file')
+  useEffect(() => {
+    if (documentMode === 'mermaid' && exportFormat === 'html') setExportFormat('svg')
+  }, [documentMode, exportFormat])
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [mermaidDiagnostics, setMermaidDiagnostics] = useState<Diagnostic[]>([])
   const [githubConfig, setGithubConfig] = useState<GitHubConfig | null>(loadGitHubConfig)
   const [githubProfiles, setGithubProfiles] = useState<GitHubRepositoryProfile[]>([])
   const [addingRemoteRepository, setAddingRemoteRepository] = useState(false)
@@ -1136,7 +1261,19 @@ export default function MarkmapHooks() {
     }
   }, [localGitState.activeId, repositorySource])
 
-  const diagnostics = useMemo(() => inspectMarkdown(markdown, locale), [markdown, locale])
+  useEffect(() => {
+    let disposed = false
+    if (documentMode !== 'mermaid') {
+      setMermaidDiagnostics([])
+      return () => { disposed = true }
+    }
+    void inspectMermaid(markdown, locale).then((next) => {
+      if (!disposed) setMermaidDiagnostics(next)
+    })
+    return () => { disposed = true }
+  }, [documentMode, markdown, locale])
+
+  const diagnostics = useMemo(() => documentMode === 'markdown' ? inspectMarkdown(markdown, locale) : mermaidDiagnostics, [documentMode, locale, markdown, mermaidDiagnostics])
   const repositoryPaths = useMemo(() => Array.from(new Set([
     ...remoteFiles.map((file) => file.path),
     ...cachedFiles.filter((file) => file.status !== 'deleted').map((file) => file.path),
@@ -1169,10 +1306,10 @@ export default function MarkmapHooks() {
   const effectiveFontWeightCss = codeFont.weight || String(settings.previewWeight)
   const effectiveMarkmapFont = codeFont.shorthand || `${effectiveFontWeightCss} ${effectiveFontSizeCss}/1.35 ${effectiveFontFamily}`
   const effectiveColorFreezeLevel = documentRenderConfig.colorFreezeLevel ?? settings.colorFreezeLevel
-  const effectiveShowGrid = documentRenderConfig.showGrid ?? settings.showGrid
-  const userPreviewBackground = readUserPreviewBackground(documentRenderConfig.style)
-  const previewBackgroundColor = userPreviewBackground || settings.previewBackgroundColor
-  const previewDarkMode = userPreviewBackground ? shouldUseDarkTheme(previewBackgroundColor) : dark
+  const effectiveShowGrid = documentMode === 'mermaid' ? settings.showGrid : documentRenderConfig.showGrid ?? settings.showGrid
+  const userPreviewBackground = documentMode === 'mermaid' ? undefined : readUserPreviewBackground(documentRenderConfig.style)
+  const previewBackgroundColor = documentMode === 'mermaid' ? settings.previewBackgroundColor : userPreviewBackground || settings.previewBackgroundColor
+  const previewDarkMode = documentMode === 'mermaid' ? dark : userPreviewBackground ? shouldUseDarkTheme(previewBackgroundColor) : dark
   const previewCodeBackground = codeBackgroundColor(previewBackgroundColor, previewDarkMode)
   const previewLinkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(previewBackgroundColor)
   const exportAutoDarkMode = shouldUseDarkTheme(previewBackgroundColor)
@@ -1232,11 +1369,12 @@ export default function MarkmapHooks() {
     setMarkdown(tab.content)
     setRenderedMarkdown(tab.content)
     setFileName(tab.name)
+    setDocumentMode(tab.mode)
     setActiveRepoPath(tab.repositoryPath)
     setActiveLocalFile(tab.localRepositoryId && tab.localPath ? { repositoryId: tab.localRepositoryId, path: tab.localPath } : null)
     setSaveState('saved')
     setMobileTabsOpen(false)
-    window.setTimeout(() => mmRef.current?.fit(), 60)
+    if (tab.mode === 'markdown') window.setTimeout(() => mmRef.current?.fit(), 60)
   }, [])
 
   const displayNoOpenDocument = useCallback(() => {
@@ -1255,12 +1393,12 @@ export default function MarkmapHooks() {
 
   const persistActiveDocumentTab = useCallback(() => {
     const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId
-      ? { ...tab, name: fileName, content: markdownRef.current, repositoryPath: activeRepoPath, localRepositoryId: activeLocalFile?.repositoryId || null, localPath: activeLocalFile?.path || null }
+      ? { ...tab, name: fileName, content: markdownRef.current, mode: documentMode, repositoryPath: activeRepoPath, localRepositoryId: activeLocalFile?.repositoryId || null, localPath: activeLocalFile?.path || null }
       : tab)
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
     return nextTabs
-  }, [activeLocalFile, activeRepoPath, activeTabId, fileName])
+  }, [activeLocalFile, activeRepoPath, activeTabId, documentMode, fileName])
 
   const markActiveDocumentSaved = useCallback((content: string) => {
     const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId ? { ...tab, content, savedContent: content } : tab)
@@ -1277,9 +1415,10 @@ export default function MarkmapHooks() {
   const openDocumentTab = useCallback((name: string, content: string, sourceKey?: string, repositoryPath: string | null = null, localRepositoryId: string | null = null, localPath: string | null = null, persistence: Partial<DocumentTabPersistence> = {}) => {
     const savedTabs = persistActiveDocumentTab()
     const existing = sourceKey ? savedTabs.find((tab) => tab.sourceKey === sourceKey) : undefined
+    const mode = persistence.mode || documentModeForName(name)
     const tab = existing
-      ? { ...existing, name, content, repositoryPath, localRepositoryId, localPath, ...persistence }
-      : createDocumentTab(name, content, sourceKey, repositoryPath, localRepositoryId, localPath, persistence)
+      ? { ...existing, name, content, mode, repositoryPath, localRepositoryId, localPath, ...persistence }
+      : createDocumentTab(name, content, sourceKey, repositoryPath, localRepositoryId, localPath, { ...persistence, mode })
     const nextTabs = existing ? savedTabs.map((item) => item.id === tab.id ? tab : item) : [...savedTabs, tab]
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
@@ -1346,7 +1485,7 @@ export default function MarkmapHooks() {
         if (!desktop) throw new Error('文件授权已失效，请重新打开')
         await desktop.saveOpenedMarkdown(tab.desktopFileId, tab.content)
       } else {
-        const result = await saveBlob(new Blob([tab.content], { type: 'text/markdown;charset=utf-8' }), tab.name)
+        const result = await saveBlob(new Blob([tab.content], { type: documentMimeType(tab.mode) }), documentNameForMode(tab.name, tab.mode))
         if (result.canceled) return
       }
       const nextTabs = documentTabsRef.current.map((item) => item.id === tab.id ? { ...item, savedContent: item.content } : item)
@@ -1376,8 +1515,21 @@ export default function MarkmapHooks() {
     setSaveState('saving')
     setMarkdown(value)
   }, [])
+  const setActiveDocumentMode = useCallback((mode: DocumentMode) => {
+    const active = documentTabsRef.current.find((tab) => tab.id === activeTabId)
+    if (!active || mode === documentMode) return
+    const canRenameStandalone = !active.desktopFileId && !active.repositoryPath && !active.localPath
+    const nextName = canRenameStandalone ? documentNameForMode(fileName, mode) : fileName
+    const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId ? { ...tab, mode, name: nextName } : tab)
+    documentTabsRef.current = nextTabs
+    setDocumentTabs(nextTabs)
+    setDocumentMode(mode)
+    if (nextName !== fileName) setFileName(nextName)
+    setStandaloneMermaidViewer(null)
+    setMermaidViewer(null)
+  }, [activeTabId, documentMode, fileName])
   const applyOpenedMarkdown = useCallback((name: string, content: string, sourceKey?: string, persistence: Partial<DocumentTabPersistence> = {}) => {
-    openDocumentTab(name, content, sourceKey, null, null, null, persistence)
+    openDocumentTab(name, content, sourceKey, null, null, null, { ...persistence, mode: persistence.mode || documentModeForName(name) })
   }, [openDocumentTab])
 
   useEffect(() => desktopApi()?.onOpenedMarkdown((file) => applyOpenedMarkdown(file.name, file.content, `desktop:${file.id}`, { desktopFileId: file.id, desktopPath: file.path, savedContent: file.content })), [applyOpenedMarkdown])
@@ -2098,7 +2250,7 @@ export default function MarkmapHooks() {
         setLocalGitNotice(`已保存 ${tab.name}`)
         return
       }
-      const result = await saveBlob(new Blob([markdownRef.current], { type: 'text/markdown;charset=utf-8' }), tab.name)
+      const result = await saveBlob(new Blob([markdownRef.current], { type: documentMimeType(tab.mode) }), documentNameForMode(tab.name, tab.mode))
       if (!result.canceled) {
         markActiveDocumentSaved(markdownRef.current)
         setLocalGitNotice(`已下载 ${tab.name} 的副本`)
@@ -2361,8 +2513,9 @@ export default function MarkmapHooks() {
       setActivePanel('github')
       return
     }
-    const currentName = baseName(fileName) || '未命名.md'
-    setRepositorySaveName(/\.md$/i.test(currentName) ? currentName : `${currentName}.md`)
+    const extension = documentMode === 'mermaid' ? '.mmd' : '.md'
+    const currentName = baseName(fileName) || `未命名${extension}`
+    setRepositorySaveName(new RegExp(`\\${extension}$`, 'i').test(currentName) ? currentName : `${documentStem(currentName)}${extension}`)
     setRepositorySaveFolder('')
     setRepositorySaveCollapsedFolders(new Set())
     setRepositorySaveMode(true)
@@ -2379,8 +2532,9 @@ export default function MarkmapHooks() {
   const saveCurrentDocumentToRepository = async () => {
     if (!githubConfig) return
     let name = repositorySaveName.trim()
-    if (!name) { setGithubError('请输入 Markdown 文件名'); return }
-    if (!/\.md$/i.test(name)) name += '.md'
+    const extension = documentMode === 'mermaid' ? '.mmd' : '.md'
+    if (!name) { setGithubError(`请输入 ${documentMode === 'mermaid' ? 'Mermaid' : 'Markdown'} 文件名`); return }
+    if (!new RegExp(`\\${extension}$`, 'i').test(name)) name += extension
     const path = joinPath(repositorySaveFolder, name)
     const occupied = buildRepositoryRows(remoteFiles, cachedFiles, virtualFolders, new Set()).some((row) => row.path === path)
     if (!validRepositoryPath(path) || /[\\/]/.test(name) || name === '.' || name === '..') { setGithubError('文件名无效，不能包含路径分隔符'); return }
@@ -2973,6 +3127,7 @@ export default function MarkmapHooks() {
   }
 
   useEffect(() => {
+    if (documentMode === 'mermaid') return
     if (!svgRef.current) return
     const initialConfig = buildDocumentRenderConfig(initialMarkdownRef.current)
     const mm = Markmap.create(svgRef.current, viewOptions(deriveOptions({
@@ -2988,7 +3143,7 @@ export default function MarkmapHooks() {
       if (imageRelayoutTimerRef.current !== null) window.clearTimeout(imageRelayoutTimerRef.current)
       mm.destroy(); mmRef.current = null
     }
-  }, [viewOptions])
+  }, [documentMode, viewOptions])
 
   useEffect(() => {
     const syncAfterDelete = (event: KeyboardEvent) => {
@@ -3138,6 +3293,7 @@ export default function MarkmapHooks() {
   }, [activeRepoPath, markdown])
 
   useEffect(() => {
+    if (documentMode === 'mermaid') return
     const mm = mmRef.current
     const svg = svgRef.current
     if (!mm || !svg) return
@@ -3176,9 +3332,13 @@ export default function MarkmapHooks() {
         imageRelayoutTimerRef.current = null
       }
     }
-  }, [documentRenderConfig, effectiveMarkmapFont, effectiveMarkmapOptions, previewDarkMode, settings.previewMermaid, viewOptions])
+  }, [documentMode, documentRenderConfig, effectiveMarkmapFont, effectiveMarkmapOptions, previewDarkMode, settings.previewMermaid, viewOptions])
 
   useEffect(() => {
+    if (documentMode === 'mermaid') {
+      restoreMarkmapMermaidPreviews(svgRef.current)
+      return
+    }
     const svg = svgRef.current
     if (!svg) return
     if (!settings.previewMermaid) {
@@ -3234,7 +3394,7 @@ export default function MarkmapHooks() {
       if (trackingFrame) window.cancelAnimationFrame(trackingFrame)
       restoreMarkmapMermaidPreviews(svg)
     }
-  }, [previewDarkMode, settings.previewMermaid])
+  }, [documentMode, previewDarkMode, settings.previewMermaid])
 
   useEffect(() => {
     document.documentElement.dataset.theme = previewDarkMode ? 'dark' : 'light'
@@ -3828,16 +3988,70 @@ ${documentRenderConfig.style}
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${baseName}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${backgroundColor}}body{font-family:system-ui,sans-serif;user-select:none}svg.markmap{display:block;width:100%;height:100%;touch-action:none}svg.markmap .markmap-node,svg.markmap .markmap-link{transition:none}.markmap-foreign,.markmap-foreign *{user-select:text}.markmap-export-toolbar{position:fixed;z-index:2;top:14px;right:14px;display:flex;gap:6px;padding:6px;border:1px solid ${toolbarBorder};border-radius:10px;background:${toolbarBackground};box-shadow:0 8px 22px #10131a1c}.markmap-export-toolbar button{height:30px;min-width:30px;padding:0 9px;border:1px solid ${toolbarBorder};border-radius:7px;background:${darkMode ? '#303743' : '#fff'};color:${toolbarColor};cursor:pointer;font:12px system-ui,sans-serif;user-select:none}.markmap-export-toolbar button:hover{border-color:#7056e8;color:#7056e8}</style></head><body><div class="markmap-export-toolbar" aria-label="思维导图工具"><button type="button" data-action="zoom-out" aria-label="缩小">−</button><button type="button" data-action="zoom-in" aria-label="放大">＋</button><button type="button" data-action="fit">适应</button></div>${safeSource}${script}</body></html>`
   }
 
+  const createStandaloneMermaidExportSvg = (source: string, backgroundColor: string, darkMode: boolean, transparentBackground: boolean, renderScale = exportScale) => {
+    const documentNode = new DOMParser().parseFromString(source, 'image/svg+xml')
+    const root = documentNode.documentElement
+    if (root.tagName.toLowerCase() !== 'svg') throw new Error('Mermaid SVG 尚未准备好')
+    const viewBox = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number)
+    const viewBoxX = Number.isFinite(viewBox[0]) ? viewBox[0] : 0
+    const viewBoxY = Number.isFinite(viewBox[1]) ? viewBox[1] : 0
+    const size = mermaidViewBoxSize(source)
+    const width = Math.max(1, Math.ceil(size.w * renderScale))
+    const height = Math.max(1, Math.ceil(size.h * renderScale))
+    root.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    root.setAttribute('width', String(width))
+    root.setAttribute('height', String(height))
+    root.setAttribute('viewBox', `${viewBoxX} ${viewBoxY} ${size.w} ${size.h}`)
+    const style = documentNode.createElementNS('http://www.w3.org/2000/svg', 'style')
+    style.textContent = `text, tspan, .label, .nodeLabel { color: ${darkMode ? previewLightText : previewDarkText}; font-family: ${previewFonts[settings.previewFont].family} !important; font-size: ${settings.previewFontSize}px !important; font-weight: ${settings.previewWeight} !important; }`
+    root.prepend(style)
+    if (!transparentBackground) {
+      const background = documentNode.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      background.setAttribute('x', String(viewBoxX)); background.setAttribute('y', String(viewBoxY))
+      background.setAttribute('width', String(size.w)); background.setAttribute('height', String(size.h))
+      background.setAttribute('fill', backgroundColor)
+      root.insertBefore(background, root.firstChild)
+    }
+    return { source: new XMLSerializer().serializeToString(root), width, height }
+  }
+
   const exportDocument = async () => {
     setExporting(true)
     setExportError('')
-    const baseName = fileName.replace(/\.(md|markdown)$/i, '') || 'markmap'
+    const baseName = documentStem(fileName) || (documentMode === 'mermaid' ? 'mermaid' : 'markmap')
     const desktop = desktopApi()
     const printWindow = exportFormat === 'pdf' && !desktop ? openPdfPrintWindow() : null
-    const restorePreviewAfterExport = settings.previewMermaid && exportFormat !== 'md'
+    const restorePreviewAfterExport = documentMode === 'markdown' && settings.previewMermaid && exportFormat !== 'md'
     try {
-      if (exportFormat === 'md') {
-        await saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), `${baseName}.md`)
+      if (documentMode === 'mermaid') {
+        if (exportFormat === 'md') {
+          await saveBlob(new Blob([markdown], { type: documentMimeType('mermaid') }), `${baseName}.mmd`)
+        } else {
+          const currentViewer = standaloneMermaidViewer?.source === markdown ? standaloneMermaidViewer : null
+          const rendered = currentViewer?.svg || await renderMermaidSvg(markdown, mermaidRenderId(`export:${markdown}:${exportDarkMode ? 'dark' : 'default'}`), exportDarkMode ? 'dark' : 'default')
+          const { source, width, height } = createStandaloneMermaidExportSvg(rendered, previewBackgroundColor, exportDarkMode, exportFormat === 'png' && exportTransparentBackground, exportFormat === 'pdf' ? 1 : exportScale)
+          if (exportFormat === 'svg') await saveBlob(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
+          else if (exportFormat === 'pdf') {
+            const pdfHtml = createStaticPdfHtml(source, width, height, previewBackgroundColor)
+            if (desktop) await desktop.savePdf({ suggestedName: `${baseName}.pdf`, html: pdfHtml, width, height })
+            else await printStaticPdf(printWindow, pdfHtml, t('浏览器阻止了打印窗口，请允许弹出窗口后重试'))
+          } else {
+            const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`
+            const image = new Image()
+            await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error('图像渲染失败')); image.src = svgUrl })
+            const canvas = document.createElement('canvas')
+            canvas.width = width; canvas.height = height
+            const context = canvas.getContext('2d')
+            if (!context) throw new Error('浏览器不支持画布导出')
+            context.drawImage(image, 0, 0, width, height)
+            const mime = exportFormat === 'png' ? 'image/png' : 'image/jpeg'
+            const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, 0.94))
+            if (!blob) throw new Error('导出文件生成失败')
+            await saveBlob(blob, `${baseName}.${exportFormat === 'jpeg' ? 'jpg' : 'png'}`)
+          }
+        }
+      } else if (exportFormat === 'md') {
+        await saveBlob(new Blob([markdown], { type: documentMimeType('markdown') }), `${baseName}.md`)
       } else {
         if (restorePreviewAfterExport) {
           restoreMarkmapMermaidPreviews(svgRef.current)
@@ -4057,7 +4271,7 @@ ${documentRenderConfig.style}
                 <button disabled={!canUndo} onClick={() => { setDesktopMenuOpen(false); undoLastChange() }}><span>{t('撤回上一次修改')}</span><kbd>{shortcut('Z')}</kbd></button>
                 <button onClick={() => { setDesktopMenuOpen(false); setActivePanel('editor') }}><span>{t('编辑器偏好设置')}</span></button>
               </> : desktopMenuSection === 'view' ? <>
-                <button onClick={() => { setDesktopMenuOpen(false); setEditorView('markdown') }}><span>{t('Markdown 编辑器')}</span></button>
+                <button onClick={() => { setDesktopMenuOpen(false); setEditorView('markdown') }}><span>编辑器</span></button>
                 <button onClick={() => { setDesktopMenuOpen(false); openGitHubPanel() }}><span>{t('仓库')}</span></button>
                 <button onClick={() => { setDesktopMenuOpen(false); setEditorView('agent') }}><span>{t('Agent')}</span></button>
                 <hr />
@@ -4075,7 +4289,7 @@ ${documentRenderConfig.style}
         </div>
         <div className="document-name" title={fileName || '当前没有打开文件'}>{hasOpenDocument && <span className={`save-dot ${titleSyncState}`} />}<span>{fileName || '当前没有打开文件'}</span><small>{hasOpenDocument ? titleSyncText : '打开或新建 Markdown'}</small></div>
         <nav ref={actionsRef} className="actions" aria-label="文档操作">
-          <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,text/markdown,text/plain" onChange={openFile} />
+          <input ref={fileInputRef} className="visually-hidden" type="file" accept=".md,.markdown,.mmd,text/markdown,text/plain" onChange={openFile} />
           <button type="button" className="button secondary collapsible-action" onClick={() => void chooseMarkdownFile()}><Icon name="folder" /><span>打开</span></button>
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" disabled={!hasOpenDocument} onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
@@ -4095,13 +4309,13 @@ ${documentRenderConfig.style}
       </header>
 
       <section ref={workspaceRef} className={`workspace mobile-${mobilePane}`} style={{ gridTemplateColumns: gridColumns }}>
-        <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' || editorView === 'agent' ? 'repository-view' : ''}`} aria-label="Markdown 编辑器">
+        <section className={`editor-pane ${editorCollapsed ? 'collapsed' : ''} ${editorView === 'repository' || editorView === 'agent' ? 'repository-view' : ''}`} aria-label="编辑器">
           {!editorCollapsed && <>
-            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><span className="status-light" />Markdown</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title={t('切换到思维导图')}><Icon name="map" /><span>{t('导图')}</span></button></div>
+            <div className="pane-header"><div className="editor-view-tabs"><button className={editorView === 'markdown' ? 'active' : ''} onClick={() => setEditorView('markdown')}><Icon name="svg-editor" />{t('编辑器')}</button><button className={editorView === 'repository' ? 'active' : ''} onClick={openGitHubPanel}><Icon name="github" />仓库{changedFiles.length > 0 && <b>{changedFiles.length}</b>}</button><button className={editorView === 'agent' ? 'active' : ''} onClick={() => setEditorView('agent')} title="Agent"><Icon name="bot" />Agent</button></div><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('preview')} title={t(documentMode === 'mermaid' ? '切换到 Mermaid SVG 预览' : '切换到预览')}><Icon name={documentMode === 'mermaid' ? 'mermaid-svg' : 'map'} /><span>{t('预览')}</span></button></div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-              <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} locale={locale} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
-              <footer className="editor-status"><button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button><span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span><span title={t('字符数')}>{locale === 'en-US' ? `C ${markdown.length}` : `${markdown.length} 字符`}</span>{activeTabUnsaved && <span className="editor-unsaved"><i />{activeLocalFile ? '自动保存中' : '未保存'}</span>}<span className="editor-status-language">Markdown</span><span className="editor-status-actions">{agentUsesStandaloneFile && activeTabUnsaved && activeDocumentTab?.sourceKey !== 'starter' && (!desktopApi() || Boolean(activeDocumentTab?.desktopFileId)) && <button type="button" className="editor-local-save" onClick={() => void saveStandaloneDocument()} title={activeDocumentTab?.desktopFileId ? '保存到原文件' : '下载 Markdown 副本'}><Icon name="download" /><span>{activeDocumentTab?.desktopFileId ? '保存' : '下载副本'}</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
+              <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />
+              <footer className="editor-status"><button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button><span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span><span title={t('字符数')}>{locale === 'en-US' ? `C ${markdown.length}` : `${markdown.length} 字符`}</span>{activeTabUnsaved && <span className="editor-unsaved"><i />{activeLocalFile ? '自动保存中' : '未保存'}</span>}<button type="button" className="editor-status-language" onClick={() => setActiveDocumentMode(documentMode === 'markdown' ? 'mermaid' : 'markdown')} title={`切换为${documentMode === 'markdown' ? 'Mermaid' : 'Markdown'} 文档模式`} aria-label={`切换为${documentMode === 'markdown' ? 'Mermaid' : 'Markdown'} 文档模式`}>{documentMode === 'markdown' ? 'Markdown' : 'Mermaid'}</button><span className="editor-status-actions">{agentUsesStandaloneFile && activeTabUnsaved && activeDocumentTab?.sourceKey !== 'starter' && (!desktopApi() || Boolean(activeDocumentTab?.desktopFileId)) && <button type="button" className="editor-local-save" onClick={() => void saveStandaloneDocument()} title={activeDocumentTab?.desktopFileId ? '保存到原文件' : documentMode === 'mermaid' ? '下载 Mermaid 副本' : '下载 Markdown 副本'}><Icon name="download" /><span>{activeDocumentTab?.desktopFileId ? '保存' : '下载副本'}</span></button>}{activeRepoPath && <button type="button" className="editor-status-settings" onClick={() => setActivePanel('links')} title={`笔记链接 · ${backlinks.length} 个反向链接`} aria-label={`打开笔记链接面板，${backlinks.length} 个反向链接`}><Icon name="link" /></button>}<button type="button" className="editor-status-settings" onClick={() => setActivePanel('editor')} title="编辑器设置" aria-label="编辑器设置"><Icon name="settings" /></button></span></footer>
               {showDiagnostics && <div className="diagnostics-popover"><header><strong>{t('语法检查')}</strong><button className="header-icon" onClick={() => setShowDiagnostics(false)} aria-label={t('关闭问题列表')}><Icon name="x" /></button></header>{diagnostics.length ? diagnostics.map((item, index) => { const line = markdown.slice(0, item.from).split('\n').length; const lineLabel = locale === 'en-US' ? `Line ${line}` : `第 ${line} 行`; const jumpLabel = locale === 'en-US' ? `Jump to line ${line}` : `跳转到第 ${line} 行`; return <button key={`${item.from}-${index}`} onClick={() => { markdownEditorRef.current?.revealLine(line); setShowDiagnostics(false) }} title={jumpLabel}><Icon name="warning" /><span><strong>{lineLabel}</strong><small>{item.message}</small></span></button> }) : <div className="diagnostics-empty"><Icon name="check" /><span>{t('没有发现语法错误')}</span></div>}</div>}
             </> : editorView === 'agent' ? <AgentPanel workspaceKey={agentWorkspaceKey} workspaceLabel={agentWorkspaceLabel} workspaceKind={agentWorkspaceKind} workspaceLocator={agentWorkspace.locator} onSelectWorkspace={selectAgentWorkspace} repositoryScopeEnabled={!agentUsesStandaloneFile} canCreateFiles={!agentUsesStandaloneFile} canCommit={!agentUsesStandaloneFile && (!agentUsesLocalRepository || Boolean(agentLocalRepository?.isGitRepository))} files={agentFiles} activePath={agentActivePath} onApplyChange={agentApplyChange} onCreateFile={agentCreateFile} onOpenFile={(path) => { if (agentUsesLocalRepository && agentLocalRepository) void openLocalRepositoryFile(agentLocalRepository.id, path); else if (!agentUsesStandaloneFile) { const file = cachedFilesRef.current.find((item) => item.path === path); if (file) activateCachedFile(file) } }} onCommit={agentCommit} getGitContext={agentGitContext} remoteFileCount={agentFileCount} remotePaths={agentPaths} repositoryBranch={agentUsesLocalRepository && agentLocalRepository?.isGitRepository ? agentLocalRepository.branch : agentUsesStandaloneFile ? undefined : githubConfig?.branch} onLoadAllFiles={loadAgentFiles} loadingFiles={agentUsesStandaloneFile ? false : agentUsesLocalRepository ? localGitBusy : githubBusyAction === 'load-repository'} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} /> : <div className="repository-workspace" style={{ fontSize: settings.editorFontSize, fontFamily: previewFonts[settings.editorFont].family, fontWeight: settings.editorWeight }}>
               {repositorySource === 'local' ? !activeLocalRepository ? <div className="repository-unbound"><Icon name="folder" /><strong>{t('尚未打开本地文件夹')}</strong><span>{desktopApi() ? t('Git 仓库和普通文件夹都可以打开并编辑 Markdown。') : t('网页端不能直接访问本地文件夹，请使用桌面应用。')}</span><button onClick={() => { setRepositorySettingsTab('local'); setActivePanel('github') }}>{t('管理本地文件夹')}</button></div> : <>
@@ -4193,14 +4407,14 @@ ${documentRenderConfig.style}
             <nav className="document-tabs-bar" aria-label="打开的文档">
               <div className="document-tabs-scroll" role="tablist">
                 {documentTabs.map((tab) => <div className={`document-tab ${tab.id === activeTabId ? 'active' : ''}`} key={tab.id}>
-                  <button type="button" className="document-tab-select" role="tab" aria-selected={tab.id === activeTabId} title={tab.name} onClick={() => activateDocumentTab(tab.id)}><Icon name="map" /><span>{tab.name}</span>{tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab) ? <i className="dirty" title="有未保存的修改" /> : (tab.repositoryPath || tab.localPath || tab.desktopFileId) && <i title={tab.repositoryPath ? 'Git 仓库文档' : tab.localPath ? '本地文件夹文档' : '已保存到磁盘'} />}</button>
+                  <button type="button" className="document-tab-select" role="tab" aria-selected={tab.id === activeTabId} title={tab.name} onClick={() => activateDocumentTab(tab.id)}><Icon name={tab.mode === 'mermaid' ? 'svg-editor' : 'map'} /><span>{tab.name}</span>{tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab) ? <i className="dirty" title="有未保存的修改" /> : (tab.repositoryPath || tab.localPath || tab.desktopFileId) && <i title={tab.repositoryPath ? 'Git 仓库文档' : tab.localPath ? '本地文件夹文档' : '已保存到磁盘'} />}</button>
                    <button type="button" className="document-tab-close" aria-label={`关闭 ${tab.name}`} title={t('关闭标签页')} onClick={() => closeDocumentTab(tab.id)}><Icon name="x" /></button>
                 </div>)}
               </div>
                <button type="button" className="document-tab-new" aria-label={t('新建空白文档标签页')} title={t('新建标签页')} onClick={createBlankDocumentTab}><Icon name="plus" /></button>
              </nav>
              {!hasOpenDocument && <div className="document-empty-state preview-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>新建或打开 Markdown 后，这里会显示思维导图。</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-            <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title="返回 Markdown"><Icon name="chevron-left" /><span>返回 Markdown</span></button><button type="button" onClick={() => mmRef.current?.fit()} title="适应画布" aria-label="适应画布"><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title="预览设置" aria-label="预览设置"><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} style={{ '--markmap-font': effectiveMarkmapFont } as React.CSSProperties} /></div>
+            {documentMode === 'mermaid' ? <div className={`standalone-mermaid-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText, '--mermaid-font-family': previewFonts[settings.previewFont].family, '--mermaid-font-size': `${settings.previewFontSize}px`, '--mermaid-font-weight': settings.previewWeight } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button><button type="button" onClick={() => standaloneMermaidFit?.()} disabled={!standaloneMermaidFit} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button></div><StandaloneMermaidPreview source={renderedMarkdown} theme={previewDarkMode ? 'dark' : 'default'} onRendered={setStandaloneMermaidViewer} onFitReady={registerStandaloneMermaidFit} /></div> : <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button><button type="button" onClick={() => mmRef.current?.fit()} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} style={{ '--markmap-font': effectiveMarkmapFont } as React.CSSProperties} /></div>}
           </>
         </section>
       </section>
@@ -4209,7 +4423,7 @@ ${documentRenderConfig.style}
         <section className="mobile-tabs-sheet" role="dialog" aria-modal="true" aria-label={t('文档标签页')} onMouseDown={(event) => event.stopPropagation()}>
           <header><div><strong>{t('文档标签页')}</strong><small>{documentTabs.length} 个打开的文档</small></div><button type="button" className="header-icon" aria-label={t('关闭文档标签页')} onClick={() => setMobileTabsOpen(false)}><Icon name="x" /></button></header>
           <div className="mobile-tabs-list" role="tablist">{documentTabs.map((tab, index) => <article className={`${tab.id === activeTabId ? 'active' : ''} ${tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab) ? 'dirty' : ''}`} key={tab.id}>
-            <button type="button" className="mobile-tab-select" role="tab" aria-selected={tab.id === activeTabId} onClick={() => activateDocumentTab(tab.id)}><span><Icon name="map" /><b>{index + 1}</b></span><span><strong>{tab.name}</strong><small>{tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab) ? '未保存的修改' : tab.repositoryPath ? 'Git 仓库文档' : tab.localPath ? '本地文件夹文档' : tab.desktopFileId ? '已保存到磁盘' : tab.id === activeTabId ? '当前文档' : 'Markdown 文档'}</small></span></button>
+            <button type="button" className="mobile-tab-select" role="tab" aria-selected={tab.id === activeTabId} onClick={() => activateDocumentTab(tab.id)}><span><Icon name={tab.mode === 'mermaid' ? 'svg-editor' : 'map'} /><b>{index + 1}</b></span><span><strong>{tab.name}</strong><small>{tabHasUnsavedChanges(tab.id === activeTabId ? { ...tab, content: markdown } : tab) ? t('未保存的修改') : tab.repositoryPath ? t('Git 仓库文档') : tab.localPath ? t('本地文件夹文档') : tab.desktopFileId ? t('已保存到磁盘') : tab.id === activeTabId ? t('当前文档') : tab.mode === 'mermaid' ? t('Mermaid 文档') : t('Markdown 文档')}</small></span></button>
             <button type="button" className="mobile-tab-close" aria-label={`关闭 ${tab.name}`} onClick={() => closeDocumentTab(tab.id)}><Icon name="x" /></button>
           </article>)}</div>
           <footer><button type="button" onClick={() => { setMobileTabsOpen(false); void chooseMarkdownFile() }}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></footer>
@@ -4238,8 +4452,8 @@ ${documentRenderConfig.style}
       {linkNotice && <div className="link-notice" role="status" aria-live="polite">{linkNotice}</div>}
 
       {activePanel && <div className="panel-backdrop" onMouseDown={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }}>
-        <section ref={settingsPanelRef} tabIndex={-1} className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'about' ? 'about-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? '导出设置' : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><strong>{activePanel === 'editor' ? t('编辑器设置') : activePanel === 'preview' ? t('预览设置') : activePanel === 'github' ? t('仓库设置') : activePanel === 'help' ? t('使用说明') : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? t('笔记链接') : exportTab === 'repository' ? t('另存到 Git 仓库') : t('导出思维导图')}</strong>{activePanel !== 'help' && <small>{activePanel === 'export' ? exportTab === 'repository' ? t('选择仓库位置并暂存当前 Markdown') : t('选择格式与清晰度') : activePanel === 'github' ? t('在远程仓库与本地文件夹之间随时切换') : activePanel === 'about' ? t('版本、作者与上游项目鸣谢') : activePanel === 'links' ? t('反向链接、出站链接与失效目标') : t('更改会立即生效')}</small>}</div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />{t('恢复默认设置')}</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label={t('关闭')}><Icon name="x" /></button></div></header>
+        <section ref={settingsPanelRef} tabIndex={-1} className={`settings-panel ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'about' ? 'about-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'export' ? t('导出设置') : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><strong>{activePanel === 'editor' ? t('编辑器设置') : activePanel === 'preview' ? documentMode === 'mermaid' ? t('Mermaid 预览设置') : t('预览设置') : activePanel === 'github' ? t('仓库设置') : activePanel === 'help' ? t('使用说明') : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? t('笔记链接') : exportTab === 'repository' ? t('另存到 Git 仓库') : documentMode === 'mermaid' ? t('导出 Mermaid 文档') : t('导出思维导图')}</strong>{activePanel !== 'help' && <small>{activePanel === 'export' ? exportTab === 'repository' ? t(documentMode === 'mermaid' ? '选择仓库位置并暂存当前 Mermaid' : '选择仓库位置并暂存当前 Markdown') : documentMode === 'mermaid' ? t('Mermaid 图形与 .mmd 源文件') : t('选择格式与清晰度') : activePanel === 'github' ? t('在远程仓库与本地文件夹之间随时切换') : activePanel === 'about' ? t('版本、作者与上游项目鸣谢') : activePanel === 'links' ? t('反向链接、出站链接与失效目标') : t('更改会立即生效')}</small>}</div><div className="panel-header-actions">{(activePanel === 'editor' || activePanel === 'preview') && <button className="reset-settings-button" onClick={resetSettings}><Icon name="refresh" />{t('恢复默认设置')}</button>}<button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label={t('关闭')}><Icon name="x" /></button></div></header>
           {activePanel === 'github' && <div className="github-body">
             <div className="repository-settings-tabs" role="tablist"><button role="tab" aria-selected={repositorySettingsTab === 'remote'} className={repositorySettingsTab === 'remote' ? 'active' : ''} onClick={() => { setRepositorySettingsTab('remote'); if (githubConfig) setRepositorySource('remote') }}><Icon name="github" /><span>{t('远程仓库')}</span><b>{githubProfiles.length}</b></button><button role="tab" aria-selected={repositorySettingsTab === 'local'} className={repositorySettingsTab === 'local' ? 'active' : ''} onClick={() => { setRepositorySettingsTab('local'); if (localGitState.activeId) setRepositorySource('local') }}><Icon name="folder" /><span>{t('本地文件夹')}</span><b>{localGitState.repositories.length}</b></button></div>
             {repositorySettingsTab === 'remote' ? !githubConfig || addingRemoteRepository ? <div className="github-bind-form repository-bind-panel">
@@ -4294,6 +4508,16 @@ ${documentRenderConfig.style}
              <div className="settings-note"><Icon name="warning" /><span>语法检查包括标题层级、代码块闭合与缩进一致性，问题会直接标记在编辑器中。</span></div>
           </div>}
            {activePanel === 'preview' && <div className="settings-body">
+             {documentMode === 'mermaid' ? <>
+             <div className="settings-note"><Icon name="check" /><span>{t('这些设置只影响当前 Mermaid 预览，不会改变源代码。')}</span></div>
+             <div className="font-samples"><small>{t('Mermaid 预览字体')}</small><span style={{ fontFamily: previewFonts[settings.previewFont].family, fontSize: `${settings.previewFontSize}px`, fontWeight: settings.previewWeight }}>Mermaid Preview 0123</span></div>
+             <label className="field"><span>{t('字体')}</span><select value={settings.previewFont} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
+             <label className="field"><span>{t('字号')} <b>{settings.previewFontSize}px</b></span><input type="range" min="12" max="28" value={settings.previewFontSize} onChange={(event) => updateSettings('previewFontSize', Number(event.target.value))} /></label>
+             <label className="field"><span>{t('字重')} <b>{settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
+             <label className="export-color-field preview-background-field"><span>{t('画布背景')}</span><span className="export-color-control"><input type="color" value={settings.previewBackgroundColor} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{settings.previewBackgroundColor.toUpperCase()}</code></span></label>
+             <div className="export-color-presets preview-background-presets" aria-label={t('Mermaid 预览背景颜色预设')}>{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={settings.previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('Mermaid 预览背景色：')}${t(label)}`} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
+             <label className="switch-field"><span><strong>{t('点阵背景')}</strong><small>{t('辅助观察 Mermaid 画布范围')}</small></span><input type="checkbox" checked={settings.showGrid} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
+             </> : <>
              {documentRenderConfig.optionKeys.length > 0 && <div className="settings-note code-options-note"><Icon name="check" /><span>{locale === 'en-US' ? `${t('Frontmatter 正在控制：')}${documentRenderConfig.optionKeys.join(', ')}${t('。代码配置优先于此面板。')}` : `Frontmatter 正在控制：${documentRenderConfig.optionKeys.join('、')}。代码配置优先于此面板。`}</span></div>}
              <div className="font-samples"><small>{t('字体预览')}{(codeFont.controlsFamily || codeFont.controlsSize || codeFont.controlsWeight) && ` · ${t('代码配置')}`}</small><span style={fontPreviewStyle}>{t('思维导图')} Mind Map 0123</span></div>
              <label className={`field ${codeFont.controlsFamily ? 'code-controlled' : ''}`}><span>{t('字体')}{codeFont.controlsFamily && <b>{t('由代码控制')}</b>}</span><select value={settings.previewFont} disabled={codeFont.controlsFamily} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
@@ -4303,15 +4527,31 @@ ${documentRenderConfig.style}
             <label className={`export-color-field preview-background-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span>{t('画布背景')} <small>{userPreviewBackground ? t('由 Markdown style 控制') : t('WCAG 自动主题')}</small></span><span className="export-color-control"><input type="color" value={settings.previewBackgroundColor} disabled={Boolean(userPreviewBackground)} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{settings.previewBackgroundColor.toUpperCase()}</code></span></label>
              <div className={`export-color-presets preview-background-presets ${userPreviewBackground ? 'code-controlled' : ''}`} aria-label={t('预览背景颜色预设')}>{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={settings.previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('预览背景色：')}${t(label)}`} disabled={Boolean(userPreviewBackground)} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
              <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>{t('点阵背景')}</strong><small>{documentRenderConfig.showGrid !== undefined ? t('由 Frontmatter 代码控制') : t('辅助观察画布移动与缩放')}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
-             <label className="switch-field experimental-setting"><span><strong>Mermaid 代码块预览 <b>实验性</b></strong><small>将 Markdown 中的 mermaid 代码块显示为 SVG 缩略图，可全屏查看；不会改变 Markmap 导出内容。</small></span><input type="checkbox" checked={settings.previewMermaid} onChange={(event) => updateSettings('previewMermaid', event.target.checked)} /></label>
+             <label className="switch-field experimental-setting"><span><strong>{t('Mermaid 代码块预览')} <b>{t('实验性')}</b></strong><small>{t('将 Markdown 中的 mermaid 代码块显示为 SVG 缩略图，可全屏查看；不会改变 Markmap 导出内容。')}</small></span><input type="checkbox" checked={settings.previewMermaid} onChange={(event) => updateSettings('previewMermaid', event.target.checked)} /></label>
+             </>}
            </div>}
           {activePanel === 'export' && <div className="settings-body export-panel-body">
             <div className="export-tabs" role="tablist" aria-label={t('导出方式')}>
               <button role="tab" aria-selected={exportTab === 'file'} className={exportTab === 'file' ? 'active' : ''} onClick={() => { setExportError(''); cancelRepositorySave(); setExportTab('file') }}><Icon name="download" /><span>{t('导出文件')}</span></button>
-              <button role="tab" aria-selected={exportTab === 'repository'} className={exportTab === 'repository' ? 'active' : ''} onClick={() => { setExportError(''); setExportTab('repository') }}><Icon name="github" /><span>{t('另存到仓库')}</span></button>
+              <button role="tab" aria-selected={exportTab === 'repository'} className={exportTab === 'repository' ? 'active' : ''} onClick={() => { setExportError(''); cancelRepositorySave(); setExportTab('repository') }}><Icon name="github" /><span>{t('另存到仓库')}</span></button>
             </div>
-            {exportTab === 'file' ? <>
-              <div className="format-grid">{(['png', 'jpeg', 'svg', 'pdf', 'html', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MD' : format.toUpperCase()}</strong><small>{format === 'png' ? t('无损位图') : format === 'jpeg' ? t('体积更小') : format === 'svg' ? t('无限清晰') : format === 'pdf' ? t('静态矢量') : format === 'html' ? t('网页文件') : t('源文件')}</small></button>)}</div>
+            {exportTab === 'file' ? documentMode === 'mermaid' ? <>
+              <div className="settings-note"><Icon name="check" /><span>{t('独立 Mermaid 文档导出不会经过 Markmap，支持图像文件和 Mermaid 源文件。')}</span></div>
+              <div className="format-grid mermaid-format-grid">{(['png', 'jpeg', 'svg', 'pdf', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MMD' : format.toUpperCase()}</strong><small>{format === 'png' ? t('无损位图') : format === 'jpeg' ? t('JPEG 图片') : format === 'svg' ? t('矢量图像') : format === 'pdf' ? t('矢量文档') : t('Mermaid 源文件')}</small></button>)}</div>
+              <label className="field"><span>{t('渲染倍率')} <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md' || exportFormat === 'pdf'} /><small>{exportFormat === 'svg' ? t('倍率设置 SVG 画布尺寸，图形内容始终清晰') : exportFormat === 'pdf' ? t('PDF 使用当前 Mermaid 图形尺寸') : exportFormat === 'md' ? t('MMD 源文件无需倍率') : locale === 'en-US' ? `Estimated output size: ${exportScale}× the current diagram` : `预计输出尺寸为当前图形的 ${exportScale} 倍`}</small></label>
+              <div className="export-appearance-options">
+                <div className="export-section-heading"><strong>{t('背景与文字')}</strong><small>{exportFormat === 'md' ? t('Mermaid 源文件不包含画布样式') : t('导出文件使用当前 Mermaid 预览主题')}</small></div>
+                <label className="export-color-field"><span>{t('背景颜色')}</span><span className="export-color-control"><input type="color" value={settings.previewBackgroundColor} disabled={exportFormat === 'md'} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{settings.previewBackgroundColor.toUpperCase()}</code></span></label>
+                <div className="export-color-presets" aria-label={t('Mermaid 导出背景颜色预设')}>{[['#fafafa', '雾白'], ['#ffffff', '纯白'], ['#15181d', '深灰'], ['#000000', '黑色']].map(([color, label]) => <button type="button" key={color} className={settings.previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('Mermaid 导出背景色：')}${t(label)}`} disabled={exportFormat === 'md'} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
+                <label className={`switch-field export-appearance-switch ${exportFormat !== 'png' ? 'code-controlled' : ''}`}><span><strong>{t('透明背景')}</strong><small>{exportFormat === 'png' ? t('PNG 保留透明通道') : t('仅 PNG 支持透明背景')}</small></span><input type="checkbox" checked={exportTransparentBackground} disabled={exportFormat !== 'png'} onChange={(event) => setExportTransparentBackground(event.target.checked)} /></label>
+                <label className="switch-field export-appearance-switch"><span><strong>{t('自动适配文字主题')}</strong><small>{exportTextTheme === 'auto' ? `${t('当前自动使用')}${exportAutoDarkMode ? t('深色') : t('浅色')}${t('主题')}` : t('关闭后使用手动主题')}</small></span><input type="checkbox" checked={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'auto' : (exportDarkMode ? 'dark' : 'light'))} /></label>
+                <label className={`switch-field export-appearance-switch ${exportTextTheme === 'auto' ? 'code-controlled' : ''}`}><span><strong>{t('内容暗黑模式')}</strong><small>{exportTextTheme === 'auto' ? `${t('自动结果：')}${exportDarkMode ? t('开启状态') : t('关闭状态')}` : exportDarkMode ? t('使用浅色文字') : t('使用深色文字')}</small></span><input type="checkbox" checked={exportDarkMode} disabled={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'dark' : 'light')} /></label>
+              </div>
+              {exportFormat === 'pdf' && <div className="settings-note"><Icon name="check" /><span>{t('矢量文档 PDF；网页端会打开打印对话框')}</span></div>}
+              {exportError && <div className="export-error"><Icon name="warning" />{exportError}</div>}
+              <button className="export-submit" disabled={exporting} onClick={() => void exportDocument()}><Icon name="download" />{exporting ? t('正在生成…') : `${t('导出')} ${exportFormat === 'md' ? 'MMD' : exportFormat.toUpperCase()}`}</button>
+            </> : <>
+              <div className="format-grid markdown-format-grid">{(['png', 'jpeg', 'svg', 'pdf', 'html', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MD' : format.toUpperCase()}</strong><small>{format === 'png' ? t('无损位图') : format === 'jpeg' ? t('体积更小') : format === 'svg' ? t('矢量图像') : format === 'pdf' ? t('矢量文档') : format === 'html' ? t('网页文件') : t('源文件')}</small></button>)}</div>
               <label className="field"><span>{t('渲染倍率')} <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md' || exportFormat === 'pdf'} /><small>{exportFormat === 'svg' ? t('倍率设置 SVG 的画布尺寸，矢量内容始终清晰') : exportFormat === 'pdf' ? t('PDF 使用自定义页面尺寸，矢量内容无需倍率') : exportFormat === 'html' ? t('HTML 将保留可缩放矢量图') : exportFormat === 'md' ? t('Markdown 源文件无需倍率') : locale === 'en-US' ? `Expected output: ${exportScale}× the current content size` : `预计输出为当前内容尺寸的 ${exportScale} 倍`}</small></label>
               <div className="export-appearance-options">
                 <div className="export-section-heading"><strong>{t('背景与文字')}</strong><small>{exportFormat === 'md' ? t('Markdown 源文件不包含画布样式') : t('导出文件会使用以下画布与文字主题')}</small></div>
@@ -4344,11 +4584,11 @@ ${documentRenderConfig.style}
               </div>
             </div> : <>
               {!githubConfig ? <>
-                <div className="settings-note"><Icon name="github" /><span>{t('先绑定一个 GitHub 仓库，之后可以浏览仓库文件树、创建文件夹，并将当前 Markdown 暂存到指定位置。')}</span></div>
+                <div className="settings-note"><Icon name="github" /><span>{t(documentMode === 'mermaid' ? '先绑定一个 GitHub 仓库，之后可以浏览仓库文件树、创建文件夹，并将当前 Mermaid 源文件暂存到指定位置。' : '先绑定一个 GitHub 仓库，之后可以浏览仓库文件树、创建文件夹，并将当前 Markdown 暂存到指定位置。')}</span></div>
                 <button className="export-submit" onClick={() => setActivePanel('github')}><Icon name="github" />{t('绑定 GitHub 仓库')}</button>
               </> : <>
                 <div className="github-repo-card"><Icon name="github" /><span><strong>{githubConfig.owner}/{githubConfig.repo}</strong><small>{githubConfig.branch} · {remoteHead ? remoteHead.slice(0, 7) : '尚未刷新'}</small></span></div>
-                <div className="settings-note"><Icon name="folder" /><span>{t('进入仓库文件树后，点击文件夹选择保存位置；也可以新建文件夹并编辑文件名。')}</span></div>
+                <div className="settings-note"><Icon name="folder" /><span>{t(documentMode === 'mermaid' ? '进入仓库文件树后，点击文件夹选择保存位置；也可以新建文件夹并编辑 .mmd 文件名。' : '进入仓库文件树后，点击文件夹选择保存位置；也可以新建文件夹并编辑文件名。')}</span></div>
                 {githubNotice && <div className="github-notice"><Icon name="check" />{githubNotice}</div>}
                 <button className="export-submit" disabled={githubBusy} onClick={startRepositorySave}><Icon name="folder" />{t('选择仓库位置')}</button>
               </>}

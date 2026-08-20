@@ -242,10 +242,10 @@ async function openMarkdownDialog(
   window: BrowserWindow,
 ): Promise<DesktopOpenedFile | null> {
   const result = await dialog.showOpenDialog(window, {
-    title: '打开 Markdown 文件',
+    title: '打开 Markdown / Mermaid 文件',
     properties: ['openFile'],
     filters: [
-      { name: 'Markdown', extensions: ['md', 'markdown'] },
+      { name: 'Markdown / Mermaid', extensions: ['md', 'markdown', 'mmd'] },
       { name: '文本文件', extensions: ['txt'] },
     ],
   });

@@ -8,6 +8,7 @@ import { EditorView, keymap } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import { inspectMarkdown } from './markdown-lint'
+import { inspectMermaid } from './mermaid-lint'
 import { findMarkdownLinkAt, type ParsedMarkdownLink } from './repository-links'
 import type { Locale } from '../i18n'
 
@@ -63,6 +64,7 @@ interface MarkdownEditorProps {
   fontWeight: number
   scheme: HighlightScheme
   locale: Locale
+  mode: 'markdown' | 'mermaid'
   onSelectionContextMenu?: (selection: MarkdownEditorSelection) => void
   onOpenLink?: (href: string) => void
 }
@@ -85,7 +87,7 @@ export interface MarkdownEditorHandle {
   revealLine: (line: number) => void
 }
 
-const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, scheme, locale, onSelectionContextMenu, onOpenLink }, ref) {
+const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, scheme, locale, mode, onSelectionContextMenu, onOpenLink }, ref) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
@@ -95,12 +97,14 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   const themeCompartment = useRef(new Compartment())
   const externalUpdate = useRef(false)
   const localeRef = useRef(locale)
+  const modeRef = useRef(mode)
   const initialConfigRef = useRef({ value, dark, fontSize, fontFamily, fontWeight, scheme })
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onSelectionContextMenuRef.current = onSelectionContextMenu }, [onSelectionContextMenu])
   useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
   useEffect(() => { localeRef.current = locale }, [locale])
+  useEffect(() => { modeRef.current = mode; if (viewRef.current) forceLinting(viewRef.current) }, [mode])
 
   useImperativeHandle(ref, () => ({
     allowNativeContextMenuOnce: () => { nativeContextMenuOnceRef.current = true },
@@ -142,7 +146,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         basicSetup,
         markdown(),
         lintGutter(),
-        linter((editor) => inspectMarkdown(editor.state.doc.toString(), localeRef.current), { delay: 250 }),
+        linter((editor) => modeRef.current === 'mermaid' ? inspectMermaid(editor.state.doc.toString(), localeRef.current) : inspectMarkdown(editor.state.doc.toString(), localeRef.current), { delay: 250 }),
         EditorView.lineWrapping,
         keymap.of([indentWithTab]),
         EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: 'false' }),

@@ -71,8 +71,24 @@ export async function renderMermaidSvg(chart: string, id: string, theme: Mermaid
   mermaidModule ||= import('mermaid')
   const { default: mermaid } = await mermaidModule
   mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme })
-  const rendered = await mermaid.render(id, chart)
-  return theme === 'dark' ? adaptDarkMermaidSvg(rendered.svg) : rendered.svg
+  const cleanup = () => {
+    document.getElementById(`d${id}`)?.remove()
+    document.querySelectorAll(`[id^="d${id}"]`).forEach((element) => element.remove())
+  }
+  try {
+    const rendered = await mermaid.render(id, chart)
+    return theme === 'dark' ? adaptDarkMermaidSvg(rendered.svg) : rendered.svg
+  } finally {
+    cleanup()
+    if (typeof window !== 'undefined') window.setTimeout(cleanup, 0)
+  }
+}
+
+export async function parseMermaidSyntax(chart: string): Promise<void> {
+  mermaidModule ||= import('mermaid')
+  const { default: mermaid } = await mermaidModule
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme: 'default' })
+  await mermaid.parse(chart)
 }
 
 export function mermaidViewBoxSize(svg: string) {

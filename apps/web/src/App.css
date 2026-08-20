@@ -345,7 +345,8 @@ svg { flex: 0 0 auto; }
 .reasoning-toggle svg { width: 14px; height: 14px; }
 .reasoning-toggle.on { color: var(--accent); border-color: #bdb3ef; background: #f2efff; }
 .editor-status { display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--editor-bg); color: var(--editor-gutter); font-family: "JetBrains Mono Variable", monospace; font-size: 11px; line-height: 1; border-top: 1px solid var(--border); }
-.editor-status-language { margin-left: auto; }
+.editor-status-language { margin-left: auto; padding: 2px 7px; border: 1px solid transparent; border-radius: 6px; color: var(--muted); background: transparent; font: inherit; cursor: pointer; }
+.editor-status-language:hover { color: var(--accent); border-color: color-mix(in srgb,var(--accent) 35%,var(--border)); background: color-mix(in srgb,var(--accent) 6%,transparent); }
 .editor-status-actions { display: inline-flex; align-items: center; gap: 2px; }
 .editor-unsaved { display: inline-flex; align-items: center; gap: 5px; color: #c47b19; }
 .editor-unsaved > i { width: 6px; height: 6px; border-radius: 50%; background: #e39a35; box-shadow: 0 0 0 3px #e39a3518; }
@@ -422,6 +423,17 @@ svg { flex: 0 0 auto; }
 .map-canvas .markmap-foreign img { display: block; width: auto; max-width: min(28em, 420px); height: auto; max-height: 280px; object-fit: contain; border-radius: 8px; }
 .map-canvas .markmap-foreign img[alt$='图标'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
 .map-canvas .markmap-foreign .katex-display { margin: .2em 0; }
+.standalone-mermaid-canvas { position: relative; min-height: 0; overflow: hidden; background-color: var(--preview-background, var(--panel-soft)); background-image: radial-gradient(circle, color-mix(in srgb,var(--preview-foreground, var(--muted)) 23%,transparent) 1px, transparent 1px); background-size: 22px 22px; }
+.standalone-mermaid-canvas.no-grid { background-image: none; }
+.standalone-mermaid-preview { width: 100%; height: 100%; min-width: 0; min-height: 0; color: var(--text); font-family: var(--mermaid-font-family); font-size: var(--mermaid-font-size); font-weight: var(--mermaid-font-weight); }
+.standalone-mermaid-viewport { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; }
+.standalone-mermaid-viewport:active { cursor: grabbing; }
+.standalone-mermaid-zoom-layer { transform-origin: center; will-change: transform; }
+.standalone-mermaid-zoom-layer svg { display: block; width: var(--diagram-w, auto) !important; height: var(--diagram-h, auto) !important; max-width: none !important; }
+.standalone-mermaid-zoom-layer text, .standalone-mermaid-zoom-layer tspan, .standalone-mermaid-zoom-layer .label, .standalone-mermaid-zoom-layer .nodeLabel { font-family: var(--mermaid-font-family) !important; font-size: var(--mermaid-font-size) !important; font-weight: var(--mermaid-font-weight) !important; }
+.standalone-mermaid-error, .standalone-mermaid-pending { display: inline-flex; align-items: center; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb,var(--panel) 88%,transparent); }
+.standalone-mermaid-error { color: var(--danger); }
+.standalone-mermaid-error svg { width: 17px; height: 17px; flex: 0 0 auto; }
 .markmap-mermaid-preview { position: absolute; z-index: 4; display: block; width: min(100%, 420px); max-width: 100%; margin: .45em 0; overflow: hidden; border: 1px solid color-mix(in srgb,var(--border) 86%,transparent); border-radius: 8px; background: color-mix(in srgb,var(--markmap-code-bg, var(--panel-soft)) 86%,var(--panel)); pointer-events: auto; }
 .markmap-mermaid-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 0 6px 0 9px; border-bottom: 1px solid color-mix(in srgb,var(--border) 80%,transparent); color: var(--muted); font: 600 10px/1 "JetBrains Mono Variable",monospace; }
 .markmap-mermaid-actions { display: inline-flex; gap: 2px; }
@@ -875,9 +887,15 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .repository-save-footer .repository-save-actions button { flex: 0 0 86px; }
 .format-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
 .format-grid button { display: grid; gap: 5px; padding: 13px 4px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--panel-soft); cursor: pointer; }
+.format-grid.markdown-format-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.format-grid.markdown-format-grid button { grid-column: span 2; min-width: 0; justify-items: center; overflow: hidden; text-align: center; }
+.format-grid.mermaid-format-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.format-grid.mermaid-format-grid button { min-width: 0; justify-items: center; overflow: hidden; text-align: center; }
 .format-grid button.active { color: var(--accent); border-color: var(--accent); background: #7056e80d; box-shadow: 0 0 0 2px #7056e812; }
 .format-grid strong { font-size: 14px; }
 .format-grid small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.format-grid.markdown-format-grid small { max-width: 100%; line-height: 1.3; text-align: center; white-space: normal; }
+.format-grid.mermaid-format-grid small { max-width: 100%; line-height: 1.3; text-align: center; white-space: normal; }
 .format-grid small, .export-submit, .settings-note, .field, .switch-field, .repository-status-label { overflow-wrap: anywhere; }
 .export-submit { height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 9px; color: #fff; background: var(--accent); font-size: 14px; font-weight: 650; cursor: pointer; }
 .export-error { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-radius: 8px; color: #d15454; background: #d1545412; font-size: 11px; }
@@ -959,6 +977,9 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
   .split-handle { display: none; }
   .preview-tip { display: none; }
   .format-grid { grid-template-columns: repeat(3, 1fr); }
+  .format-grid.markdown-format-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .format-grid.markdown-format-grid button { grid-column: span 3; }
+  .format-grid.mermaid-format-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   /* 顶部视图标签：禁止按钮文字折行，空间不足时横向滚动 */
   .pane-header { gap: 6px; padding: 0 9px; }
   .editor-view-tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
@@ -969,7 +990,7 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
   .editor-status > span { flex: 0 0 auto; white-space: nowrap; }
   .editor-status .editor-unsaved { gap: 0; font-size: 0; }
   .editor-status .editor-unsaved > i { width: 6px; height: 6px; }
-  .editor-status-language { display: none; }
+  .editor-status-language { display: inline-flex; align-items: center; min-height: 22px; max-width: 92px; overflow: hidden; padding: 0 6px; text-overflow: ellipsis; white-space: nowrap; }
   .editor-status-actions { margin-left: auto; }
   .note-links-panel { inset: 52px 8px 36px; width: auto; max-height: none; }
   .link-picker-backdrop { align-items: end; padding: 0; }

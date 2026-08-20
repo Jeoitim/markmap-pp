@@ -296,7 +296,7 @@ export async function listRemoteMarkdown(config: GitHubConfig, ref = config.bran
   const result = await githubRequest<{ tree: Array<{ path: string; type: string; sha: string; size?: number }>; truncated: boolean }>(config, `${repoPath(config)}/git/trees/${encodeURIComponent(commit.tree.sha)}?recursive=1`)
   if (result.truncated) throw new Error('仓库文件列表过大，GitHub 返回了不完整结果')
   const files = result.tree
-    .filter((item) => item.type === 'blob' && /\.md$/i.test(item.path))
+    .filter((item) => item.type === 'blob' && /\.(?:md|markdown|mmd)$/i.test(item.path))
     .map((item) => ({ path: item.path, sha: item.sha, size: item.size || 0 }))
     .sort((a, b) => a.path.localeCompare(b.path))
   return { head, files }
