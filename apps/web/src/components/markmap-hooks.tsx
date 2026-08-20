@@ -72,6 +72,15 @@ type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 type EditorView = 'markdown' | 'repository' | 'agent'
 type DocumentMode = 'markdown' | 'mermaid'
 type DocumentEditorMode = 'source' | 'visual'
+const EDITOR_MODE_KEY = 'markmap-plus-plus:editor-mode'
+
+function loadPreferredEditorMode(): DocumentEditorMode {
+  try { return localStorage.getItem(EDITOR_MODE_KEY) === 'visual' ? 'visual' : 'source' } catch { return 'source' }
+}
+
+function savePreferredEditorMode(mode: DocumentEditorMode) {
+  try { localStorage.setItem(EDITOR_MODE_KEY, mode) } catch { /* storage may be disabled */ }
+}
 
 const MERMAID_TEXT_TARGET_SELECTOR = 'text, tspan, foreignObject, .label, .nodeLabel, [contenteditable="true"]'
 
@@ -921,7 +930,7 @@ function createDocumentTab(name: string, content: string, sourceKey?: string, re
     name,
     content,
     mode: persistence.mode || documentModeForName(name),
-    editorMode: persistence.editorMode || 'source',
+    editorMode: persistence.editorMode || loadPreferredEditorMode(),
     repositoryPath,
     localRepositoryId,
     localPath,
@@ -1659,6 +1668,7 @@ export default function MarkmapHooks() {
   const changeDocumentEditorMode = useCallback((mode: DocumentEditorMode) => {
     if (mode === 'visual' && documentMode !== 'markdown') return
     if (mode === documentEditorMode) return
+    savePreferredEditorMode(mode)
     setDocumentEditorMode(mode)
     const nextTabs = documentTabsRef.current.map((tab) => tab.id === activeTabId ? { ...tab, editorMode: mode } : tab)
     documentTabsRef.current = nextTabs
@@ -3238,9 +3248,23 @@ export default function MarkmapHooks() {
     } finally { setGithubBusyAction(null) }
   }
 
+  const revealMobileEditor = () => {
+    if (desktopApi() || !touchSelectionMode) return
+    setEditorView('markdown')
+    setMobilePane('editor')
+  }
+
   const openRepositoryRow = (row: RepositoryRow) => {
-    if (row.remote) void (repositoryCommitRef ? openRepositoryRevisionFile(row.remote, repositoryCommitRef) : openRepositoryFile(row.remote))
-    else if (row.cached) activateCachedFile(row.cached)
+    if (row.remote) {
+      const remote = row.remote
+      void (async () => {
+        await (repositoryCommitRef ? openRepositoryRevisionFile(remote, repositoryCommitRef) : openRepositoryFile(remote))
+        revealMobileEditor()
+      })()
+    } else if (row.cached) {
+      activateCachedFile(row.cached)
+      revealMobileEditor()
+    }
   }
 
   const openRepositoryHistory = async (target: RepositoryTarget, x: number, y: number) => {

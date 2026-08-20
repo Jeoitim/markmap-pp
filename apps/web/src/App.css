@@ -233,13 +233,15 @@ svg { flex: 0 0 auto; }
 .visual-frontmatter textarea { display: block; width: 100%; min-height: 104px; height: auto; box-sizing: border-box; resize: none; overflow: hidden; padding: 11px 12px; border: 0; border-radius: 0 0 10px 10px; outline: 0; color: var(--text); background: transparent; font: 12px/1.6 "JetBrains Mono Variable", monospace; }
 .visual-frontmatter textarea:focus { box-shadow: inset 0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent); }
 .visual-markdown-loading { color: var(--muted); font-size: 11px; }
-.visual-mobile-block-toolbar { position: fixed; z-index: 205; left: 10px; right: 10px; bottom: calc(68px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 4px; overflow-x: auto; padding: 6px; border: 1px solid var(--border); border-radius: 13px; color: var(--text); background: color-mix(in srgb,var(--panel) 96%,transparent); box-shadow: 0 16px 42px #080a103f; backdrop-filter: blur(14px); }
-.visual-mobile-block-toolbar > button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; padding: 0 10px; border: 0; border-radius: 8px; color: var(--text); background: transparent; font-size: 12px; white-space: nowrap; }
-.visual-mobile-block-toolbar > button:first-child { min-width: 44px; color: var(--accent); background: color-mix(in srgb,var(--accent) 9%,transparent); font: 650 12px "JetBrains Mono Variable",monospace; }
-.visual-mobile-block-toolbar > button:hover, .visual-mobile-block-toolbar > button:focus-visible, .visual-mobile-block-toolbar > button[aria-expanded='true'] { outline: 0; color: var(--accent); background: color-mix(in srgb,var(--accent) 10%,transparent); }
-.visual-mobile-block-toolbar > button.danger { color: #d15454; }
-.visual-mobile-block-toolbar > button > span { color: var(--muted); }
-.visual-mobile-block-toolbar > button > em { font-style: normal; }
+.visual-mobile-block-toolbar { position: fixed; z-index: 205; left: 10px; right: 10px; bottom: calc(68px + env(safe-area-inset-bottom)); display: block; overflow: visible; padding: 6px; border: 1px solid var(--border); border-radius: 13px; color: var(--text); background: color-mix(in srgb,var(--panel) 96%,transparent); box-shadow: 0 16px 42px #080a103f; backdrop-filter: blur(14px); }
+.visual-mobile-block-toolbar-row { min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.visual-mobile-block-toolbar-row::-webkit-scrollbar { display: none; }
+.visual-mobile-block-toolbar-row > button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; padding: 0 10px; border: 0; border-radius: 8px; color: var(--text); background: transparent; font-size: 12px; white-space: nowrap; }
+.visual-mobile-block-toolbar-row > button:first-child { min-width: 44px; color: var(--accent); background: color-mix(in srgb,var(--accent) 9%,transparent); font: 650 12px "JetBrains Mono Variable",monospace; }
+.visual-mobile-block-toolbar-row > button:hover, .visual-mobile-block-toolbar-row > button:focus-visible, .visual-mobile-block-toolbar-row > button[aria-expanded='true'] { outline: 0; color: var(--accent); background: color-mix(in srgb,var(--accent) 10%,transparent); }
+.visual-mobile-block-toolbar-row > button.danger { color: #d15454; }
+.visual-mobile-block-toolbar-row > button > span { color: var(--muted); }
+.visual-mobile-block-toolbar-row > button > em { font-style: normal; }
 .visual-mobile-block-conversion-menu { position: absolute; z-index: 3; left: 0; bottom: calc(100% + 7px); width: min(310px, calc(100vw - 20px)); max-height: min(56dvh, 390px); display: grid; gap: 2px; overflow: auto; padding: 6px; border: 1px solid var(--border); border-radius: 11px; color: var(--text); background: color-mix(in srgb,var(--panel) 97%,transparent); box-shadow: 0 13px 34px #080a1038; }
 .visual-mobile-block-conversion-menu > button { min-height: 38px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border: 0; border-radius: 7px; color: var(--text); background: transparent; font-size: 12px; text-align: left; }
 .visual-mobile-block-conversion-menu > button:hover, .visual-mobile-block-conversion-menu > button:focus-visible, .visual-mobile-block-conversion-menu > button.active { outline: 0; color: var(--accent); background: color-mix(in srgb,var(--accent) 9%,transparent); }

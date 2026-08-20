@@ -536,18 +536,20 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
           </div>}
           <Milkdown />
         </div>
-        {activeHeading && nativeSelectionMode && <div className="visual-mobile-block-toolbar" role="toolbar" aria-label={t('标题操作')} onPointerDown={(event) => event.stopPropagation()}>
-          <button type="button" className="visual-mobile-heading-trigger" aria-label={t('转换为')} aria-expanded={conversionMenuOpen} onClick={() => { setConversionMenuOpen((open) => !open); setBlockMenuOpen(false) }}>{`H${activeHeading.level}`}</button>
-          <button type="button" onClick={() => runBlockAction('duplicate')}><span>▣</span><em>{t('创建副本')}</em></button>
-          <button type="button" onClick={() => runBlockAction('paragraph')}><span>¶</span><em>{t('新段落')}</em></button>
-          <button type="button" className="danger" onClick={() => runBlockAction('delete')}><span>♜</span><em>{t('删除')}</em></button>
-          {conversionMenuOpen && <div className="visual-mobile-block-conversion-menu" role="menu">
-            {blockOptions.map((option) => <button type="button" role="menuitem" className={option.level === activeHeading.level ? 'active' : ''} key={option.level} onClick={() => runBlockAction(option.level)}><span>{option.level === 0 ? '¶' : `H${option.level}`}</span><em>{option.label}</em></button>)}
-          </div>}
-        </div>}
         {loading && <div className="visual-markdown-loading">{t('正在加载视觉编辑器…')}</div>}
       </div>
     </div>
+    {activeHeading && nativeSelectionMode && <div className="visual-mobile-block-toolbar" role="toolbar" aria-label={t('标题操作')} onPointerDown={(event) => event.stopPropagation()}>
+      <div className="visual-mobile-block-toolbar-row">
+        <button type="button" className="visual-mobile-heading-trigger" aria-label={t('转换为')} aria-expanded={conversionMenuOpen} onClick={() => { setConversionMenuOpen((open) => !open); setBlockMenuOpen(false) }}>{`H${activeHeading.level}`}</button>
+        <button type="button" onClick={() => runBlockAction('duplicate')}><span>▣</span><em>{t('创建副本')}</em></button>
+        <button type="button" onClick={() => runBlockAction('paragraph')}><span>¶</span><em>{t('新段落')}</em></button>
+        <button type="button" className="danger" onClick={() => runBlockAction('delete')}><span>♜</span><em>{t('删除')}</em></button>
+      </div>
+      {conversionMenuOpen && <div className="visual-mobile-block-conversion-menu" role="menu">
+        {blockOptions.map((option) => <button type="button" role="menuitem" className={option.level === activeHeading.level ? 'active' : ''} key={option.level} onClick={() => runBlockAction(option.level)}><span>{option.level === 0 ? '¶' : `H${option.level}`}</span><em>{option.label}</em></button>)}
+      </div>}
+    </div>}
   </div>
 })
 
