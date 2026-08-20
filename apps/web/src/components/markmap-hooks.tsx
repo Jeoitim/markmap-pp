@@ -12,7 +12,7 @@ import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
-import VisualMarkdownEditor, { type VisualMarkdownSelection } from './visual-markdown-editor'
+import VisualMarkdownEditor, { type VisualMarkdownEditorHandle, type VisualMarkdownSelection } from './visual-markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { mermaidRenderId, mermaidViewBoxSize, renderMermaidSvg } from './mermaid-renderer'
 import { inspectMermaid } from './mermaid-lint'
@@ -128,6 +128,7 @@ interface AppSettings {
   editorFont: PreviewFont
   editorWeight: number
   editorSpellCheck: boolean
+  previewNodeNavigation: boolean
   highlightScheme: HighlightScheme
   previewFontSize: number
   previewFont: PreviewFont
@@ -143,6 +144,7 @@ const defaultSettings: AppSettings = {
   editorFont: 'notoSans',
   editorWeight: 400,
   editorSpellCheck: false,
+  previewNodeNavigation: false,
   highlightScheme: 'violet',
   previewFontSize: 16,
   previewFont: 'notoSans',
@@ -1026,6 +1028,41 @@ function readUserPreviewBackground(style: string) {
   return extractCssColor(cssDeclaration(rule, 'background-color') || cssDeclaration(rule, 'background'))
 }
 
+function sourceLineFromValue(value: unknown) {
+  const line = Number(String(value ?? '').match(/\d+/)?.[0])
+  return Number.isFinite(line) ? line + 1 : undefined
+}
+
+function normalizeSourceText(value: string) {
+  return value
+    .replace(/^\s{0,3}(?:#{1,6}|[-+*]|\d+[.)])\s+/, '')
+    .replace(/[*_~`>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase()
+}
+
+function sourceLineFromNode(node: { content: string; payload?: Record<string, unknown> }, markdown?: string, text?: string) {
+  const payloadLine = sourceLineFromValue(node.payload?.lines)
+  if (payloadLine !== undefined) return payloadLine
+  const contentLine = sourceLineFromValue(node.content.match(/\bdata-lines\s*=\s*["'](\d+)/i)?.[1])
+  if (contentLine !== undefined) return contentLine
+  if (!markdown || !text) return undefined
+  const normalizedText = normalizeSourceText(text)
+  if (!normalizedText) return undefined
+  const line = markdown.split(/\r?\n/).findIndex((source) => {
+    const normalizedSource = normalizeSourceText(source)
+    return normalizedSource && (normalizedSource === normalizedText || normalizedSource.includes(normalizedText) || normalizedText.includes(normalizedSource))
+  })
+  return line >= 0 ? line + 1 : undefined
+}
+
+function textFromNodeContent(content: string) {
+  const container = document.createElement('div')
+  container.innerHTML = content
+  return container.textContent?.replace(/\s+/g, ' ').trim() || undefined
+}
+
 export default function MarkmapHooks() {
   const { locale, setLocale, t } = useI18n()
   const desktopWorkspaceSessionRef = useRef(loadDesktopWorkspaceSession())
@@ -1157,6 +1194,7 @@ export default function MarkmapHooks() {
   }, [activeTabId, locale])
   const initialMarkdownRef = useRef(markdown)
   const markdownEditorRef = useRef<MarkdownEditorHandle | null>(null)
+  const visualMarkdownEditorRef = useRef<VisualMarkdownEditorHandle | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const mmRef = useRef<Markmap | null>(null)
   const previewNativeContextMenuOnceRef = useRef(false)
@@ -1558,6 +1596,18 @@ export default function MarkmapHooks() {
     documentTabsRef.current = nextTabs
     setDocumentTabs(nextTabs)
   }, [activeTabId, documentEditorMode, documentMode])
+  const revealEditorPosition = useCallback((line: number, text?: string) => {
+    if (documentMode !== 'markdown') return
+    const needsLayout = editorCollapsed || editorView !== 'markdown' || mobilePane === 'preview'
+    if (editorView !== 'markdown') setEditorView('markdown')
+    if (editorCollapsed) setEditorCollapsed(false)
+    if (mobilePane === 'preview') setMobilePane('editor')
+    const reveal = () => {
+      if (documentEditorMode === 'visual') visualMarkdownEditorRef.current?.revealLine(line, text)
+      else markdownEditorRef.current?.revealLine(line)
+    }
+    window.setTimeout(reveal, needsLayout ? 240 : 0)
+  }, [documentEditorMode, documentMode, editorCollapsed, editorView, mobilePane])
   const setActiveDocumentMode = useCallback((mode: DocumentMode) => {
     const active = documentTabsRef.current.find((tab) => tab.id === activeTabId)
     if (!active || mode === documentMode) return
@@ -2462,6 +2512,37 @@ export default function MarkmapHooks() {
     event.preventDefault()
     event.stopPropagation()
     void openRepositoryLink(target.getAttribute('href') || '', activeRepoPath)
+  }
+
+  const handlePreviewNodeClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!settings.previewNodeNavigation) return
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('a[href], .markmap-mermaid-preview, .markmap-edit-wrapper, .markmap-edit-input, .markmap-collapse-control, .markmap-collapse-hit')) return
+    const nodeGroup = target?.closest<SVGGElement>('g.markmap-node')
+    const nodePath = nodeGroup?.dataset.path
+    if (!nodePath) return
+    const root = mmRef.current?.getData()
+    if (!root) return
+    let targetNode: NonNullable<typeof root> | undefined
+    const visit = (node: NonNullable<typeof root>) => {
+      if (node.state?.path === nodePath) { targetNode = node; return }
+      for (const child of node.children || []) { if (!targetNode) visit(child) }
+    }
+    visit(root)
+    if (!targetNode) return
+    const text = textFromNodeContent(targetNode.content)
+    const line = sourceLineFromNode(targetNode, markdown, text)
+    if (line === undefined) return
+    revealEditorPosition(line, text)
+  }
+
+  const handlePreviewClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('a[href]')) {
+      handlePreviewLinkClick(event)
+      return
+    }
+    handlePreviewNodeClick(event)
   }
 
   const handlePreviewBlankPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -4375,7 +4456,7 @@ ${documentRenderConfig.style}
             </div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-              {documentEditorMode === 'visual' ? <VisualMarkdownEditor value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
+              {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
               <footer className="editor-status">
                 <button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button>
                 <span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span>
@@ -4486,7 +4567,23 @@ ${documentRenderConfig.style}
                <button type="button" className="document-tab-new" aria-label={t('新建空白文档标签页')} title={t('新建标签页')} onClick={createBlankDocumentTab}><Icon name="plus" /></button>
              </nav>
              {!hasOpenDocument && <div className="document-empty-state preview-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>新建或打开 Markdown 后，这里会显示思维导图。</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-            {documentMode === 'mermaid' ? <div className={`standalone-mermaid-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText, '--mermaid-font-family': previewFonts[settings.previewFont].family, '--mermaid-font-size': `${settings.previewFontSize}px`, '--mermaid-font-weight': settings.previewWeight } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button><button type="button" onClick={() => standaloneMermaidFit?.()} disabled={!standaloneMermaidFit} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button></div><StandaloneMermaidPreview source={renderedMarkdown} theme={previewDarkMode ? 'dark' : 'default'} onRendered={setStandaloneMermaidViewer} onFitReady={registerStandaloneMermaidFit} /></div> : <div className={`map-canvas ${effectiveShowGrid ? '' : 'no-grid'}`} onContextMenu={handlePreviewContextMenu} onPointerDown={handlePreviewBlankPointerDown} onClickCapture={handlePreviewLinkClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}><div className="preview-floating-tools"><button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button><button type="button" onClick={() => mmRef.current?.fit()} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button><button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button></div><svg id={MARKMAP_PREVIEW_ID} ref={svgRef} style={{ '--markmap-font': effectiveMarkmapFont } as React.CSSProperties} /></div>}
+            {documentMode === 'mermaid'
+              ? <div className={effectiveShowGrid ? 'standalone-mermaid-canvas' : 'standalone-mermaid-canvas no-grid'} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText, '--mermaid-font-family': previewFonts[settings.previewFont].family, '--mermaid-font-size': String(settings.previewFontSize) + 'px', '--mermaid-font-weight': settings.previewWeight } as React.CSSProperties}>
+                  <div className="preview-floating-tools">
+                    <button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button>
+                    <button type="button" onClick={() => standaloneMermaidFit?.()} disabled={!standaloneMermaidFit} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button>
+                    <button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button>
+                  </div>
+                  <StandaloneMermaidPreview source={renderedMarkdown} theme={previewDarkMode ? 'dark' : 'default'} onRendered={setStandaloneMermaidViewer} onFitReady={registerStandaloneMermaidFit} />
+                </div>
+              : <div className={effectiveShowGrid ? 'map-canvas' : 'map-canvas no-grid'} onContextMenu={handlePreviewContextMenu} onPointerDown={handlePreviewBlankPointerDown} onClickCapture={handlePreviewClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}>
+                  <div className="preview-floating-tools">
+                    <button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button>
+                    <button type="button" onClick={() => mmRef.current?.fit()} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button>
+                    <button type="button" onClick={() => setActivePanel('preview')} title={t('预览设置')} aria-label={t('预览设置')}><Icon name="settings" /></button>
+                  </div>
+                  <svg id={MARKMAP_PREVIEW_ID} ref={svgRef} style={{ '--markmap-font': effectiveMarkmapFont } as React.CSSProperties} />
+                </div>}
           </>
         </section>
       </section>
@@ -4578,6 +4675,7 @@ ${documentRenderConfig.style}
              <label className="field"><span>{t('字重')} <b>{settings.editorWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.editorWeight} onChange={(event) => updateSettings('editorWeight', Number(event.target.value))} /></label>
              <label className="field"><span>{t('高亮方案')}</span><select value={settings.highlightScheme} onChange={(event) => updateSettings('highlightScheme', event.target.value as HighlightScheme)}><option value="violet">Violet</option><option value="github">GitHub</option><option value="solarized">Solarized</option></select></label>
              <label className="switch-field"><span><strong>{t('拼写检查')}</strong><small>{t('默认关闭；开启后，源码与视觉模式都会显示浏览器拼写提示。')}</small></span><input type="checkbox" checked={settings.editorSpellCheck} onChange={(event) => updateSettings('editorSpellCheck', event.target.checked)} /></label>
+             <label className="switch-field"><span><strong>{t('点击预览节点定位')}</strong><small>{t('点击右侧思维导图节点时，编辑器自动跳转到对应的 Markdown 内容。')}</small></span><input type="checkbox" checked={settings.previewNodeNavigation} onChange={(event) => updateSettings('previewNodeNavigation', event.target.checked)} /></label>
              <section className="editor-mode-setting experimental-setting" aria-labelledby="editor-mode-setting-title">
                <div className="editor-mode-setting-copy">
                  <div className="editor-mode-setting-title"><strong id="editor-mode-setting-title">{t('WYSIWYG（即时渲染）')} <b>{t('实验性')}</b></strong></div>

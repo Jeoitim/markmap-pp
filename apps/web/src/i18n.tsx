@@ -83,6 +83,8 @@ const translations: Record<string, string> = {
   '视觉': 'Visual',
   '拼写检查': 'Spell check',
   '默认关闭；开启后，源码与视觉模式都会显示浏览器拼写提示。': 'Off by default; when enabled, the browser marks possible spelling issues in source and visual modes.',
+  '点击预览节点定位': 'Jump from preview nodes',
+  '点击右侧思维导图节点时，编辑器自动跳转到对应的 Markdown 内容。': 'Click a mind-map node to jump the editor to its corresponding Markdown content.',
   '标题类型': 'Block type',
   '创建副本': 'Duplicate block',
   '转换为': 'Convert to',

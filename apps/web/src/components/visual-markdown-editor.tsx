@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { Editor, defaultValueCtx, editorViewCtx, parserCtx, rootCtx, serializerCtx } from '@milkdown/kit/core'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
 import { commonmark } from '@milkdown/kit/preset/commonmark'
@@ -16,6 +16,10 @@ export interface VisualMarkdownEditorProps {
   spellCheck: boolean
   onSelectionContextMenu?: (selection: VisualMarkdownSelection) => void
   onOpenLink?: (href: string) => void
+}
+
+export interface VisualMarkdownEditorHandle {
+  revealLine: (line: number, text?: string) => void
 }
 
 export interface VisualMarkdownSelection {
@@ -54,7 +58,21 @@ function joinMarkdown(frontmatter: string, body: string) {
   return frontmatter ? `${frontmatter}${body}` : body
 }
 
-function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, onSelectionContextMenu, onOpenLink }: VisualMarkdownEditorProps) {
+function normalizeRevealText(value: string) {
+  return value
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(?:#{1,6}|[-+*]|\d+[.)])\s+/, '')
+    .replace(/[*_~`>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase()
+}
+
+function frontmatterLineCount(frontmatter: string) {
+  return frontmatter ? Math.max(0, frontmatter.split(/\r?\n/).length - 1) : 0
+}
+
+const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, onSelectionContextMenu, onOpenLink }, ref) {
   const { t } = useI18n()
   const [initialParts] = useState(() => splitMarkdown(value))
   const [activeHeading, setActiveHeading] = useState<ActiveHeading | null>(null)
@@ -134,6 +152,77 @@ function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily
       ctx.get(editorViewCtx).dom.setAttribute('spellcheck', String(spellCheck))
     })
   }, [getInstance, loading, spellCheck])
+
+  useImperativeHandle(ref, () => ({
+    revealLine: (lineNumber, text) => {
+      const editor = getInstance()
+      if (!editor) return
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        const parts = latestPartsRef.current
+        const bodyLines = parts.body.split(/\r?\n/)
+        const bodyLine = Math.max(1, lineNumber - frontmatterLineCount(parts.frontmatter))
+        const sourceLine = bodyLines[bodyLine - 1] || ''
+        const targetText = normalizeRevealText(text || sourceLine)
+        const headingMatch = sourceLine.match(/^\s*(#{1,6})\s+(.+?)\s*#*\s*$/)
+        let targetElement: HTMLElement | null = null
+
+        if (headingMatch) {
+          const level = headingMatch[1].length
+          const headingText = normalizeRevealText(headingMatch[2])
+          const occurrence = bodyLines.slice(0, bodyLine).filter((line) => {
+            const match = line.match(/^\s*(#{1,6})\s+(.+?)\s*#*\s*$/)
+            return match && match[1].length === level && normalizeRevealText(match[2]) === headingText
+          }).length - 1
+          const headings = Array.from(view.dom.querySelectorAll<HTMLHeadingElement>(`h${level}`)).filter((heading) => normalizeRevealText(heading.textContent || '') === headingText)
+          targetElement = headings[Math.max(0, occurrence)] || headings[0] || null
+        }
+
+        if (!targetElement && targetText) {
+          let exactTargetElement: HTMLElement | null = null
+          let exactTargetLength = Number.POSITIVE_INFINITY
+          let containingTarget: HTMLElement | null = null
+          view.state.doc.descendants((_, position) => {
+            const dom = view.nodeDOM(position)
+            if (!(dom instanceof HTMLElement)) return
+            const nodeText = normalizeRevealText(dom.textContent || '')
+            if (!nodeText) return
+            if (nodeText === targetText) {
+              if (!exactTargetElement || nodeText.length <= exactTargetLength) {
+                exactTargetElement = dom
+                exactTargetLength = nodeText.length
+              }
+            } else if (!containingTarget && (nodeText.includes(targetText) || targetText.includes(nodeText))) {
+              containingTarget = dom
+            }
+          })
+          targetElement = exactTargetElement || containingTarget
+        }
+
+        if (targetElement) {
+          const scroll = view.dom.closest<HTMLElement>('.visual-markdown-scroll')
+          if (scroll) {
+            const scrollRect = scroll.getBoundingClientRect()
+            const targetRect = targetElement.getBoundingClientRect()
+            const targetTop = scroll.scrollTop + targetRect.top - scrollRect.top - (scroll.clientHeight - targetRect.height) / 2
+            scroll.scrollTo({ top: Math.max(0, Math.min(scroll.scrollHeight - scroll.clientHeight, targetTop)), behavior: 'smooth' })
+          } else {
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+          view.focus()
+          return
+        }
+
+        const scroll = view.dom.closest<HTMLElement>('.visual-markdown-scroll')
+        if (scroll) {
+          const denominator = Math.max(1, bodyLines.length - 1)
+          const ratio = Math.min(1, Math.max(0, (bodyLine - 1) / denominator))
+          scroll.scrollTo({ top: (scroll.scrollHeight - scroll.clientHeight) * ratio, behavior: 'smooth' })
+          view.focus()
+        }
+      })
+    },
+  }), [getInstance])
 
   const handleFrontmatterChange = (nextFrontmatter: string) => {
     latestPartsRef.current = { frontmatter: nextFrontmatter, body: bodyRef.current }
@@ -369,8 +458,10 @@ function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily
       </div>
     </div>
   </div>
-}
+})
 
-export default function VisualMarkdownEditor(props: VisualMarkdownEditorProps) {
-  return <MilkdownProvider><VisualMarkdownEditorInner {...props} /></MilkdownProvider>
-}
+const VisualMarkdownEditor = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditor(props, ref) {
+  return <MilkdownProvider><VisualMarkdownEditorInner ref={ref} {...props} /></MilkdownProvider>
+})
+
+export default VisualMarkdownEditor
