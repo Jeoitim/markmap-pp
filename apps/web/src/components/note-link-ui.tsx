@@ -40,6 +40,25 @@ export function SelectionActionMenu(props: SelectionActionMenuProps) {
   </div>
 }
 
+interface MobileSelectionActionBarProps {
+  hasLink: boolean
+  onLink: () => void
+  onRemoveLink: () => void
+}
+
+export function MobileSelectionActionBar(props: MobileSelectionActionBarProps) {
+  const { t } = useI18n()
+  const runAction = (action: () => void) => (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    action()
+  }
+  return <div className="mobile-selection-action-bar" role="toolbar" aria-label={t('所选文字操作')} onPointerDown={(event) => event.stopPropagation()}>
+    <button type="button" className="link-action" onPointerDown={runAction(props.onLink)}>{props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')}</button>
+    {props.hasLink && <button type="button" onPointerDown={runAction(props.onRemoveLink)}>{t('移除链接')}</button>}
+  </div>
+}
+
 interface RepositoryLinkPickerProps {
   selectionText: string
   paths: string[]

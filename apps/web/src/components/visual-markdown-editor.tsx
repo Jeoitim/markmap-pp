@@ -15,6 +15,8 @@ export interface VisualMarkdownEditorProps {
   fontWeight: number
   spellCheck: boolean
   onSelectionContextMenu?: (selection: VisualMarkdownSelection) => void
+  onSelectionChange?: (selection: VisualMarkdownSelection | null) => void
+  nativeSelectionMode?: boolean
   onOpenLink?: (href: string) => void
 }
 
@@ -72,7 +74,7 @@ function frontmatterLineCount(frontmatter: string) {
   return frontmatter ? Math.max(0, frontmatter.split(/\r?\n/).length - 1) : 0
 }
 
-const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, onSelectionContextMenu, onOpenLink }, ref) {
+const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink }, ref) {
   const { t } = useI18n()
   const [initialParts] = useState(() => splitMarkdown(value))
   const [activeHeading, setActiveHeading] = useState<ActiveHeading | null>(null)
@@ -82,9 +84,13 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
   const latestPartsRef = useRef(initialParts)
   const bodyRef = useRef(initialParts.body)
   const frontmatterRef = useRef<HTMLTextAreaElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  const activeHeadingElementRef = useRef<HTMLHeadingElement | null>(null)
   const onChangeRef = useRef(onChange)
   const onSelectionContextMenuRef = useRef(onSelectionContextMenu)
+  const onSelectionChangeRef = useRef(onSelectionChange)
   const nativeContextMenuOnceRef = useRef(false)
+  const nativeSelectionModeRef = useRef(nativeSelectionMode)
   const [loading, getInstance] = useInstance()
 
   useEffect(() => {
@@ -103,11 +109,50 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
   }, [onSelectionContextMenu])
 
   useEffect(() => {
+    onSelectionChangeRef.current = onSelectionChange
+  }, [onSelectionChange])
+
+  useEffect(() => {
+    nativeSelectionModeRef.current = nativeSelectionMode
+  }, [nativeSelectionMode])
+
+  useEffect(() => {
     const textarea = frontmatterRef.current
     if (!textarea) return
     textarea.style.height = 'auto'
     textarea.style.height = `${Math.max(104, textarea.scrollHeight)}px`
   }, [value])
+
+  useEffect(() => {
+    if (!activeHeading) return
+    const content = contentRef.current
+    const heading = activeHeadingElementRef.current
+    if (!content || !heading) return
+
+    const updatePosition = () => {
+      const contentRect = content.getBoundingClientRect()
+      const headingRect = heading.getBoundingClientRect()
+      const top = Math.max(0, headingRect.top - contentRect.top - 2)
+      const left = Math.max(-22, headingRect.left - contentRect.left - 68)
+      setActiveHeading((current) => {
+        if (!current || (current.top === top && current.left === left)) return current
+        return { ...current, top, left }
+      })
+    }
+
+    const scroll = content.closest('.visual-markdown-scroll')
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition)
+    observer?.observe(content)
+    observer?.observe(heading)
+    window.addEventListener('resize', updatePosition)
+    scroll?.addEventListener('scroll', updatePosition, { passive: true })
+    updatePosition()
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', updatePosition)
+      scroll?.removeEventListener('scroll', updatePosition)
+    }
+  }, [activeHeading?.position])
 
   useEditor((root) => Editor.make()
     .config((ctx) => {
@@ -247,6 +292,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
 
     const heading = element?.closest<HTMLHeadingElement>('h1, h2, h3, h4, h5, h6')
     if (heading) {
+      activeHeadingElementRef.current = heading
       const level = Number(heading.tagName.slice(1))
       const editor = getInstance()
       const position = editor?.action((ctx) => {
@@ -270,6 +316,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       setConversionMenuOpen(false)
       return
     }
+    activeHeadingElementRef.current = null
     setActiveHeading(null)
     setBlockMenuOpen(false)
     setConversionMenuOpen(false)
@@ -295,41 +342,27 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     })
   }
 
-  const handleContentContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (event.shiftKey || nativeContextMenuOnceRef.current) {
-      nativeContextMenuOnceRef.current = false
-      return
-    }
-
-    const element = event.target instanceof Element ? event.target : null
+  const buildSelectionTarget = (range: Range, element: Element | null, x = 0, y = 0): VisualMarkdownSelection | null => {
     const editorRoot = element?.closest<HTMLElement>('.ProseMirror')
-    if (!editorRoot) return
-
-    const browserSelection = window.getSelection()
-    let range = browserSelection && browserSelection.rangeCount ? browserSelection.getRangeAt(0).cloneRange() : null
-    const targetAnchor = element?.closest<HTMLAnchorElement>('a[href]')
-    if ((!range || browserSelection?.isCollapsed) && targetAnchor) {
-      range = document.createRange()
-      range.selectNodeContents(targetAnchor)
-    }
-    if (!range || !editorRoot.contains(range.commonAncestorContainer)) return
+    if (!editorRoot || !editorRoot.contains(range.commonAncestorContainer)) return null
 
     const text = range.toString()
-    if (!text.trim() && !targetAnchor) return
+    const targetAnchor = element?.closest<HTMLAnchorElement>('a[href]')
+    if (!text.trim() && !targetAnchor) return null
 
     const editor = getInstance()
-    if (!editor) return
+    if (!editor) return null
     const positions = editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
       try {
-        const start = view.posAtDOM(range!.startContainer, range!.startOffset)
-        const end = view.posAtDOM(range!.endContainer, range!.endOffset)
+        const start = view.posAtDOM(range.startContainer, range.startOffset)
+        const end = view.posAtDOM(range.endContainer, range.endOffset)
         return { from: Math.min(start, end), to: Math.max(start, end) }
       } catch {
         return { from: view.state.selection.from, to: view.state.selection.to }
       }
     })
-    if (!positions) return
+    if (!positions) return null
 
     const replace = (insert: string) => {
       editor.action((ctx) => {
@@ -360,13 +393,12 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       })
     }
 
-    event.preventDefault()
-    event.stopPropagation()
-    const rangeAnchor = (range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement)?.closest<HTMLAnchorElement>('a[href]')
-    onSelectionContextMenuRef.current?.({
+    const common = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement
+    const rangeAnchor = common?.closest<HTMLAnchorElement>('a[href]')
+    return {
       source: 'visual',
-      x: event.clientX,
-      y: event.clientY,
+      x,
+      y,
       text,
       range,
       anchor: targetAnchor || rangeAnchor || undefined,
@@ -374,7 +406,57 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       removeLink,
       setLink,
       allowNative: () => { nativeContextMenuOnceRef.current = true },
-    })
+    }
+  }
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const browserSelection = window.getSelection()
+      if (!browserSelection || browserSelection.isCollapsed || !browserSelection.rangeCount) {
+        onSelectionChangeRef.current?.(null)
+        return
+      }
+      const range = browserSelection.getRangeAt(0).cloneRange()
+      const element = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement
+      const rect = range.getBoundingClientRect()
+      const target = buildSelectionTarget(range, element, rect.left, rect.bottom)
+      if (nativeSelectionModeRef.current && target) {
+        setActiveHeading(null)
+        setBlockMenuOpen(false)
+        setConversionMenuOpen(false)
+      }
+      onSelectionChangeRef.current?.(target)
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [getInstance, loading])
+
+  const handleContentContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (nativeSelectionModeRef.current) return
+    if (event.shiftKey || nativeContextMenuOnceRef.current) {
+      nativeContextMenuOnceRef.current = false
+      return
+    }
+
+    const element = event.target instanceof Element ? event.target : null
+    const editorRoot = element?.closest<HTMLElement>('.ProseMirror')
+    if (!editorRoot) return
+
+    const browserSelection = window.getSelection()
+    let range = browserSelection && browserSelection.rangeCount ? browserSelection.getRangeAt(0).cloneRange() : null
+    const targetAnchor = element?.closest<HTMLAnchorElement>('a[href]')
+    if ((!range || browserSelection?.isCollapsed) && targetAnchor) {
+      range = document.createRange()
+      range.selectNodeContents(targetAnchor)
+    }
+    if (!range || !editorRoot.contains(range.commonAncestorContainer)) return
+
+    const selectionTarget = buildSelectionTarget(range, element, event.clientX, event.clientY)
+    if (!selectionTarget) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    onSelectionContextMenuRef.current?.(selectionTarget)
   }
 
   const runBlockAction = (action: 'duplicate' | 'paragraph' | 'delete' | number) => {
@@ -437,8 +519,8 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
           </div>
           <textarea ref={frontmatterRef} aria-label={t('YAML 文档元数据')} value={currentParts.frontmatter} onChange={(event) => handleFrontmatterChange(event.target.value)} spellCheck={false} />
         </section>}
-        <div className="visual-markdown-content" aria-label={t('视觉 Markdown 编辑器')} onClick={handleContentClick} onContextMenu={handleContentContextMenu}>
-          {activeHeading && <div className={`visual-block-actions${blockMenuOpen ? ' expanded' : ''}`} style={{ top: activeHeading.top, left: activeHeading.left }} onPointerDown={(event) => event.stopPropagation()}>
+        <div ref={contentRef} className="visual-markdown-content" aria-label={t('视觉 Markdown 编辑器')} onClick={handleContentClick} onContextMenu={handleContentContextMenu}>
+          {activeHeading && !nativeSelectionMode && <div className={`visual-block-actions${blockMenuOpen ? ' expanded' : ''}`} style={{ top: activeHeading.top, left: activeHeading.left }} onPointerDown={(event) => event.stopPropagation()}>
             <button type="button" className="visual-block-type-trigger" aria-label={t('标题类型')} aria-expanded={blockMenuOpen} onClick={() => { setBlockMenuOpen((open) => !open); setConversionMenuOpen(false) }}>{`H${activeHeading.level}`}</button>
             {blockMenuOpen && <>
               <div className="visual-block-menu" role="menu">
@@ -454,6 +536,15 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
           </div>}
           <Milkdown />
         </div>
+        {activeHeading && nativeSelectionMode && <div className="visual-mobile-block-toolbar" role="toolbar" aria-label={t('标题操作')} onPointerDown={(event) => event.stopPropagation()}>
+          <button type="button" className="visual-mobile-heading-trigger" aria-label={t('转换为')} aria-expanded={conversionMenuOpen} onClick={() => { setConversionMenuOpen((open) => !open); setBlockMenuOpen(false) }}>{`H${activeHeading.level}`}</button>
+          <button type="button" onClick={() => runBlockAction('duplicate')}><span>▣</span><em>{t('创建副本')}</em></button>
+          <button type="button" onClick={() => runBlockAction('paragraph')}><span>¶</span><em>{t('新段落')}</em></button>
+          <button type="button" className="danger" onClick={() => runBlockAction('delete')}><span>♜</span><em>{t('删除')}</em></button>
+          {conversionMenuOpen && <div className="visual-mobile-block-conversion-menu" role="menu">
+            {blockOptions.map((option) => <button type="button" role="menuitem" className={option.level === activeHeading.level ? 'active' : ''} key={option.level} onClick={() => runBlockAction(option.level)}><span>{option.level === 0 ? '¶' : `H${option.level}`}</span><em>{option.label}</em></button>)}
+          </div>}
+        </div>}
         {loading && <div className="visual-markdown-loading">{t('正在加载视觉编辑器…')}</div>}
       </div>
     </div>

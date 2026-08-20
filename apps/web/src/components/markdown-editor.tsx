@@ -67,6 +67,8 @@ interface MarkdownEditorProps {
   locale: Locale
   mode: 'markdown' | 'mermaid'
   onSelectionContextMenu?: (selection: MarkdownEditorSelection) => void
+  onSelectionChange?: (selection: MarkdownEditorSelection | null) => void
+  nativeSelectionMode?: boolean
   onOpenLink?: (href: string) => void
 }
 
@@ -88,13 +90,15 @@ export interface MarkdownEditorHandle {
   revealLine: (line: number) => void
 }
 
-const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, scheme, locale, mode, onSelectionContextMenu, onOpenLink }, ref) {
+const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, scheme, locale, mode, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink }, ref) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
   const onSelectionContextMenuRef = useRef(onSelectionContextMenu)
+  const onSelectionChangeRef = useRef(onSelectionChange)
   const onOpenLinkRef = useRef(onOpenLink)
   const nativeContextMenuOnceRef = useRef(false)
+  const nativeSelectionModeRef = useRef(nativeSelectionMode)
   const themeCompartment = useRef(new Compartment())
   const externalUpdate = useRef(false)
   const localeRef = useRef(locale)
@@ -103,7 +107,9 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onSelectionContextMenuRef.current = onSelectionContextMenu }, [onSelectionContextMenu])
+  useEffect(() => { onSelectionChangeRef.current = onSelectionChange }, [onSelectionChange])
   useEffect(() => { onOpenLinkRef.current = onOpenLink }, [onOpenLink])
+  useEffect(() => { nativeSelectionModeRef.current = nativeSelectionMode }, [nativeSelectionMode])
   useEffect(() => { localeRef.current = locale }, [locale])
   useEffect(() => { modeRef.current = mode; if (viewRef.current) forceLinting(viewRef.current) }, [mode])
 
@@ -153,6 +159,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: String(initialConfigRef.current.spellCheck) }),
         EditorView.domEventHandlers({
           contextmenu: (event, editor) => {
+            if (nativeSelectionModeRef.current) return false
             if (event.shiftKey || nativeContextMenuOnceRef.current) {
               nativeContextMenuOnceRef.current = false
               return false
@@ -177,6 +184,21 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !externalUpdate.current) onChangeRef.current(update.state.doc.toString())
+          if (update.selectionSet || update.docChanged) {
+            const { from, to } = update.state.selection.main
+            if (from === to) {
+              onSelectionChangeRef.current?.(null)
+            } else {
+              let x = 0
+              let y = 0
+              try {
+                const coords = update.view.coordsAtPos(from)
+                if (coords) { x = coords.left; y = coords.bottom }
+              } catch { /* The view may be between layout passes. */ }
+              const markdownValue = update.state.doc.toString()
+              onSelectionChangeRef.current?.({ x, y, from, to, text: update.state.sliceDoc(from, to), link: findMarkdownLinkAt(markdownValue, from) })
+            }
+          }
         }),
         themeCompartment.current.of(editorTheme(initialConfigRef.current.dark, initialConfigRef.current.fontSize, initialConfigRef.current.fontFamily, initialConfigRef.current.fontWeight, initialConfigRef.current.scheme)),
       ],

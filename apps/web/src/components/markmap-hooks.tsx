@@ -25,7 +25,7 @@ import type { Locale } from '../i18n'
 import { desktopApi, saveBlob, type DesktopAppInfo, type DesktopLocalGitCommit, type DesktopLocalGitFile, type DesktopLocalGitGraph, type DesktopLocalGitState } from './desktop-api'
 import { createStaticPdfHtml, openPdfPrintWindow, printStaticPdf } from './pdf-export'
 import { inspectMarkdown } from './markdown-lint'
-import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
+import { MobileSelectionActionBar, NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
 import { indexRepositoryNote, repositoryLinkHref, repositoryMarkdownLink, resolveHeading, resolveRepositoryLink, rewriteRepositoryLinks } from './repository-links'
 import {
   downloadMarkdown,
@@ -81,6 +81,10 @@ function isMermaidTextTarget(target: EventTarget | null) {
 
 function clearNativeTextSelection() {
   window.getSelection()?.removeAllRanges()
+}
+
+function detectTouchSelectionMode() {
+  return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
 }
 
 interface DesktopWorkspaceSession {
@@ -1131,6 +1135,7 @@ export default function MarkmapHooks() {
   const [documentMode, setDocumentMode] = useState<DocumentMode>(() => documentTabs[0].mode)
   const activeDocumentTab = documentTabs.find((tab) => tab.id === activeTabId) || documentTabs[0]
   const [mobilePane, setMobilePane] = useState<Pane>('editor')
+  const [touchSelectionMode, setTouchSelectionMode] = useState(detectTouchSelectionMode)
   const [editorView, setEditorView] = useState<EditorView>(() => desktopWorkspaceSessionRef.current?.editorView || 'markdown')
   const [documentEditorMode, setDocumentEditorMode] = useState<DocumentEditorMode>(() => documentTabs[0].editorMode)
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
@@ -1226,9 +1231,22 @@ export default function MarkmapHooks() {
   const [renamingLocalRepositoryTarget, setRenamingLocalRepositoryTarget] = useState<RepositoryTarget | null>(null)
   const [localRepositoryRenameValue, setLocalRepositoryRenameValue] = useState('')
   const [selectionMenu, setSelectionMenu] = useState<TextSelectionTarget | null>(null)
+  const [mobileSelection, setMobileSelection] = useState<TextSelectionTarget | null>(null)
   const [linkPickerSelection, setLinkPickerSelection] = useState<TextSelectionTarget | null>(null)
   const [linkNotice, setLinkNotice] = useState('')
   const [pendingRepositoryNavigation, setPendingRepositoryNavigation] = useState<PendingRepositoryNavigation | null>(null)
+  useEffect(() => {
+    const media = window.matchMedia('(pointer: coarse)')
+    const update = () => setTouchSelectionMode(media.matches)
+    update()
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
+
+  useEffect(() => {
+    setMobileSelection(null)
+  }, [activeTabId, documentEditorMode, editorView, mobilePane, touchSelectionMode])
+
   useEffect(() => {
     const nextName = locale === 'en-US' ? 'markmap++ guide.md' : 'markmap++ 操作指南.md'
     const nextContent = loadDocument(locale)
@@ -2536,23 +2554,46 @@ export default function MarkmapHooks() {
     else if (remote) await openRepositoryFile(remote)
   }
 
-  const handlePreviewContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.shiftKey || previewNativeContextMenuOnceRef.current) {
-      previewNativeContextMenuOnceRef.current = false
-      return
-    }
-    const selection = window.getSelection()
-    if (!selection || selection.isCollapsed || !selection.rangeCount) return
+  const buildPreviewSelection = (selection: Selection, x = 0, y = 0): Extract<TextSelectionTarget, { source: 'preview' }> | null => {
+    if (selection.isCollapsed || !selection.rangeCount) return null
     const range = selection.getRangeAt(0).cloneRange()
     const common = range.commonAncestorContainer instanceof HTMLElement ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement
     const nodeGroup = common?.closest<SVGGElement>('g.markmap-node')
     const contentElement = nodeGroup?.querySelector<HTMLElement>('foreignObject > div > div')
     const nodePath = nodeGroup?.dataset.path
     const text = selection.toString().trim()
-    if (!contentElement || !nodePath || !text || !contentElement.contains(range.commonAncestorContainer)) return
-    event.preventDefault()
-    setSelectionMenu({ source: 'preview', x: event.clientX, y: event.clientY, text, range, nodePath, contentElement, anchor: common?.closest<HTMLAnchorElement>('a') || undefined })
+    if (!contentElement || !nodePath || !text || !contentElement.contains(range.commonAncestorContainer)) return null
+    return { source: 'preview', x, y, text, range, nodePath, contentElement, anchor: common?.closest<HTMLAnchorElement>('a[href]') || undefined }
   }
+
+  const handlePreviewContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (touchSelectionMode) {
+      const selection = window.getSelection()
+      const target = selection ? buildPreviewSelection(selection, event.clientX, event.clientY) : null
+      if (target) setMobileSelection(target)
+      return
+    }
+    if (event.shiftKey || previewNativeContextMenuOnceRef.current) {
+      previewNativeContextMenuOnceRef.current = false
+      return
+    }
+    const selection = window.getSelection()
+    if (!selection) return
+    const target = buildPreviewSelection(selection, event.clientX, event.clientY)
+    if (!target) return
+    event.preventDefault()
+    setSelectionMenu(target)
+  }
+
+  useEffect(() => {
+    if (!touchSelectionMode || mobilePane !== 'preview') return
+    const handleSelectionChange = () => {
+      const selection = window.getSelection()
+      setMobileSelection(selection ? buildPreviewSelection(selection) : null)
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [mobilePane, touchSelectionMode])
 
   const handlePreviewLinkClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null
@@ -4513,7 +4554,7 @@ ${documentRenderConfig.style}
             </div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-              {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} scheme={settings.highlightScheme} locale={locale} mode={documentMode} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
+               {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection) }} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} scheme={settings.highlightScheme} locale={locale} mode={documentMode} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection ? { source: 'editor', ...selection } : null) }} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
               <footer className="editor-status">
                 <button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button>
                 <span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span>
@@ -4673,7 +4714,8 @@ ${documentRenderConfig.style}
         </section>
       </div>}
 
-      {selectionMenu && <SelectionActionMenu x={selectionMenu.x} y={selectionMenu.y} text={selectionMenu.text} hasLink={selectionMenu.source === 'editor' ? Boolean(selectionMenu.link) : Boolean(selectionMenu.anchor)} onCopy={() => void copySelection(selectionMenu)} onCut={() => void cutSelection(selectionMenu)} onPaste={() => void pasteSelection(selectionMenu)} onLink={() => { setLinkPickerSelection(selectionMenu); setSelectionMenu(null) }} onRemoveLink={() => removeSelectionLink(selectionMenu)} onNativeMenu={() => allowNativeSelectionMenu(selectionMenu)} showNativeMenu={!desktopApi()} shortcutModifier={shortcutModifier} />}
+       {mobileSelection && !linkPickerSelection && <MobileSelectionActionBar hasLink={mobileSelection.source === 'editor' ? Boolean(mobileSelection.link) : Boolean(mobileSelection.anchor)} onLink={() => { const selection = mobileSelection; if (!selection) return; setLinkPickerSelection(selection); setMobileSelection(null) }} onRemoveLink={() => { const selection = mobileSelection; if (!selection) return; removeSelectionLink(selection); setMobileSelection(null) }} />}
+       {selectionMenu && <SelectionActionMenu x={selectionMenu.x} y={selectionMenu.y} text={selectionMenu.text} hasLink={selectionMenu.source === 'editor' ? Boolean(selectionMenu.link) : Boolean(selectionMenu.anchor)} onCopy={() => void copySelection(selectionMenu)} onCut={() => void cutSelection(selectionMenu)} onPaste={() => void pasteSelection(selectionMenu)} onLink={() => { setLinkPickerSelection(selectionMenu); setSelectionMenu(null) }} onRemoveLink={() => removeSelectionLink(selectionMenu)} onNativeMenu={() => allowNativeSelectionMenu(selectionMenu)} showNativeMenu={!desktopApi() && !touchSelectionMode} shortcutModifier={shortcutModifier} />}
       {linkPickerSelection && <RepositoryLinkPicker selectionText={linkPickerSelection.text} paths={repositoryPaths} indexes={repositoryIndexes} onChoose={(target) => chooseRepositoryLink(linkPickerSelection, target)} onCreate={async (path) => (await createAgentFile(path, `# ${linkPickerSelection.text}\n`)).ok} onClose={() => setLinkPickerSelection(null)} />}
       {linkNotice && <div className="link-notice" role="status" aria-live="polite">{linkNotice}</div>}
 

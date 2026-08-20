@@ -352,6 +352,7 @@ const translations: Record<string, string> = {
   '索引全部': 'Index all',
   '索引中…': 'Indexing…',
   '所选文字操作': 'Selection actions',
+  '标题操作': 'Heading actions',
   '复制': 'Copy',
   '剪切': 'Cut',
   '粘贴': 'Paste',
