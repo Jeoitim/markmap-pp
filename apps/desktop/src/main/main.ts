@@ -21,6 +21,7 @@ import {
 } from 'electron';
 import {
   desktopChannels,
+  type DesktopPdfRequest,
   type DesktopOpenedFile,
   type DesktopSaveRequest,
 } from '../shared/contracts.js';
@@ -64,6 +65,7 @@ const appHost = 'app';
 const appId = 'io.github.jeoitim.markmap-plus-plus';
 const maxOpenFileBytes = 20 * 1024 * 1024;
 const maxSaveFileBytes = 200 * 1024 * 1024;
+const maxPdfHtmlBytes = 80 * 1024 * 1024;
 const allowedExternalProtocols = new Set(['https:', 'mailto:']);
 let mainWindow: BrowserWindow | null = null;
 const openedMarkdownFiles = new Map<string, string>();
@@ -374,6 +376,76 @@ function registerIpc() {
       if (result.canceled || !result.filePath) return { canceled: true };
       await fs.writeFile(result.filePath, request.bytes);
       return { canceled: false, path: result.filePath };
+    },
+  );
+  ipcMain.handle(
+    desktopChannels.savePdf,
+    async (event, request: DesktopPdfRequest) => {
+      assertTrusted(event);
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (
+        !window ||
+        typeof request?.suggestedName !== 'string' ||
+        typeof request?.html !== 'string' ||
+        !Number.isFinite(request.width) ||
+        !Number.isFinite(request.height) ||
+        request.width <= 0 ||
+        request.height <= 0
+      )
+        throw new Error('PDF 导出请求无效');
+      if (Buffer.byteLength(request.html, 'utf8') > maxPdfHtmlBytes)
+        throw new Error('PDF 内容超过 80 MB');
+
+      const width = Math.min(request.width, 100_000);
+      const height = Math.min(request.height, 100_000);
+      const printWindow = new BrowserWindow({
+        show: false,
+        width: Math.min(Math.max(Math.ceil(width), 320), 4096),
+        height: Math.min(Math.max(Math.ceil(height), 240), 4096),
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+          webSecurity: true,
+        },
+      });
+      try {
+        await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(request.html)}`);
+        await printWindow.webContents.executeJavaScript(`(async () => {
+          await Promise.race([
+            (async () => {
+              if (document.fonts?.ready) await document.fonts.ready;
+              await Promise.all(Array.from(document.images).map((image) => image.complete
+                ? Promise.resolve()
+                : new Promise((resolve) => {
+                    image.addEventListener('load', resolve, { once: true });
+                    image.addEventListener('error', resolve, { once: true });
+                  })));
+            })(),
+            new Promise((resolve) => setTimeout(resolve, 3000)),
+          ]);
+        })()`);
+        const pdfBytes = await printWindow.webContents.printToPDF({
+          printBackground: true,
+          displayHeaderFooter: false,
+          margins: { top: 0, bottom: 0, left: 0, right: 0 },
+          pageSize: { width: width / 96, height: height / 96 },
+          preferCSSPageSize: true,
+        });
+        const suggestedName =
+          path.basename(request.suggestedName).replace(/[<>:"/\\|?*]/g, '_') ||
+          'markmap.pdf';
+        const result = await dialog.showSaveDialog(window, {
+          title: '保存 PDF',
+          defaultPath: suggestedName,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        });
+        if (result.canceled || !result.filePath) return { canceled: true };
+        await fs.writeFile(result.filePath, pdfBytes);
+        return { canceled: false, path: result.filePath };
+      } finally {
+        if (!printWindow.isDestroyed()) printWindow.destroy();
+      }
     },
   );
   ipcMain.handle(desktopChannels.localGitGet, async (event) => {

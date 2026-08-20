@@ -23,7 +23,7 @@ The application runs entirely in the browser. No application server or database 
 - Light and dark themes with configurable editor and preview typography.
 - Noto Sans SC, Noto Serif SC, LXGW WenKai, Inter Variable, and JetBrains Mono Variable fonts.
 - Optional dotted preview background.
-- Markdown, SVG, PNG, JPEG, and standalone HTML export with 1–4× rendering scale.
+- Markdown, SVG, static vector PDF, PNG, JPEG, and standalone HTML export; the web PDF flow uses the print dialog and the desktop app saves directly.
 - GitHub repository browsing, persistent local drafts, file operations, status indicators, and conflict-safe manual pushes.
 - Chat and Edit Agent modes with note retrieval, model knowledge, reviewable diffs, operation memory, and explicit Git commit approval.
 

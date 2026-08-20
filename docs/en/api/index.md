@@ -11,11 +11,12 @@ outline: deep
 | --- | --- | --- |
 | Markdown | Keeps source structure and remains editable | Long-term storage and Git history |
 | SVG | Vector content stays sharp at any scale | Print, layout and design tools |
+| PDF | Static vector page | Printing, sharing and archiving |
 | PNG | Lossless bitmap | Documents, presentations and social platforms |
 | JPEG | Smaller file | Quick sharing and previews |
 | HTML | Standalone page with vector display | Offline viewing and web archives |
 
-PNG and JPEG support a 1–4× render scale. SVG and HTML remain sharp because they use vector content.
+PDF, SVG, PNG, JPEG and HTML are available. PDF is a static vector page; the web app opens the print dialog and the desktop app saves it directly. PNG and JPEG support a 1–4× render scale. SVG, PDF and HTML remain sharp because they use vector content.
 
 ## GitHub Pages
 

@@ -97,4 +97,5 @@ console.log(message)
 
 - Markdown: keeps an editable source file.
 - SVG / HTML: suitable for web pages and infinite zoom.
+- PDF: a static vector page for printing; the web app opens the print dialog.
 - PNG / JPEG: suitable for sharing, with a 1×–4× render scale.

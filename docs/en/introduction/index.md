@@ -16,7 +16,7 @@ Markdown text
     ├─ Browser cache: settings, repository bindings and local drafts
     ├─ Agent: note retrieval, general Q&A, diff review and action memory
     ├─ GitHub repository: multi-device files and commit history
-    └─ Export: MD / SVG / PNG / JPEG / HTML
+    └─ Export: MD / SVG / PDF / PNG / JPEG / HTML
 ```
 
 Editor changes are converted to a mind map in real time. Editing, adding or deleting nodes in the map writes the structure back to Markdown. You keep portable plain text while gaining a visual editing experience.

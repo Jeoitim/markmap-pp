@@ -50,7 +50,7 @@ features:
       src: https://api.iconify.design/lucide/download.svg?color=%237056e8
       alt: 导出
     title: 多格式高清导出
-    details: 导出 Markdown、SVG、PNG、JPEG 和 HTML，位图支持 1–4 倍渲染倍率。
+    details: 导出 Markdown、SVG、静态矢量 PDF、PNG、JPEG 和 HTML；位图支持 1–4 倍渲染倍率。
   - icon:
       src: https://api.iconify.design/lucide/monitor-smartphone.svg?color=%237056e8
       alt: 桌面与移动设备

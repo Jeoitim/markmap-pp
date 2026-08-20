@@ -19,6 +19,7 @@ import guideChinese from '../content/markmap++ 操作指南.md?raw'
 import { useI18n } from '../i18n-hook'
 import type { Locale } from '../i18n'
 import { desktopApi, saveBlob, type DesktopAppInfo, type DesktopLocalGitCommit, type DesktopLocalGitFile, type DesktopLocalGitGraph, type DesktopLocalGitState } from './desktop-api'
+import { createStaticPdfHtml, openPdfPrintWindow, printStaticPdf } from './pdf-export'
 import { inspectMarkdown } from './markdown-lint'
 import { NoteLinksPanel, RepositoryLinkPicker, SelectionActionMenu, type BacklinkEntry, type LinkTarget, type OutgoingLinkEntry } from './note-link-ui'
 import { indexRepositoryNote, repositoryLinkHref, repositoryMarkdownLink, resolveHeading, resolveRepositoryLink, rewriteRepositoryLinks } from './repository-links'
@@ -61,7 +62,7 @@ const brandIconUrl = `${import.meta.env.BASE_URL}brand/markmap-plus-plus-icon.pn
 type Pane = 'editor' | 'preview'
 type Panel = Pane | 'export' | 'github' | 'help' | 'about' | 'links' | null
 const HELP_TIP_COUNT = 5
-type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html'
+type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html' | 'pdf'
 type ExportTextTheme = 'auto' | 'light' | 'dark'
 type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 type EditorView = 'markdown' | 'repository' | 'agent'
@@ -3088,7 +3089,7 @@ export default function MarkmapHooks() {
     window.setTimeout(() => mmRef.current?.fit(), 250)
   }
 
-  const createExportSvg = (backgroundColor: string, darkMode: boolean, transparentBackground: boolean) => {
+  const createExportSvg = (backgroundColor: string, darkMode: boolean, transparentBackground: boolean, renderScale = exportScale) => {
     const svg = svgRef.current
     const mm = mmRef.current
     if (!svg || !mm) throw new Error('思维导图尚未准备好')
@@ -3131,8 +3132,8 @@ ${documentRenderConfig.style}
 .markmap-node text { fill: ${textColor} !important; }`
     clone.prepend(style)
     clone.setAttribute('viewBox', `${x1 - padding} ${y1 - padding} ${width} ${outputHeight}`)
-    clone.setAttribute('width', String(width * exportScale))
-    clone.setAttribute('height', String(outputHeight * exportScale))
+    clone.setAttribute('width', String(width * renderScale))
+    clone.setAttribute('height', String(outputHeight * renderScale))
     clone.querySelectorAll('g.markmap-node[data-path]').forEach((node) => {
       const circle = node.querySelector(':scope > circle')
       if (!circle) return
@@ -3497,14 +3498,21 @@ ${documentRenderConfig.style}
     setExporting(true)
     setExportError('')
     const baseName = fileName.replace(/\.(md|markdown)$/i, '') || 'markmap'
+    const desktop = desktopApi()
+    const printWindow = exportFormat === 'pdf' && !desktop ? openPdfPrintWindow() : null
     try {
       if (exportFormat === 'md') {
         await saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), `${baseName}.md`)
       } else {
         await document.fonts.ready
-        const { source, width, height } = createExportSvg(previewBackgroundColor, exportDarkMode, exportUsesTransparentBackground)
+        const { source, width, height } = createExportSvg(previewBackgroundColor, exportDarkMode, exportUsesTransparentBackground, exportFormat === 'pdf' ? 1 : exportScale)
         const exportSource = await prepareExportSvg(source, exportDarkMode)
         if (exportFormat === 'svg') await saveBlob(new Blob([exportSource], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
+        else if (exportFormat === 'pdf') {
+          const pdfHtml = createStaticPdfHtml(exportSource, width, height, previewBackgroundColor)
+          if (desktop) await desktop.savePdf({ suggestedName: `${baseName}.pdf`, html: pdfHtml, width, height })
+          else await printStaticPdf(printWindow, pdfHtml, t('浏览器阻止了打印窗口，请允许弹出窗口后重试'))
+        }
         else if (exportFormat === 'html') {
           await saveBlob(new Blob([createInteractiveHtml(exportSource, baseName, previewBackgroundColor, exportDarkMode)], { type: 'text/html;charset=utf-8' }), `${baseName}.html`)
         } else {
@@ -3524,6 +3532,7 @@ ${documentRenderConfig.style}
       }
       setActivePanel(null)
     } catch (error) {
+      if (printWindow && !printWindow.closed) printWindow.close()
       setExportError(error instanceof Error ? error.message : '导出失败，请重试')
     } finally { setExporting(false) }
   }
@@ -3645,7 +3654,7 @@ ${documentRenderConfig.style}
       kicker: 'TIP 04 · EDIT & EXPORT',
       title: t('编辑、显示与导出'),
       description: t('把阅读体验调到合适状态，再选择适合用途的输出格式。'),
-      content: <div className="help-tip-grid"><div><strong>{t('编辑器设置')}</strong><span>{t('调整 Markdown 字号和语法高亮方案。')}</span></div><div><strong>{t('预览设置')}</strong><span>{t('调整节点字号、字体、字重、配色冻结层级和点阵背景。')}</span></div><div><strong>{t('主题切换')}</strong><span>{t('顶部月亮/太阳按钮切换深色与浅色模式。')}</span></div><div><strong>{t('导出 Markdown')}</strong><span>{t('保留可继续编辑的源文件。')}</span></div><div><strong>{t('导出 SVG / HTML')}</strong><span>{t('适合网页、分享和无限缩放。')}</span></div><div><strong>{t('导出 PNG / JPEG')}</strong><span>{t('适合图片分享，可选择渲染倍率。')}</span></div></div>,
+      content: <div className="help-tip-grid"><div><strong>{t('编辑器设置')}</strong><span>{t('调整 Markdown 字号和语法高亮方案。')}</span></div><div><strong>{t('预览设置')}</strong><span>{t('调整节点字号、字体、字重、配色冻结层级和点阵背景。')}</span></div><div><strong>{t('主题切换')}</strong><span>{t('顶部月亮/太阳按钮切换深色与浅色模式。')}</span></div><div><strong>{t('导出 Markdown')}</strong><span>{t('保留可继续编辑的源文件。')}</span></div><div><strong>{t('导出 SVG / HTML')}</strong><span>{t('适合网页、分享和无限缩放。')}</span></div><div><strong>{t('导出静态矢量 PDF')}</strong><span>{t('适合打印；网页端会打开打印对话框，桌面端可直接保存。')}</span></div><div><strong>{t('导出 PNG / JPEG')}</strong><span>{t('适合图片分享，可选择渲染倍率。')}</span></div></div>,
     },
     {
       kicker: 'TIP 05 · GITHUB',
@@ -3953,8 +3962,8 @@ ${documentRenderConfig.style}
               <button role="tab" aria-selected={exportTab === 'repository'} className={exportTab === 'repository' ? 'active' : ''} onClick={() => { setExportError(''); setExportTab('repository') }}><Icon name="github" /><span>{t('另存到仓库')}</span></button>
             </div>
             {exportTab === 'file' ? <>
-              <div className="format-grid">{(['png', 'jpeg', 'svg', 'html', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MD' : format.toUpperCase()}</strong><small>{format === 'png' ? t('无损位图') : format === 'jpeg' ? t('体积更小') : format === 'svg' ? t('无限清晰') : format === 'html' ? t('网页文件') : t('源文件')}</small></button>)}</div>
-              <label className="field"><span>{t('渲染倍率')} <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md'} /><small>{exportFormat === 'svg' ? t('倍率设置 SVG 的画布尺寸，矢量内容始终清晰') : exportFormat === 'html' ? t('HTML 将保留可缩放矢量图') : exportFormat === 'md' ? t('Markdown 源文件无需倍率') : locale === 'en-US' ? `Expected output: ${exportScale}× the current content size` : `预计输出为当前内容尺寸的 ${exportScale} 倍`}</small></label>
+              <div className="format-grid">{(['png', 'jpeg', 'svg', 'pdf', 'html', 'md'] as ExportFormat[]).map((format) => <button key={format} className={exportFormat === format ? 'active' : ''} onClick={() => { setExportError(''); setExportFormat(format) }}><strong>{format === 'md' ? 'MD' : format.toUpperCase()}</strong><small>{format === 'png' ? t('无损位图') : format === 'jpeg' ? t('体积更小') : format === 'svg' ? t('无限清晰') : format === 'pdf' ? t('静态矢量') : format === 'html' ? t('网页文件') : t('源文件')}</small></button>)}</div>
+              <label className="field"><span>{t('渲染倍率')} <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md' || exportFormat === 'pdf'} /><small>{exportFormat === 'svg' ? t('倍率设置 SVG 的画布尺寸，矢量内容始终清晰') : exportFormat === 'pdf' ? t('PDF 使用自定义页面尺寸，矢量内容无需倍率') : exportFormat === 'html' ? t('HTML 将保留可缩放矢量图') : exportFormat === 'md' ? t('Markdown 源文件无需倍率') : locale === 'en-US' ? `Expected output: ${exportScale}× the current content size` : `预计输出为当前内容尺寸的 ${exportScale} 倍`}</small></label>
               <div className="export-appearance-options">
                 <div className="export-section-heading"><strong>{t('背景与文字')}</strong><small>{exportFormat === 'md' ? t('Markdown 源文件不包含画布样式') : t('导出文件会使用以下画布与文字主题')}</small></div>
                 <label className={`export-color-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span>{t('背景颜色')} <small>{userPreviewBackground ? t('由 Markdown style 控制') : t('与预览共用')}</small></span><span className="export-color-control"><input type="color" value={settings.previewBackgroundColor} disabled={exportFormat === 'md' || Boolean(userPreviewBackground)} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{settings.previewBackgroundColor.toUpperCase()}</code></span></label>
@@ -3963,6 +3972,7 @@ ${documentRenderConfig.style}
                 <label className="switch-field export-appearance-switch"><span><strong>{t('自动适配文字主题')}</strong><small>{exportTextTheme === 'auto' ? `${t('当前自动使用')}${exportAutoDarkMode ? t('深色') : t('浅色')}${t('主题')}` : t('关闭后可手动指定内容是否使用暗黑模式')}</small></span><input type="checkbox" checked={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'auto' : (exportDarkMode ? 'dark' : 'light'))} /></label>
                 <label className={`switch-field export-appearance-switch ${exportTextTheme === 'auto' ? 'code-controlled' : ''}`}><span><strong>{t('内容暗黑模式')}</strong><small>{exportTextTheme === 'auto' ? `${t('自动结果：')}${exportDarkMode ? t('开启（浅色文字）') : t('关闭（深色文字）')}` : exportDarkMode ? t('手动：使用浅色文字和深色内容样式') : t('手动：使用深色文字和浅色内容样式')}</small></span><input type="checkbox" checked={exportDarkMode} disabled={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'dark' : 'light')} /></label>
               </div>
+              {exportFormat === 'pdf' && <div className="settings-note"><Icon name="check" /><span>{t('静态矢量 PDF；网页端会打开打印对话框')}</span></div>}
               {exportError && <div className="export-error"><Icon name="warning" />{exportError}</div>}
               <button className="export-submit" disabled={exporting} onClick={() => void exportDocument()}><Icon name="download" />{exporting ? t('正在生成…') : `${t('导出')} ${exportFormat.toUpperCase()}`}</button>
             </> : repositorySaveMode ? <div className="repository-save-dialog">

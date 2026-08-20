@@ -19,6 +19,13 @@ export interface DesktopSaveRequest {
   bytes: Uint8Array;
 }
 
+export interface DesktopPdfRequest {
+  suggestedName: string;
+  html: string;
+  width: number;
+  height: number;
+}
+
 export interface DesktopSaveResult {
   canceled: boolean;
   path?: string;
@@ -101,6 +108,7 @@ export const desktopChannels = {
   openedMarkdown: 'desktop:opened-markdown',
   saveOpenedMarkdown: 'desktop:save-opened-markdown',
   saveFile: 'desktop:save-file',
+  savePdf: 'desktop:save-pdf',
   windowCloseRequested: 'desktop:window-close-requested',
   windowRequestClose: 'desktop:window-request-close',
   windowClose: 'desktop:window-close',

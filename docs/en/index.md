@@ -50,7 +50,7 @@ features:
       src: https://api.iconify.design/lucide/download.svg?color=%237056e8
       alt: Export
     title: High-resolution exports
-    details: Export Markdown, SVG, PNG, JPEG and HTML. Bitmap exports support a 1–4× render scale.
+    details: Export Markdown, SVG, static vector PDF, PNG, JPEG and HTML. Bitmap exports support a 1–4× render scale.
   - icon:
       src: https://api.iconify.design/lucide/monitor-smartphone.svg?color=%237056e8
       alt: Desktop and mobile

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DesktopAppInfo, DesktopLocalGitCommit, DesktopLocalGitGraph, DesktopLocalGitRepository, DesktopLocalGitState, DesktopOpenedFile, DesktopSaveRequest, DesktopSaveResult, DesktopUpdateState } from '../shared/contracts.js'
+import type { DesktopAppInfo, DesktopLocalGitCommit, DesktopLocalGitGraph, DesktopLocalGitRepository, DesktopLocalGitState, DesktopOpenedFile, DesktopPdfRequest, DesktopSaveRequest, DesktopSaveResult, DesktopUpdateState } from '../shared/contracts.js'
 
 const desktopChannels = {
   appInfo: 'desktop:app-info',
@@ -10,6 +10,7 @@ const desktopChannels = {
   openedMarkdown: 'desktop:opened-markdown',
   saveOpenedMarkdown: 'desktop:save-opened-markdown',
   saveFile: 'desktop:save-file',
+  savePdf: 'desktop:save-pdf',
   windowCloseRequested: 'desktop:window-close-requested',
   windowRequestClose: 'desktop:window-request-close',
   windowClose: 'desktop:window-close',
@@ -60,6 +61,7 @@ const api = {
   openMarkdown: () => ipcRenderer.invoke(desktopChannels.openMarkdown) as Promise<DesktopOpenedFile | null>,
   saveOpenedMarkdown: (id: string, content: string) => ipcRenderer.invoke(desktopChannels.saveOpenedMarkdown, id, content) as Promise<DesktopOpenedFile>,
   saveFile: (request: DesktopSaveRequest) => ipcRenderer.invoke(desktopChannels.saveFile, request) as Promise<DesktopSaveResult>,
+  savePdf: (request: DesktopPdfRequest) => ipcRenderer.invoke(desktopChannels.savePdf, request) as Promise<DesktopSaveResult>,
   onOpenedMarkdown: (listener: (file: DesktopOpenedFile) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, file: DesktopOpenedFile) => listener(file)
     ipcRenderer.on(desktopChannels.openedMarkdown, handler)

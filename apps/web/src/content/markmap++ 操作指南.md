@@ -97,4 +97,5 @@ console.log(message)
 
 - Markdown：保留可继续编辑的源文件
 - SVG / HTML：适合网页与无限缩放
+- PDF：静态矢量页面，适合打印；网页端会打开打印对话框
 - PNG / JPEG：适合分享，可选择 1×–4× 渲染倍率

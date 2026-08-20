@@ -73,6 +73,7 @@ export interface MarkmapDesktopApi {
   openMarkdown(): Promise<DesktopOpenedFile | null>
   saveOpenedMarkdown(id: string, content: string): Promise<DesktopOpenedFile>
   saveFile(request: { suggestedName: string; mimeType: string; bytes: Uint8Array }): Promise<{ canceled: boolean; path?: string }>
+  savePdf(request: { suggestedName: string; html: string; width: number; height: number }): Promise<{ canceled: boolean; path?: string }>
   onOpenedMarkdown(listener: (file: DesktopOpenedFile) => void): () => void
   windowControl: {
     requestClose(): Promise<boolean>

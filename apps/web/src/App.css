@@ -864,7 +864,7 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .repository-save-footer > small { min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .repository-save-footer .repository-save-actions { min-width: 180px; justify-content: flex-end; }
 .repository-save-footer .repository-save-actions button { flex: 0 0 86px; }
-.format-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+.format-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
 .format-grid button { display: grid; gap: 5px; padding: 13px 4px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--panel-soft); cursor: pointer; }
 .format-grid button.active { color: var(--accent); border-color: var(--accent); background: #7056e80d; box-shadow: 0 0 0 2px #7056e812; }
 .format-grid strong { font-size: 14px; }
