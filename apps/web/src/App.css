@@ -1,6 +1,6 @@
 :root {
   --bg: #f4f5f7; --panel: #fff; --panel-soft: #fafafa; --border: #e3e5ea;
-  --text: #20232a; --muted: #747b88; --accent: #7056e8; --accent-hover: #5e46d0; --visual-code-block-bg: #f4f5f7;
+  --text: #20232a; --muted: #747b88; --accent: #7056e8; --accent-hover: #5e46d0; --accent-button: var(--accent); --accent-button-hover: var(--accent-hover); --accent-button-text: #fff; --accent-button-border: var(--accent); --visual-code-block-bg: #f4f5f7;
   --editor-bg: #fbfbfc; --editor-text: #292d35; --editor-gutter: #a4a8b0; --editor-active: #f1f0f8;
   --overlay-surface: color-mix(in srgb,var(--panel) 94%,transparent); --overlay-surface-strong: color-mix(in srgb,var(--panel) 97%,transparent); --overlay-border: color-mix(in srgb,var(--border) 82%,transparent);
   color: var(--text); background: var(--bg); font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
@@ -13,7 +13,7 @@
 :root[data-theme='dark'] {
   --bg: #0d0f13; --panel: #181b21; --panel-soft: #12151a; --border: #303641;
   --text: #f4f5f7; --muted: #b1b7c2; --editor-bg: #101318; --editor-text: #f1f3f6;
-  --editor-gutter: #8a929f; --editor-active: #242936; --visual-code-block-bg: #20242c;
+  --editor-gutter: #8a929f; --editor-active: #242936; --accent-button: color-mix(in srgb,var(--accent) 16%,var(--panel)); --accent-button-hover: color-mix(in srgb,var(--accent) 25%,var(--panel)); --accent-button-text: var(--accent); --accent-button-border: color-mix(in srgb,var(--accent) 72%,var(--border)); --visual-code-block-bg: #20242c;
   --overlay-surface: color-mix(in srgb,var(--panel) 91%,transparent); --overlay-surface-strong: color-mix(in srgb,var(--panel) 95%,transparent);
 }
 :root[data-theme='light'] { color-scheme: light; }
@@ -151,8 +151,8 @@ svg { flex: 0 0 auto; }
 .button { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 13px; border-radius: 9px; font-size: 13px; font-weight: 600; }
 .button svg, .icon-button svg, .fit-button svg, .header-icon svg { display: block; width: 17px; height: 17px; margin: auto; }
 .button:hover, .icon-button:hover, .fit-button:hover, .header-icon:hover { border-color: #b9b0e8; background: var(--panel-soft); }
-.button.primary { color: white; border-color: var(--accent); background: var(--accent); }
-.button.primary:hover { background: var(--accent-hover); }
+.button.primary { color: var(--accent-button-text); border-color: var(--accent-button-border); background: var(--accent-button); }
+.button.primary:hover { background: var(--accent-button-hover); }
 .button:disabled, .icon-button:disabled { opacity: .45; cursor: not-allowed; }
 .icon-button { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; }
 .locale-toggle { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 9px; color: var(--muted); background: var(--panel); cursor: pointer; transition: border-color .16s ease, background-color .16s ease, color .16s ease; }
@@ -671,12 +671,16 @@ svg { flex: 0 0 auto; }
 .grab-zone span { width: 2px; height: 100%; background: var(--border); transition: .15s; }
 .grab-zone:hover span, .workspace.resizing .grab-zone span { background: var(--accent); }
 
-.panel-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden; padding: 20px; background: rgb(8 10 16 / .20); -webkit-app-region: no-drag; }
-.settings-panel { width: min(430px, 100%); max-width: 100%; max-height: calc(100dvh - 40px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; isolation: isolate; border: 1px solid var(--border); border-radius: 15px; background: var(--panel); box-shadow: 0 24px 70px #0b0d1338; animation: panel-in .16s ease-out; -webkit-app-region: no-drag; }
+.panel-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; isolation: isolate; overflow: hidden; padding: 20px; background: rgb(8 10 16 / .20); -webkit-app-region: no-drag; }
+.panel-backdrop::before { content: ''; position: absolute; z-index: 0; inset: 0; pointer-events: none; background: rgb(8 10 16 / .01); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); transform: translateZ(0); backface-visibility: hidden; }
+.settings-panel-frame { position: relative; z-index: 1; width: min(430px, 100%); max-width: 100%; max-height: calc(100dvh - 40px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; isolation: isolate; border: 1px solid var(--border); border-radius: 15px; background: transparent; box-shadow: 0 24px 70px #0b0d1338; transform: translateZ(0); backface-visibility: hidden; -webkit-app-region: no-drag; }
+.settings-panel-glass-layer { position: absolute; z-index: 0; inset: 0; pointer-events: none; border-radius: inherit; background: var(--overlay-surface); -webkit-backdrop-filter: blur(30px) saturate(1.12); backdrop-filter: blur(30px) saturate(1.12); transform: translateZ(0); backface-visibility: hidden; }
+.settings-panel { position: relative; z-index: 1; width: 100%; max-width: none; max-height: none; min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; overflow: hidden; border: 0; border-radius: inherit; background: transparent; box-shadow: none; animation: none; -webkit-app-region: no-drag; }
+.settings-panel > * { position: relative; z-index: 1; }
 :root[data-desktop-platform='win32'] .panel-backdrop,
 :root[data-desktop-platform='darwin'] .panel-backdrop { padding: calc(64px + var(--native-titlebar-height, 0px) + 20px) 20px 20px; }
-:root[data-desktop-platform='win32'] .settings-panel,
-:root[data-desktop-platform='darwin'] .settings-panel { max-height: calc(100dvh - 104px - var(--native-titlebar-height, 0px)); }
+:root[data-desktop-platform='win32'] .settings-panel-frame,
+:root[data-desktop-platform='darwin'] .settings-panel-frame { max-height: calc(100dvh - 104px - var(--native-titlebar-height, 0px)); }
 .settings-panel:focus { outline: none; }
 .settings-panel > header { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 17px 18px 14px; border-bottom: 1px solid var(--border); }
 .settings-panel > header > div { min-width: 0; display: grid; gap: 3px; }
@@ -699,7 +703,8 @@ svg { flex: 0 0 auto; }
 .preferences-nav button > span { min-width: 0; display: grid; gap: 3px; }
 .preferences-nav button strong { color: currentColor; font-size: 13px; }
 .preferences-nav button small { overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.preferences-content { min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+.preferences-content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; }
+.preferences-content > .settings-body { overflow: visible; }
 .preferences-page-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 19px 26px 0; }
 .preferences-page-toolbar > div { min-width: 0; display: grid; gap: 3px; }
 .preferences-page-toolbar strong { color: var(--text); font-size: 15px; }
@@ -1106,10 +1111,10 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .format-grid.markdown-format-grid small { max-width: 100%; line-height: 1.3; text-align: center; white-space: normal; }
 .format-grid.mermaid-format-grid small { max-width: 100%; line-height: 1.3; text-align: center; white-space: normal; }
 .format-grid small, .export-submit, .settings-note, .field, .switch-field, .repository-status-label { overflow-wrap: anywhere; }
-.export-submit { height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 9px; color: #fff; background: var(--accent); font-size: 14px; font-weight: 650; cursor: pointer; }
+.export-submit { height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--accent-button-border); border-radius: 9px; color: var(--accent-button-text); background: var(--accent-button); font-size: 14px; font-weight: 650; cursor: pointer; }
 .export-error { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-radius: 8px; color: #d15454; background: #d1545412; font-size: 11px; }
 .export-error svg { width: 16px; }
-.export-submit:hover { background: var(--accent-hover); }
+.export-submit:hover { background: var(--accent-button-hover); }
 .export-submit:disabled { opacity: .65; cursor: wait; }
 .export-submit svg { width: 18px; }
 @keyframes panel-in { from { opacity: 0; transform: translateY(7px) scale(.98); } }
@@ -1574,7 +1579,6 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .selection-action-menu,
 .link-picker-dialog,
 .note-links-panel:not(.embedded),
-.settings-panel,
 .repository-context-menu,
 .repository-history-popover,
 .repository-graph-popover,
@@ -1610,7 +1614,6 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .selection-action-menu button:hover,
 .repository-context-menu button:hover { background: color-mix(in srgb,var(--accent) 8%,transparent); }
 
-.panel-backdrop,
 .unsaved-dialog-backdrop,
 .link-picker-backdrop,
 .mobile-tabs-backdrop,
@@ -1625,16 +1628,8 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .agent-drawer-backdrop { -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
 .agent-drawer-backdrop.portal { -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
 
-/* Keep the full-window dialog layer and its panel on one stable paint path.
-   A backdrop filter on both layers can be invalidated by scrollbars and button
-   hover repainting, which makes the overlay flash in both browsers and Electron. */
-.panel-backdrop,
-.settings-panel {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
-.panel-backdrop { background: rgb(8 10 16 / .20); }
-
+/* The preferences dialog keeps its blur on the fixed backdrop pseudo-layer;
+   the scrolling panel itself stays out of the filter's repaint path. */
 /* Agent composer tools: keep reasoning first and center icon-only controls. */
 .agent-composer-tools > .agent-option-wrap:has(.agent-reasoning-trigger) { order: 0; }
 .agent-composer-tools > .agent-option-wrap:has(.agent-scope-trigger),

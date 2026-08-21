@@ -12,7 +12,7 @@ import '@fontsource-variable/jetbrains-mono'
 import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
-import MarkdownEditor, { type HighlightScheme, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
+import MarkdownEditor, { type MarkdownEditorHandle, type MarkdownEditorSelection, type MarkdownThemeKey } from './markdown-editor'
 import VisualMarkdownEditor, { type VisualMarkdownEditorHandle, type VisualMarkdownSelection } from './visual-markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { mermaidRenderId, mermaidViewBoxSize, renderMermaidSvg } from './mermaid-renderer'
@@ -78,6 +78,7 @@ type SpellCheckLanguage = 'auto' | 'zh-CN' | 'en-US' | 'ja-JP'
 type StartupBehavior = 'restore' | 'blank'
 type RepositorySort = 'name' | 'time'
 type RepositorySortDirection = 'asc' | 'desc'
+type TitleBarBrand = 'both' | 'icon' | 'name' | 'none'
 type EditorView = 'markdown' | 'repository' | 'agent'
 type DocumentMode = 'markdown' | 'mermaid'
 type DocumentEditorMode = 'source' | 'visual'
@@ -252,7 +253,6 @@ interface AppSettings {
   spellCheckLanguage: SpellCheckLanguage
   userDictionary: string[]
   previewNodeNavigation: boolean
-  highlightScheme: HighlightScheme
   previewFontSize: number
   previewFont: PreviewFont
   previewWeight: number
@@ -271,6 +271,7 @@ interface AppSettings {
   startupBehavior: StartupBehavior
   repositorySort: RepositorySort
   repositorySortDirection: RepositorySortDirection
+  titleBarBrand: TitleBarBrand
 }
 
 const defaultSettings: AppSettings = {
@@ -281,7 +282,6 @@ const defaultSettings: AppSettings = {
   spellCheckLanguage: 'auto',
   userDictionary: [],
   previewNodeNavigation: false,
-  highlightScheme: 'violet',
   previewFontSize: 16,
   previewFont: 'notoSans',
   previewWeight: 400,
@@ -289,17 +289,28 @@ const defaultSettings: AppSettings = {
   showGrid: true,
   previewMermaid: false,
   themeMode: 'system',
-  lightThemePreset: 'github-light',
-  darkThemePreset: 'tokyonight',
-  lightThemeBackground: lightThemePresets['github-light'].background,
-  darkThemeBackground: darkThemePresets.tokyonight.background,
-  previewBackgroundColor: lightThemePresets['github-light'].background,
+  lightThemePreset: 'catppuccin-latte',
+  darkThemePreset: 'catppuccin-mocha',
+  lightThemeBackground: lightThemePresets['catppuccin-latte'].background,
+  darkThemeBackground: darkThemePresets['catppuccin-mocha'].background,
+  previewBackgroundColor: lightThemePresets['catppuccin-latte'].background,
   exportBackgroundColor: '#ffffff',
   autoSave: true,
   autoSaveDelay: 350,
   startupBehavior: 'restore',
   repositorySort: 'name',
   repositorySortDirection: 'asc',
+  titleBarBrand: 'both',
+}
+
+const AUTO_SAVE_DELAY_MIN = 100
+const AUTO_SAVE_DELAY_MAX = 3000
+const AUTO_SAVE_DELAY_STEP = 50
+
+function normalizeAutoSaveDelay(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return defaultSettings.autoSaveDelay
+  const stepped = Math.round(value / AUTO_SAVE_DELAY_STEP) * AUTO_SAVE_DELAY_STEP
+  return Math.min(AUTO_SAVE_DELAY_MAX, Math.max(AUTO_SAVE_DELAY_MIN, stepped))
 }
 
 const previewFonts: Record<PreviewFont, { label: string; family: string }> = {
@@ -1125,7 +1136,6 @@ function loadSettings(): AppSettings {
     const requestedFont = stored.previewFont ? legacyFonts[stored.previewFont] || stored.previewFont : defaultSettings.previewFont
     const previewFont = requestedFont in previewFonts ? requestedFont as PreviewFont : defaultSettings.previewFont
     const editorFont = typeof stored.editorFont === 'string' && stored.editorFont in previewFonts ? stored.editorFont as PreviewFont : defaultSettings.editorFont
-    const highlightScheme = stored.highlightScheme === 'github' || stored.highlightScheme === 'solarized' || stored.highlightScheme === 'violet' ? stored.highlightScheme : defaultSettings.highlightScheme
     const themeMode = stored.themeMode === 'light' || stored.themeMode === 'dark' || stored.themeMode === 'system' ? stored.themeMode : defaultSettings.themeMode
     const storedLightThemePreset = typeof stored.lightThemePreset === 'string' ? stored.lightThemePreset : ''
     const storedDarkThemePreset = typeof stored.darkThemePreset === 'string' ? stored.darkThemePreset : ''
@@ -1151,16 +1161,16 @@ function loadSettings(): AppSettings {
     const spellCheckLanguage = stored.spellCheckLanguage === 'zh-CN' || stored.spellCheckLanguage === 'en-US' || stored.spellCheckLanguage === 'ja-JP' || stored.spellCheckLanguage === 'auto'
       ? stored.spellCheckLanguage
       : defaultSettings.spellCheckLanguage
-    const autoSaveDelay = stored.autoSaveDelay === 700 || stored.autoSaveDelay === 1200 || stored.autoSaveDelay === 350 ? stored.autoSaveDelay : defaultSettings.autoSaveDelay
+    const autoSaveDelay = normalizeAutoSaveDelay(stored.autoSaveDelay)
     const startupBehavior = stored.startupBehavior === 'blank' || stored.startupBehavior === 'restore' ? stored.startupBehavior : defaultSettings.startupBehavior
     const repositorySort = stored.repositorySort === 'time' || stored.repositorySort === 'name' ? stored.repositorySort : defaultSettings.repositorySort
     const repositorySortDirection = stored.repositorySortDirection === 'desc' || stored.repositorySortDirection === 'asc' ? stored.repositorySortDirection : defaultSettings.repositorySortDirection
+    const titleBarBrand = stored.titleBarBrand === 'both' || stored.titleBarBrand === 'icon' || stored.titleBarBrand === 'name' || stored.titleBarBrand === 'none' ? stored.titleBarBrand : defaultSettings.titleBarBrand
     return {
       ...defaultSettings,
       ...stored,
       editorFont,
       previewFont,
-      highlightScheme,
       spellCheckLanguage,
       userDictionary,
       themeMode,
@@ -1175,6 +1185,7 @@ function loadSettings(): AppSettings {
       startupBehavior,
       repositorySort,
       repositorySortDirection,
+      titleBarBrand,
     }
   } catch {
     return defaultSettings
@@ -1684,7 +1695,7 @@ export default function MarkmapHooks() {
   const effectiveColorFreezeLevel = documentRenderConfig.colorFreezeLevel ?? settings.colorFreezeLevel
   const effectiveShowGrid = documentMode === 'mermaid' ? settings.showGrid : documentRenderConfig.showGrid ?? settings.showGrid
   const userPreviewBackground = documentMode === 'mermaid' ? undefined : readUserPreviewBackground(documentRenderConfig.style)
-  const activeThemePreset = dark ? settings.darkThemePreset : settings.lightThemePreset
+  const activeThemePreset: MarkdownThemeKey = dark ? settings.darkThemePreset : settings.lightThemePreset
   const activeThemeBackground = dark ? settings.darkThemeBackground : settings.lightThemeBackground
   const previewBackgroundColor = userPreviewBackground || activeThemeBackground
   const previewDarkMode = documentMode === 'mermaid' ? dark : userPreviewBackground ? shouldUseDarkTheme(previewBackgroundColor) : dark
@@ -1721,6 +1732,7 @@ export default function MarkmapHooks() {
     setDark(nextDark)
     setSettings((current) => ({ ...current, themeMode: mode, previewBackgroundColor: nextDark ? current.darkThemeBackground : current.lightThemeBackground }))
   }
+  const toggleThemeMode = () => updateThemeMode(dark ? 'light' : 'dark')
   const updateThemePreset = (mode: 'light' | 'dark', preset: LightThemePreset | DarkThemePreset) => {
     if (mode === 'light' && isLightThemePreset(preset)) {
       const background = lightThemePresets[preset].background
@@ -1733,14 +1745,14 @@ export default function MarkmapHooks() {
   }
   const resetPreferenceSection = (section: PreferenceSection) => {
     setSettings((current) => {
-      if (section === 'editor') return { ...current, editorFontSize: defaultSettings.editorFontSize, editorFont: defaultSettings.editorFont, editorWeight: defaultSettings.editorWeight, highlightScheme: defaultSettings.highlightScheme }
+      if (section === 'editor') return { ...current, editorFontSize: defaultSettings.editorFontSize, editorFont: defaultSettings.editorFont, editorWeight: defaultSettings.editorWeight }
       if (section === 'preview') return { ...current, previewNodeNavigation: defaultSettings.previewNodeNavigation, previewFontSize: defaultSettings.previewFontSize, previewFont: defaultSettings.previewFont, previewWeight: defaultSettings.previewWeight, colorFreezeLevel: defaultSettings.colorFreezeLevel, showGrid: defaultSettings.showGrid, previewMermaid: defaultSettings.previewMermaid }
       if (section === 'appearance') {
         const nextDark = resolveThemeDark(defaultSettings.themeMode)
         return { ...current, themeMode: defaultSettings.themeMode, lightThemePreset: defaultSettings.lightThemePreset, darkThemePreset: defaultSettings.darkThemePreset, lightThemeBackground: defaultSettings.lightThemeBackground, darkThemeBackground: defaultSettings.darkThemeBackground, previewBackgroundColor: nextDark ? defaultSettings.darkThemeBackground : defaultSettings.lightThemeBackground }
       }
       if (section === 'spelling') return { ...current, editorSpellCheck: defaultSettings.editorSpellCheck, spellCheckLanguage: defaultSettings.spellCheckLanguage, userDictionary: [...defaultSettings.userDictionary] }
-      return { ...current, autoSave: defaultSettings.autoSave, autoSaveDelay: defaultSettings.autoSaveDelay, startupBehavior: defaultSettings.startupBehavior, repositorySort: defaultSettings.repositorySort, repositorySortDirection: defaultSettings.repositorySortDirection }
+      return { ...current, autoSave: defaultSettings.autoSave, autoSaveDelay: defaultSettings.autoSaveDelay, startupBehavior: defaultSettings.startupBehavior, repositorySort: defaultSettings.repositorySort, repositorySortDirection: defaultSettings.repositorySortDirection, titleBarBrand: defaultSettings.titleBarBrand }
     })
     if (section === 'editor') {
       setDocumentEditorMode('source')
@@ -4805,7 +4817,7 @@ ${documentRenderConfig.style}
       kicker: 'TIP 04 · EDIT & EXPORT',
       title: t('编辑、显示与导出'),
       description: t('把阅读体验调到合适状态，再选择适合用途的输出格式。'),
-      content: <div className="help-tip-grid"><div><strong>{t('编辑器设置')}</strong><span>{t('调整 Markdown 字号和语法高亮方案。')}</span></div><div><strong>{t('预览设置')}</strong><span>{t('调整节点字号、字体、字重、配色冻结层级和点阵背景。')}</span></div><div><strong>{t('主题切换')}</strong><span>{t('顶部月亮/太阳按钮切换深色与浅色模式。')}</span></div><div><strong>{t('导出 Markdown')}</strong><span>{t('保留可继续编辑的源文件。')}</span></div><div><strong>{t('导出 SVG / HTML')}</strong><span>{t('适合网页、分享和无限缩放。')}</span></div><div><strong>{t('导出静态矢量 PDF')}</strong><span>{t('适合打印；网页端会打开打印对话框，桌面端可直接保存。')}</span></div><div><strong>{t('导出 PNG / JPEG')}</strong><span>{t('适合图片分享，可选择渲染倍率。')}</span></div></div>,
+      content: <div className="help-tip-grid"><div><strong>{t('编辑器设置')}</strong><span>{t('调整 Markdown 字号；语法高亮跟随社区主题。')}</span></div><div><strong>{t('预览设置')}</strong><span>{t('调整节点字号、字体、字重、配色冻结层级和点阵背景。')}</span></div><div><strong>{t('主题切换')}</strong><span>{t('顶部月亮/太阳按钮切换深色与浅色模式。')}</span></div><div><strong>{t('导出 Markdown')}</strong><span>{t('保留可继续编辑的源文件。')}</span></div><div><strong>{t('导出 SVG / HTML')}</strong><span>{t('适合网页、分享和无限缩放。')}</span></div><div><strong>{t('导出静态矢量 PDF')}</strong><span>{t('适合打印；网页端会打开打印对话框，桌面端可直接保存。')}</span></div><div><strong>{t('导出 PNG / JPEG')}</strong><span>{t('适合图片分享，可选择渲染倍率。')}</span></div></div>,
     },
     {
       kicker: 'TIP 05 · GITHUB',
@@ -4819,6 +4831,8 @@ ${documentRenderConfig.style}
     },
   ]
   const currentHelpTip = helpTips[helpTipIndex]
+  const showTitleBarIcon = settings.titleBarBrand === 'both' || settings.titleBarBrand === 'icon'
+  const showTitleBarName = settings.titleBarBrand === 'both' || settings.titleBarBrand === 'name'
 
   return (
     <main className="app-shell">
@@ -4826,7 +4840,7 @@ ${documentRenderConfig.style}
       <header className="topbar">
         <div className="brand-area" ref={desktopMenuRef}>
           <button type="button" className="desktop-menu-trigger" aria-label={t('应用菜单')} title={t('应用菜单')} aria-expanded={desktopMenuOpen} onClick={toggleDesktopMenu}><Icon name="menu" /></button>
-          <div className="brand" aria-label="markmap++"><span className="brand-mark"><img src={brandIconUrl} alt="" /></span><span className="brand-name">markmap<span>++</span></span></div>
+          {(showTitleBarIcon || showTitleBarName) && <div className="brand" aria-label="markmap++">{showTitleBarIcon && <span className="brand-mark"><img src={brandIconUrl} alt="" /></span>}{showTitleBarName && <span className="brand-name">markmap<span>++</span></span>}</div>}
           {desktopMenuOpen && <div className="desktop-app-menu" role="menu" aria-label={t('markmap++ 应用菜单')}>
             <nav>
               <button className={desktopMenuSection === 'file' ? 'active' : ''} onMouseEnter={() => { setDesktopMenuSection('file'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('file'); setDesktopMenuLanguageOpen(false) }}>{t('文件')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
@@ -4884,7 +4898,7 @@ ${documentRenderConfig.style}
           <button type="button" className="button secondary collapsible-action" onClick={undoLastChange} disabled={!canUndo} title="撤回上一次修改"><Icon name="undo" /><span>撤回</span></button>
           <button type="button" className="button primary" disabled={!hasOpenDocument} onClick={() => { setExportError(''); setExportTab('file'); setActivePanel('export') }}><Icon name="download" /><span>导出</span></button>
           <button type="button" className="icon-button" aria-label={fullscreen ? t('退出全屏') : t('进入全屏')} title={fullscreen ? t('退出全屏') : t('全屏')} onClick={() => void toggleFullscreen()}><Icon name={fullscreen ? 'collapse' : 'expand'} /></button>
-          <button type="button" className="icon-button" aria-label={previewDarkMode ? '切换浅色模式' : '切换深色模式'} title={previewDarkMode ? '浅色模式 · 雾白背景' : '深色模式 · 深灰背景'} onClick={() => updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d')}><Icon name={previewDarkMode ? 'sun' : 'moon'} /></button>
+          <button type="button" className="icon-button" aria-label={dark ? t('切换浅色模式') : t('切换深色模式')} title={dark ? t('切换浅色模式') : t('切换深色模式')} onClick={toggleThemeMode}><Icon name={dark ? 'sun' : 'moon'} /></button>
           <button type="button" className="icon-button mobile-tabs-trigger" aria-label={`打开文档标签页，共 ${documentTabs.length} 个`} title={t('文档标签页')} aria-expanded={mobileTabsOpen} onClick={() => setMobileTabsOpen(true)}><Icon name="tabs" /><b>{documentTabs.length}</b></button>
           <button type="button" className="icon-button more-action" aria-label={t('更多操作')} title={t('更多操作')} aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((value) => !value)}><Icon name="more" /></button>
           {actionMenuOpen && <div className="action-overflow-menu">
@@ -4892,7 +4906,7 @@ ${documentRenderConfig.style}
             <button type="button" onClick={() => { setActionMenuOpen(false); openHelpPanel() }}><Icon name="help" /><span>{t('使用说明')}</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); undoLastChange() }} disabled={!canUndo}><Icon name="undo" /><span>{t('撤回修改')}</span></button>
             <button type="button" onClick={() => { setActionMenuOpen(false); void toggleFullscreen() }}><Icon name={fullscreen ? 'collapse' : 'expand'} /><span>{fullscreen ? t('退出全屏') : t('进入全屏')}</span></button>
-            <button type="button" onClick={() => { setActionMenuOpen(false); updatePreviewBackground(previewDarkMode ? '#fafafa' : '#15181d') }}><Icon name={previewDarkMode ? 'sun' : 'moon'} /><span>{previewDarkMode ? t('切换浅色模式') : t('切换深色模式')}</span></button>
+            <button type="button" onClick={() => { setActionMenuOpen(false); toggleThemeMode() }}><Icon name={dark ? 'sun' : 'moon'} /><span>{dark ? t('切换浅色模式') : t('切换深色模式')}</span></button>
           </div>}
           {isWindowsDesktop && <div className="desktop-window-controls" aria-label="窗口控制"><button type="button" aria-label="最小化" title="最小化" onClick={() => void desktopApi()?.windowControl.minimize()}><Icon name="window-minimize" /></button><button type="button" aria-label={desktopWindowMaximized ? '还原' : '最大化'} title={desktopWindowMaximized ? '还原' : '最大化'} onClick={() => void desktopApi()?.windowControl.toggleMaximize()}><Icon name={desktopWindowMaximized ? 'window-restore' : 'window-maximize'} /></button><button type="button" className="window-close-button" aria-label="关闭" title="关闭" onClick={() => void desktopApi()?.windowControl.requestClose()}><Icon name="x" /></button></div>}
         </nav>
@@ -4907,7 +4921,7 @@ ${documentRenderConfig.style}
             </div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-               {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection) }} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} scheme={settings.highlightScheme} locale={locale} mode={documentMode} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection ? { source: 'editor', ...selection } : null) }} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
+               {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection) }} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} theme={activeThemePreset} locale={locale} mode={documentMode} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection ? { source: 'editor', ...selection } : null) }} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
               <footer className="editor-status">
                 <button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button>
                 <span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span>
@@ -5073,7 +5087,9 @@ ${documentRenderConfig.style}
       {linkNotice && <div className="link-notice" role="status" aria-live="polite">{linkNotice}</div>}
 
       {activePanel && <div className="panel-backdrop" onMouseDown={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }}>
-        <section ref={settingsPanelRef} tabIndex={-1} className={`settings-panel ${activePanel === 'preferences' ? 'preferences-panel' : ''} ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'about' ? 'about-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'preferences' ? t('偏好设置') : activePanel === 'export' ? t('导出设置') : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
+        <div className={`settings-panel-frame ${activePanel === 'preferences' ? 'preferences-panel' : ''} ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'about' ? 'about-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`}>
+          <div className="settings-panel-glass-layer" aria-hidden="true" />
+          <section ref={settingsPanelRef} tabIndex={-1} className="settings-panel" role="dialog" aria-label={activePanel === 'preferences' ? t('偏好设置') : activePanel === 'export' ? t('导出设置') : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
           <header><div><strong>{activePanel === 'preferences' ? t('偏好设置') : activePanel === 'github' ? t('仓库设置') : activePanel === 'help' ? t('使用说明') : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? t('笔记链接') : exportTab === 'repository' ? t('另存到 Git 仓库') : documentMode === 'mermaid' ? t('导出 Mermaid 文档') : t('导出思维导图')}</strong>{activePanel !== 'help' && <small>{activePanel === 'preferences' ? t('编辑器与预览的显示偏好') : activePanel === 'export' ? exportTab === 'repository' ? t(documentMode === 'mermaid' ? '选择仓库位置并暂存当前 Mermaid' : '选择仓库位置并暂存当前 Markdown') : documentMode === 'mermaid' ? t('Mermaid 图形与 .mmd 源文件') : t('选择格式与清晰度') : activePanel === 'github' ? t('在远程仓库与本地文件夹之间随时切换') : activePanel === 'about' ? t('版本、作者与上游项目鸣谢') : activePanel === 'links' ? t('反向链接、出站链接与失效目标') : t('更改会立即生效')}</small>}</div><div className="panel-header-actions"><button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label={t('关闭')}><Icon name="x" /></button></div></header>
           {activePanel === 'github' && <div className="github-body">
             <div className="repository-settings-tabs" role="tablist"><button role="tab" aria-selected={repositorySettingsTab === 'remote'} className={repositorySettingsTab === 'remote' ? 'active' : ''} onClick={() => { setRepositorySettingsTab('remote'); if (githubConfig) setRepositorySource('remote') }}><Icon name="github" /><span>{t('远程仓库')}</span><b>{githubProfiles.length}</b></button><button role="tab" aria-selected={repositorySettingsTab === 'local'} className={repositorySettingsTab === 'local' ? 'active' : ''} onClick={() => { setRepositorySettingsTab('local'); if (localGitState.activeId) setRepositorySource('local') }}><Icon name="folder" /><span>{t('本地文件夹')}</span><b>{localGitState.repositories.length}</b></button></div>
@@ -5190,8 +5206,7 @@ ${documentRenderConfig.style}
                 <div className="preferences-section-heading"><strong>{t('深色主题')}</strong><small>{t('选择深色模式使用的 Markdown 主题，并单独调整预览画布底色。')}</small></div>
                 <label className="field"><span>{t('深色默认主题')}</span><select value={settings.darkThemePreset} onChange={(event) => updateThemePreset('dark', event.target.value as DarkThemePreset)}>{Object.entries(darkThemePresets).map(([value, preset]) => <option key={value} value={value}>{preset.label}</option>)}</select></label>
                 <label className="export-color-field theme-color-field"><span>{t('深色预览背景')}</span><span className="export-color-control"><input type="color" value={settings.darkThemeBackground} onChange={(event) => updateThemeBackground('dark', event.target.value)} /><code>{settings.darkThemeBackground.toUpperCase()}</code></span></label>
-                <div className="preferences-section-heading"><strong>{t('编辑器主题')}</strong><small>{t('源码编辑器的 Markdown 语法高亮会跟随这里的方案。')}</small></div>
-                <label className="field"><span>{t('高亮方案')}</span><select value={settings.highlightScheme} onChange={(event) => updateSettings('highlightScheme', event.target.value as HighlightScheme)}><option value="violet">Violet</option><option value="github">GitHub</option><option value="solarized">Solarized</option></select></label>
+                <div className="preferences-section-heading"><strong>{t('编辑器主题')}</strong><small>{t('源码编辑器的 Markdown 语法高亮会跟随当前社区主题。')}</small></div>
               </div>}
               {preferenceSection === 'spelling' && <div className="settings-body preferences-section-body">
                 <div className="settings-note"><Icon name="globe" /><span>{t('拼写提示由浏览器或桌面系统提供；语言会同步到源码和视觉编辑器。')}</span></div>
@@ -5206,7 +5221,9 @@ ${documentRenderConfig.style}
                 <div className="settings-note"><Icon name="settings" /><span>{t('全局设置会影响后续打开的文档和仓库视图；已经打开的内容会立即使用新的排序和保存策略。')}</span></div>
                 <div className="preferences-section-heading"><strong>{t('保存策略')}</strong><small>{t('控制编辑内容写入本地文件的时机。')}</small></div>
                 <label className="switch-field"><span><strong>{t('自动保存')}</strong><small>{desktopApi() ? t('本地仓库和桌面打开的 Markdown 会自动写回文件。') : t('浏览器会保留当前标签页内容；下载副本仍需手动执行。')}</small></span><input type="checkbox" checked={settings.autoSave} onChange={(event) => updateSettings('autoSave', event.target.checked)} /></label>
-                <label className="field"><span>{t('自动保存延迟')}</span><select value={settings.autoSaveDelay} disabled={!settings.autoSave} onChange={(event) => updateSettings('autoSaveDelay', Number(event.target.value))}><option value={350}>350 ms</option><option value={700}>700 ms</option><option value={1200}>1.2 s</option></select></label>
+                <label className="field"><span>{t('自动保存延迟')}<b>{settings.autoSaveDelay} ms</b></span><input type="range" min={AUTO_SAVE_DELAY_MIN} max={AUTO_SAVE_DELAY_MAX} step={AUTO_SAVE_DELAY_STEP} value={settings.autoSaveDelay} disabled={!settings.autoSave} onChange={(event) => updateSettings('autoSaveDelay', normalizeAutoSaveDelay(Number(event.target.value)))} /><small>{t('自动保存延迟说明')}</small></label>
+                <div className="preferences-section-heading"><strong>{t('标题栏')}</strong><small>{t('控制顶部标题栏中的应用图标和软件名称显示。')}</small></div>
+                <label className="field"><span>{t('标题栏显示')}</span><select value={settings.titleBarBrand} onChange={(event) => updateSettings('titleBarBrand', event.target.value as TitleBarBrand)}><option value="both">{t('图标和名称')}</option><option value="icon">{t('仅图标')}</option><option value="name">{t('仅名称')}</option><option value="none">{t('都隐藏')}</option></select></label>
                 <div className="preferences-section-heading"><strong>{t('启动')}</strong><small>{t('桌面版下次启动时使用；浏览器不会恢复文件系统工作区。')}</small></div>
                 <label className="field"><span>{t('启动行为')}</span><select value={settings.startupBehavior} onChange={(event) => updateSettings('startupBehavior', event.target.value as StartupBehavior)}><option value="restore">{t('恢复上次工作区')}</option><option value="blank">{t('新建空白页')}</option></select></label>
                 <div className="preferences-section-heading"><strong>{t('仓库文件排序')}</strong><small>{t('时间排序优先使用本地文件或缓存文件的更新时间；远程未下载文件会回退到名称。')}</small></div>
@@ -5279,7 +5296,8 @@ ${documentRenderConfig.style}
               </>}
             </>}
           </div>}
-        </section>
+          </section>
+        </div>
       </div>}
       {mermaidViewer && <MermaidPreviewModal viewer={mermaidViewer} onClose={() => setMermaidViewer(null)} />}
     </main>
