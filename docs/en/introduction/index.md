@@ -5,7 +5,7 @@ outline: deep
 
 # Overview
 
-markmap++ is a browser-based knowledge and mind-map workspace where Markdown is the only content source. It builds on the editable map capabilities of `Tem-man/markmap-plus` and adds a full editor, file management, local caching, Agent Q&A and reviewable changes, GitHub sync, display settings and high-resolution export.
+markmap++ is a browser-based knowledge and mind-map workspace where Markdown is the only content source. It builds on the editable map capabilities of `Tem-man/markmap-plus` and adds a full editor, file management, local caching, Agent Q&A and reviewable changes, GitHub sync, community themes, centralized preferences and high-resolution export.
 
 ## How it works
 
@@ -17,17 +17,19 @@ Markdown text
     ├─ Browser cache: settings, repository bindings and local drafts
     ├─ Agent: note retrieval, general Q&A, diff review and action memory
     ├─ GitHub repository: multi-device files and commit history
-    └─ Export: MD / SVG / PDF / PNG / JPEG / HTML
+    └─ Export: MD / Mermaid / SVG / PDF / PNG / JPEG / HTML
 ```
 
 Editor changes are converted to a mind map in real time. Editing, adding or deleting nodes in the map writes the structure back to Markdown. You keep portable plain text while gaining a visual editing experience.
+
+Appearance and editing behavior are managed from **Help → Preferences**. Theme presets can control the UI, editor and preview together; syntax highlighting and the canvas background follow the theme by default but can be overridden independently. Markmap branch lines adapt their lightness to the background, while document metadata such as `options.color` always remains authoritative.
 
 ## Where data is stored
 
 | Data | Storage | Synced with the device |
 | --- | --- | --- |
 | Welcome guide | Built into the app | Restored on a fresh start |
-| Display, font and editor-mode preferences | `localStorage` | No |
+| Preferences, fonts and editor mode | `localStorage` | No |
 | GitHub binding and token | IndexedDB | No |
 | Agent provider settings and API keys | IndexedDB | No |
 | Agent history and review state | IndexedDB | No |

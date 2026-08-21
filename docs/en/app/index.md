@@ -7,13 +7,9 @@ outline: deep
 
 markmap++ is a mind-map workspace where Markdown is the only source file. Use the Web app without installing anything, or download the desktop app when you need local files and a local Git workspace.
 
-## 1.1.0 highlights
+## Version and updates
 
-- **Mermaid documents**: switch between Markdown and Mermaid document modes from the editor status bar, then preview and export Mermaid as SVG, PNG, JPEG, PDF or `.mmd` source.
-- **Experimental WYSIWYG editing**: Markdown can use source or visual mode; visual mode renders common Markdown structures as you edit, and the browser remembers the selected mode.
-- **Editor assistance**: editor settings now include browser spell check, and an optional preview-node navigation setting jumps from a map node back to the matching Markdown content.
-- **Mobile improvements**: mobile keeps the system text-selection bar while custom floating actions only add note-link support; tapping a repository file returns to the editor, while long-pressing the tree keeps its repository menu.
-- **More complete exports**: PDF uses a static vector page, with the print dialog on the Web app and direct saving on desktop; Mermaid documents use their own export choices.
+Major changes are organized in the [Version Log](/en/version-log/). The current stable baseline includes Mermaid document mode and code-block previews, remembered source / WYSIWYG mode, the native mobile selection bar, multi-format export, community themes and centralized preferences, plus background-aware Markmap branch contrast.
 
 ## Choose a version
 
@@ -42,6 +38,8 @@ Windows packages are currently unsigned, so SmartScreen may show a warning. Conf
 2. Edit the welcome guide in the Markdown tab and watch the mind map update on the right.
 3. Export Markdown when you need a file, or bind your own GitHub note repository from the **Repository** tab. Switch to Mermaid mode when you need a diagram document.
 4. Continue on another device by opening the Web or desktop app, binding the same repository and syncing.
+
+Appearance, editor, preview, spelling, global and shortcut settings are available from **Help → Preferences**; categories can be expanded on mobile.
 
 The welcome guide demonstrates the interface; it is not an automatically saved local file. Export important notes or sync them to your own repository.
 

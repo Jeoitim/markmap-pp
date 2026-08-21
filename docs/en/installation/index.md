@@ -37,19 +37,21 @@ Heading and list levels become nodes in the mind map. Drag the canvas to pan, us
 | --- | --- |
 | Top bar | Open files, open the guide, undo, export, enter fullscreen, switch theme and language |
 | Markdown tab | Edit source text, switch visual mode and see syntax status |
-| Editor settings | Switch source / WYSIWYG, spell check and preview-node navigation |
+| Preferences | Manage editor, preview, appearance, spelling, global and shortcut settings |
 | Repository tab | Connect GitHub and manage Markdown files |
 | Split handle | Resize or collapse the editor |
 | Mind-map preview | View and edit nodes, zoom the canvas, adjust font and background |
 
 ## Choose an editor mode
 
-For Markdown documents, choose a mode from editor settings:
+For Markdown documents, choose a mode from **Help → Preferences**:
 
 - **Source**: edit Markdown text in CodeMirror when you need exact syntax and structure control.
 - **Visual**: an experimental WYSIWYG editor for editing rendered headings, paragraphs, lists, tables, code and links; the choice is remembered in the current browser.
 
 Mermaid documents stay in source mode and provide a standalone source editor and SVG preview. Editor settings also include browser spell check and an option to jump from a preview node to its Markdown content.
+
+Theme presets update the UI, editor and preview together by default. Syntax highlighting and the canvas background can be overridden manually with their independent settings. The **Global** page also controls auto-save, startup recovery and file sorting.
 
 On phones, long-pressing text keeps the system selection bar so Select all and dictionary actions remain available. Tapping a repository file returns to the editor, while long-pressing the tree keeps its repository menu.
 

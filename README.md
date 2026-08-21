@@ -1,12 +1,16 @@
 # markmap++
 
-一个以 Markdown 为唯一源文件，集实时编辑、思维导图、AI 知识问答、可审核仓库修改、高清导出和 GitHub 多端同步于一体的浏览器工作台。
+一个以 Markdown 为唯一源文件，集实时编辑、思维导图、AI 知识问答、可审核仓库修改、社区主题、高清导出和 GitHub 多端同步于一体的浏览器工作台。
 
 [![Deploy to GitHub Pages](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-43853d?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-[在线使用](https://jeoitim.github.io/markmap-pp/) · [App 介绍](https://jeoitim.github.io/markmap-pp/doc/app/) · [使用文档](https://jeoitim.github.io/markmap-pp/doc/) · [Agent 指南](https://jeoitim.github.io/markmap-pp/doc/agent/) · [English](README.en.md) · [上游项目](https://github.com/Tem-man/markmap-plus)
+[在线使用](https://jeoitim.github.io/markmap-pp/) · [项目与功能导览](https://jeoitim.github.io/markmap-pp/doc/modules/) · [版本 Log](https://jeoitim.github.io/markmap-pp/doc/version-log/) · [导出](https://jeoitim.github.io/markmap-pp/doc/export/) · [Web 部署与开发](https://jeoitim.github.io/markmap-pp/doc/web-development/) · [Agent 指南](https://jeoitim.github.io/markmap-pp/doc/agent/) · [English](README.en.md) · [上游项目](https://github.com/Tem-man/markmap-plus)
+
+## 应用截图
+
+![markmap++ 编辑器与思维导图工作区](docs/public/readme-screenshot.png)
 
 ## 项目简介
 
@@ -57,11 +61,12 @@ markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus)
 ### 字体与显示
 
 - 编辑器字号可调，仓库文件树的文字和图标会同步变化。
-- 内置 Violet、GitHub、Solarized 三种编辑器高亮方案。
+- 在“帮助 → 偏好设置”统一管理 UI、编辑器、预览、拼写、全局和快捷键。
+- Catppuccin、Everforest、Gruvbox、Tokyo Night、Nord、Dracula 等社区主题可同时控制 UI、编辑器和预览；语法高亮与画布背景可以单独解耦设置。
 - 编辑器设置可独立开启拼写检查，并同时作用于源码和视觉模式。
 - 预览内置思源黑体、思源宋体、霞鹜文楷、Inter Variable 和 JetBrains Mono Variable。
 - 思源黑体、思源宋体、Inter 与 JetBrains Mono 支持可变字重。
-- 编辑器、预览和仓库文件树均跟随全局深浅色主题。
+- 编辑器、预览和仓库文件树均跟随全局深浅色主题；Markmap 线段会根据背景改善对比度，文档元数据中的 `options.color` 始终优先。
 
 ### AI Agent 知识与仓库工作流
 
@@ -85,6 +90,7 @@ Agent 配置和对话历史保存在当前浏览器。配置 JSON 为实现一�
 | 格式     | 用途                                 |
 | -------- | ------------------------------------ |
 | Markdown | 保存可继续编辑的源文件               |
+| Mermaid  | 保存可继续编辑的 Mermaid 源文件      |
 | SVG      | 矢量导图，适合打印和后期编辑         |
 | PDF      | 静态矢量页面，适合打印               |
 | PNG      | 无损位图，适合文档和演示文稿         |

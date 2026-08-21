@@ -1,12 +1,16 @@
 # markmap++
 
-A browser-based Markdown knowledge and mind-map workspace with live editing, an AI note agent, reviewable repository changes, high-resolution export, and GitHub-backed multi-device sync.
+A browser-based Markdown knowledge and mind-map workspace with live editing, an AI note agent, reviewable repository changes, community themes, high-resolution export, and GitHub-backed multi-device sync.
 
 [![Deploy to GitHub Pages](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Jeoitim/markmap-pp/actions/workflows/deploy-pages.yml)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-43853d?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-[Live app](https://jeoitim.github.io/markmap-pp/) · [App overview](https://jeoitim.github.io/markmap-pp/doc/en/app/) · [Documentation](https://jeoitim.github.io/markmap-pp/doc/) · [Agent guide](https://jeoitim.github.io/markmap-pp/doc/en/agent/) · [中文](README.md) · [Upstream project](https://github.com/Tem-man/markmap-plus)
+[Live app](https://jeoitim.github.io/markmap-pp/) · [Project and feature guide](https://jeoitim.github.io/markmap-pp/doc/en/modules/) · [Version Log](https://jeoitim.github.io/markmap-pp/doc/en/version-log/) · [Export](https://jeoitim.github.io/markmap-pp/doc/en/export/) · [Web deployment and development](https://jeoitim.github.io/markmap-pp/doc/en/web-development/) · [Agent guide](https://jeoitim.github.io/markmap-pp/doc/en/agent/) · [中文](README.md) · [Upstream project](https://github.com/Tem-man/markmap-plus)
+
+## Screenshot
+
+![markmap++ editor and mind-map workspace](docs/public/readme-screenshot.png)
 
 ## Overview
 
@@ -23,10 +27,12 @@ The application runs entirely in the browser. No application server or database 
 - Interactive mind maps with pan, zoom, branch folding, in-place node editing, creation, deletion, and Markdown write-back.
 - Resizable desktop panes, a collapsible editor, fullscreen mode, and mobile editor/preview tabs.
 - Mobile text selection keeps the system selection bar, including Select all and dictionary actions.
-- Light and dark themes with configurable editor and preview typography.
+- **Help → Preferences** centralizes UI, editor, preview, spelling, global and shortcut settings.
+- Community themes such as Catppuccin, Everforest, Gruvbox, Tokyo Night, Nord and Dracula can control the UI, editor and preview; syntax highlighting and canvas background can be decoupled independently.
+- Light and dark themes with configurable editor and preview typography; Markmap branch lines adapt to the background while document metadata such as `options.color` remains authoritative.
 - Noto Sans SC, Noto Serif SC, LXGW WenKai, Inter Variable, and JetBrains Mono Variable fonts.
 - Optional dotted preview background.
-- Markdown, SVG, static vector PDF, PNG, JPEG, and standalone HTML export; the web PDF flow uses the print dialog and the desktop app saves directly.
+- Markdown, Mermaid, SVG, static vector PDF, PNG, JPEG, and standalone HTML export; the web PDF flow uses the print dialog and the desktop app saves directly.
 - GitHub repository browsing, persistent local drafts, file operations, status indicators, and conflict-safe manual pushes.
 - Chat and Edit Agent modes with note retrieval, model knowledge, reviewable diffs, operation memory, and explicit Git commit approval.
 

@@ -1113,8 +1113,6 @@ svg { flex: 0 0 auto; }
 .export-color-control input[type='color']:disabled { opacity: .45; cursor: not-allowed; }
 .export-color-control code { min-width: 64px; color: var(--muted); font: 11px "JetBrains Mono Variable",monospace; letter-spacing: .02em; }
 .export-color-presets { display: flex; align-items: center; gap: 7px; margin-top: -3px; }
-.export-color-presets::before { content: '预设'; margin-right: 2px; color: var(--muted); font-size: 11px; }
-html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .export-color-presets button { width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); cursor: pointer; }
 .export-color-presets button:hover, .export-color-presets button.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
 .export-color-presets button:disabled { opacity: .45; cursor: not-allowed; }

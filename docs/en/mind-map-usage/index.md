@@ -29,16 +29,18 @@ Use **Undo** in the top bar to restore the latest change.
 - Use the fullscreen icon in the top bar for browser fullscreen.
 - Turn the grid background off in preview settings.
 
-## Editor settings
+## Preferences and editor
 
-The editor settings provide:
+Editor, preview, appearance, spelling, global and shortcut settings are available from **Help → Preferences**. Mobile uses expandable categories, while desktop uses a sidebar; every page can restore only its own defaults.
 
-- A 12–22px font-size range.
-- Violet, GitHub and Solarized highlighting.
+The editor page provides:
+
+- A 12–22px font-size range, line height, editor max width and font choices.
 - Source / visual (WYSIWYG) mode for Markdown; visual mode renders common Markdown structures as you edit, and the browser remembers the last choice.
 - Browser spell check for both source and visual modes.
 - **Jump from preview nodes**, which returns to the matching Markdown content when enabled.
-- A light or dark editor background that follows the page theme.
+
+The **Editor theme** is controlled by the active community theme by default, so the syntax highlighting selector starts in a gray “follow theme” state. Enable **Set syntax highlighting separately** to pick a highlight scheme manually. When it is off, switching Catppuccin, Everforest, Gruvbox, Tokyo Night, Nord or Dracula also updates the source editor colors.
 
 The editor status bar shows a check when there are no issues and a warning count when issues are found. Click it to inspect line numbers and messages. Checks cover common problems such as missing spaces after headings, skipped heading levels, Tab indentation in lists and unclosed fenced code blocks.
 
@@ -58,6 +60,11 @@ Preview settings support:
 - Noto Sans SC, Noto Serif SC, LXGW WenKai, Inter Variable and JetBrains Mono Variable.
 - Variable font weight where supported.
 - Showing or hiding the grid background.
+- Mermaid code-block previews with copy-source, fullscreen and SVG-download actions.
+- A canvas background that follows the active theme and light / dark mode by default. Enable **Set canvas background separately** to decouple the preset from the theme; it still switches between the matching light and dark background.
+- Background-aware Markmap branch lightness for better contrast. Document metadata such as `options.color` always overrides the automatic adjustment.
+
+Export colors remain independent from the preview theme so export controls, canvas and document preview do not interfere with one another.
 
 ## Repository note links
 

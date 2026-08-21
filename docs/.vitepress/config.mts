@@ -2,21 +2,29 @@ import { defineConfig } from 'vitepress';
 
 const zhNav = [
   {
-    text: '文档',
+    text: '项目导览',
     items: [
       { text: '项目概览', link: '/introduction/' },
-      { text: '功能导航', link: '/modules/' },
       { text: '快速开始', link: '/installation/' },
+      { text: 'Web 与桌面 App', link: '/app/' },
+      { text: '版本 Log', link: '/version-log/' },
     ],
   },
   {
-    text: '使用模块',
+    text: '开发指南',
     items: [
+      { text: 'Web 部署与开发', link: '/web-development/' },
+      { text: 'Electron 桌面开发', link: '/desktop/' },
+    ],
+  },
+  {
+    text: '功能指南',
+    items: [
+      { text: '功能总览', link: '/modules/' },
       { text: '编辑与思维导图', link: '/mind-map-usage/' },
       { text: 'Agent 知识与仓库操作', link: '/agent/' },
       { text: 'GitHub 仓库同步', link: '/example/' },
-      { text: 'Web 与桌面 App', link: '/app/' },
-      { text: '导出、部署与开发', link: '/api/' },
+      { text: '导出', link: '/export/' },
     ],
   },
   { text: '打开应用', link: 'https://jeoitim.github.io/markmap-pp/' },
@@ -24,21 +32,29 @@ const zhNav = [
 
 const enNav = [
   {
-    text: 'Docs',
+    text: 'Project guide',
     items: [
       { text: 'Overview', link: '/en/introduction/' },
-      { text: 'Feature map', link: '/en/modules/' },
       { text: 'Quick start', link: '/en/installation/' },
+      { text: 'Web and desktop apps', link: '/en/app/' },
+      { text: 'Version Log', link: '/en/version-log/' },
     ],
   },
   {
-    text: 'Modules',
+    text: 'Development guide',
     items: [
+      { text: 'Web deployment and development', link: '/en/web-development/' },
+      { text: 'Electron desktop development', link: '/en/desktop/' },
+    ],
+  },
+  {
+    text: 'Feature guide',
+    items: [
+      { text: 'Feature overview', link: '/en/modules/' },
       { text: 'Editing and mind maps', link: '/en/mind-map-usage/' },
       { text: 'Agent knowledge and repository actions', link: '/en/agent/' },
       { text: 'GitHub repository sync', link: '/en/example/' },
-      { text: 'Web and desktop apps', link: '/en/app/' },
-      { text: 'Export, deploy and develop', link: '/en/api/' },
+      { text: 'Export', link: '/en/export/' },
     ],
   },
   { text: 'Open app', link: 'https://jeoitim.github.io/markmap-pp/' },
@@ -46,46 +62,60 @@ const enNav = [
 
 const zhSidebar = {
   '/': [{
-    text: 'markmap++ 指南',
-    collapsed: true,
+    text: '项目导览',
+    collapsed: false,
     items: [
       { text: '项目概览', link: '/introduction/' },
       { text: '快速开始', link: '/installation/' },
       { text: 'Web 与桌面 App', link: '/app/' },
+      { text: '版本 Log', link: '/version-log/' },
+    ],
+  }, {
+    text: '开发指南',
+    collapsed: false,
+    items: [
+      { text: 'Web 部署与开发', link: '/web-development/' },
       { text: 'Electron 桌面开发', link: '/desktop/' },
     ],
   }, {
-    text: '功能模块',
-    collapsed: true,
+    text: '功能指南',
+    collapsed: false,
     items: [
-      { text: '功能导航', link: '/modules/' },
+      { text: '功能总览', link: '/modules/' },
       { text: '编辑与思维导图', link: '/mind-map-usage/' },
       { text: 'Agent 知识与仓库操作', link: '/agent/' },
       { text: 'GitHub 仓库同步', link: '/example/' },
-      { text: '导出、部署与开发', link: '/api/' },
+      { text: '导出', link: '/export/' },
     ],
   }],
 };
 
 const enSidebar = {
   '/en/': [{
-    text: 'markmap++ guide',
-    collapsed: true,
+    text: 'Project guide',
+    collapsed: false,
     items: [
       { text: 'Overview', link: '/en/introduction/' },
       { text: 'Quick start', link: '/en/installation/' },
       { text: 'Web and desktop apps', link: '/en/app/' },
+      { text: 'Version Log', link: '/en/version-log/' },
+    ],
+  }, {
+    text: 'Development guide',
+    collapsed: false,
+    items: [
+      { text: 'Web deployment and development', link: '/en/web-development/' },
       { text: 'Electron desktop development', link: '/en/desktop/' },
     ],
   }, {
-    text: 'Features',
-    collapsed: true,
+    text: 'Feature guide',
+    collapsed: false,
     items: [
-      { text: 'Feature map', link: '/en/modules/' },
+      { text: 'Feature overview', link: '/en/modules/' },
       { text: 'Editing and mind maps', link: '/en/mind-map-usage/' },
       { text: 'Agent knowledge and repository actions', link: '/en/agent/' },
       { text: 'GitHub repository sync', link: '/en/example/' },
-      { text: 'Export, deploy and develop', link: '/en/api/' },
+      { text: 'Export', link: '/en/export/' },
     ],
   }],
 };

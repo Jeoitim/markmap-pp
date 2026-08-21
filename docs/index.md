@@ -7,7 +7,7 @@ hero:
   tagline: 实时编辑、可视化思考、AI 知识问答与可审核的仓库操作，并通过 GitHub 实现多端同步
   image:
     src: /hero-demo.svg
-    alt: Markdown 输入实时生成思维导图的示例动画
+    alt: Markdown 编辑器与思维导图预览的细节示意
   actions:
     - theme: brand
       text: 打开 markmap++
@@ -24,6 +24,9 @@ hero:
     - theme: alt
       text: Agent 指南
       link: /agent/
+    - theme: alt
+      text: 导出
+      link: /export/
 
 features:
   - icon:
@@ -35,7 +38,12 @@ features:
       src: https://api.iconify.design/lucide/git-branch.svg?color=%237056e8
       alt: 思维导图工作区
     title: 浏览器本地工作区
-    details: 支持源码 / WYSIWYG 视觉编辑、语法诊断、拼写检查、撤回、主题与字体设置，草稿和模式偏好在离开页面后仍可保留。
+    details: 支持源码 / WYSIWYG 视觉编辑、Mermaid 代码块预览、语法诊断和拼写检查，草稿与模式偏好会在浏览器中保留。
+  - icon:
+      src: https://api.iconify.design/lucide/palette.svg?color=%237056e8
+      alt: 社区主题
+    title: 社区主题与偏好设置
+    details: 在帮助 > 偏好设置中统一管理 UI、编辑器和预览外观；Catppuccin、Everforest、Gruvbox、Tokyo Night 等主题支持独立高亮和画布背景覆盖。
   - icon:
       src: https://api.iconify.design/simple-icons/github.svg?color=%237056e8
       alt: GitHub 同步
@@ -50,7 +58,7 @@ features:
       src: https://api.iconify.design/lucide/download.svg?color=%237056e8
       alt: 导出
     title: 多格式高清导出
-    details: 导出 Markdown、SVG、静态矢量 PDF、PNG、JPEG 和 HTML；位图支持 1–4 倍渲染倍率。
+    details: 导出 Markdown、Mermaid、SVG、静态矢量 PDF、PNG、JPEG 和 HTML；位图支持 1–4 倍渲染倍率。
   - icon:
       src: https://api.iconify.design/lucide/monitor-smartphone.svg?color=%237056e8
       alt: 桌面与移动设备
@@ -60,7 +68,7 @@ features:
       src: https://api.iconify.design/lucide/folder-lock.svg?color=%237056e8
       alt: 本地优先
     title: 本地优先与静态部署
-    details: 草稿、仓库绑定、Agent 配置和历史保存在浏览器，无需数据库或自建后端。
+    details: 草稿、仓库绑定、Agent 配置和历史保存在浏览器；Markmap 线段会根据背景改善对比度，文档元数据始终优先。
 ---
 
 ## 从这里开始
@@ -83,7 +91,8 @@ markmap++ 完全运行在浏览器中。第一次使用可以直接打开应用�
     </div>
   </div>
   <div class="home-map-art">
-    <img src="./markmap-art.png" alt="markmap++ 彩色思维导图示例" />
+    <img class="home-map-art-light" src="/demo-light.png" alt="markmap++ 浅色编辑器与彩色思维导图示例" />
+    <img class="home-map-art-dark" src="/demo-dark.png" alt="markmap++ 深色编辑器与彩色思维导图示例" />
   </div>
 </section>
 

@@ -7,7 +7,7 @@ hero:
   tagline: Live editing, visual thinking, AI note Q&A, reviewable repository actions and GitHub sync across devices
   image:
     src: /hero-demo.svg
-    alt: Animated example of Markdown generating a mind map
+    alt: Detailed editor and mind-map preview illustration
   actions:
     - theme: brand
       text: Open markmap++
@@ -24,6 +24,9 @@ hero:
     - theme: alt
       text: Agent guide
       link: /en/agent/
+    - theme: alt
+      text: Export
+      link: /en/export/
 
 features:
   - icon:
@@ -35,7 +38,12 @@ features:
       src: https://api.iconify.design/lucide/git-branch.svg?color=%237056e8
       alt: Mind-map workspace
     title: Browser-local workspace
-    details: Source / WYSIWYG visual editing, diagnostics, spell check, undo, themes and font settings keep drafts and mode preferences available after you leave the page.
+    details: Source / WYSIWYG visual editing, Mermaid code-block previews, diagnostics and spell checking keep drafts and mode preferences available in the browser.
+  - icon:
+      src: https://api.iconify.design/lucide/palette.svg?color=%237056e8
+      alt: Community themes
+    title: Community themes and preferences
+    details: Manage the UI, editor and preview appearance from Help > Preferences. Catppuccin, Everforest, Gruvbox and Tokyo Night support independent highlighting and canvas overrides.
   - icon:
       src: https://api.iconify.design/simple-icons/github.svg?color=%237056e8
       alt: GitHub sync
@@ -50,7 +58,7 @@ features:
       src: https://api.iconify.design/lucide/download.svg?color=%237056e8
       alt: Export
     title: High-resolution exports
-    details: Export Markdown, SVG, static vector PDF, PNG, JPEG and HTML. Bitmap exports support a 1–4× render scale.
+    details: Export Markdown, Mermaid, SVG, static vector PDF, PNG, JPEG and HTML. Bitmap exports support a 1–4× render scale.
   - icon:
       src: https://api.iconify.design/lucide/monitor-smartphone.svg?color=%237056e8
       alt: Desktop and mobile
@@ -60,7 +68,7 @@ features:
       src: https://api.iconify.design/lucide/folder-lock.svg?color=%237056e8
       alt: Local-first
     title: Local-first static deployment
-    details: Drafts, repository bindings, Agent settings and history stay in the browser without a database or custom backend.
+    details: Drafts, repository bindings, Agent settings and history stay in the browser; branch lines adapt to the background while document metadata remains authoritative.
 ---
 
 ## Start here
@@ -83,7 +91,8 @@ markmap++ runs entirely in the browser. Open the app and edit the welcome guide 
     </div>
   </div>
   <div class="home-map-art">
-    <img src="../markmap-art.png" alt="Colorful markmap++ mind-map example" />
+    <img class="home-map-art-light" src="/demo-light.png" alt="Light markmap++ editor and colorful mind-map example" />
+    <img class="home-map-art-dark" src="/demo-dark.png" alt="Dark markmap++ editor and colorful mind-map example" />
   </div>
 </section>
 
