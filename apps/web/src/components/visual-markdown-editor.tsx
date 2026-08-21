@@ -191,6 +191,38 @@ function isVisualTextBlock(node: ProseNode) {
   return node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'code_block'
 }
 
+function visualTextBlockForConversion(node: ProseNode, target: BlockConversion, schema: Schema) {
+  const source = node.type.name === 'list_item'
+    ? node.firstChild
+    : node.type.name === 'blockquote' && node.childCount === 1
+      ? node.firstChild
+      : node
+  if (!source || !isVisualTextBlock(source)) return null
+  if (target.kind === 'heading') {
+    const heading = schema.nodes.heading
+    return heading ? heading.create({ level: target.level }, source.content, source.marks) : null
+  }
+  if (target.kind === 'code') {
+    const codeBlock = schema.nodes.code_block
+    return codeBlock ? codeBlock.create({ language: source.attrs.language || '' }, source.content) : null
+  }
+  if (target.kind === 'blockquote') {
+    const blockquote = schema.nodes.blockquote
+    return blockquote ? blockquote.create(null, source) : null
+  }
+  return null
+}
+
+function visualBlocksForListConversion(node: ProseNode, target: BlockConversion, schema: Schema) {
+  if (node.type.name !== 'bullet_list' && node.type.name !== 'ordered_list') return []
+  const blocks: ProseNode[] = []
+  node.forEach((child) => {
+    const block = visualTextBlockForConversion(child, target, schema)
+    if (block) blocks.push(block)
+  })
+  return blocks
+}
+
 function visualNodeDefaults(nodeType: NodeType) {
   const attrs = nodeType.spec.attrs
   if (!attrs) return null
@@ -898,6 +930,35 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       const view = ctx.get(editorViewCtx)
       const node = view.state.doc.nodeAt(active.position)
       if (!node) return
+      const replaceListItemWithBlock = (targetBlock: ProseNode) => {
+        if (node.type.name !== 'list_item') return false
+        const inside = view.state.doc.resolve(active.position + 1)
+        let listDepth = -1
+        let listNode: ProseNode | null = null
+        for (let depth = inside.depth; depth > 0; depth -= 1) {
+          const parent = inside.node(depth)
+          if (parent.type.name === 'bullet_list' || parent.type.name === 'ordered_list') {
+            listDepth = depth
+            listNode = parent
+            break
+          }
+        }
+        if (listDepth < 0 || !listNode) return false
+        const itemIndex = inside.index(listDepth)
+        const beforeItems = listNode.content.content.slice(0, itemIndex)
+        const afterItems = listNode.content.content.slice(itemIndex + 1)
+        const replacement: ProseNode[] = []
+        if (beforeItems.length) replacement.push(listNode.type.create(listNode.attrs, Fragment.fromArray(beforeItems)))
+        replacement.push(targetBlock)
+        if (afterItems.length) {
+          const afterAttrs = listNode.type.name === 'ordered_list'
+            ? { ...listNode.attrs, order: (listNode.attrs.order || 1) + itemIndex + 1 }
+            : listNode.attrs
+          replacement.push(listNode.type.create(afterAttrs, Fragment.fromArray(afterItems)))
+        }
+        view.dispatch(view.state.tr.replaceWith(inside.before(listDepth), inside.before(listDepth) + listNode.nodeSize, Fragment.fromArray(replacement)).scrollIntoView())
+        return true
+      }
 
       if (action === 'table-add-row' || action === 'table-add-column' || action === 'table-delete-row' || action === 'table-delete-column') {
         if (!isInTable(view.state)) return
@@ -923,27 +984,19 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
         return
       }
 
-      if (action.kind === 'heading' || action.kind === 'code') {
-        const targetType = action.kind === 'heading' ? view.state.schema.nodes.heading : view.state.schema.nodes.code_block
-        if (!targetType) return
-        const source = node.type.name === 'blockquote' && node.childCount === 1 ? node.firstChild : node
-        if (!source || !isVisualTextBlock(source)) return
-        const attrs = action.kind === 'heading'
-          ? { level: action.level }
-          : { language: source.attrs.language || '' }
-        const marks = action.kind === 'code' ? [] : source.marks
-        if (node.type.name === 'blockquote') {
-          view.dispatch(view.state.tr.replaceWith(active.position, active.position + node.nodeSize, targetType.create(attrs, source.content, marks)).scrollIntoView())
-        } else {
-          view.dispatch(view.state.tr.setNodeMarkup(active.position, targetType, attrs, marks).scrollIntoView())
+      if (action.kind === 'heading' || action.kind === 'code' || action.kind === 'blockquote') {
+        const converted = visualTextBlockForConversion(node, action, view.state.schema)
+        if (node.type.name === 'list_item') {
+          if (converted) replaceListItemWithBlock(converted)
+          return
         }
-        return
-      }
-
-      if (action.kind === 'blockquote') {
-        const blockquote = view.state.schema.nodes.blockquote
-        if (!blockquote || node.type.name === 'blockquote' || node.type.name === 'list_item' || node.type.name === 'bullet_list' || node.type.name === 'ordered_list') return
-        view.dispatch(view.state.tr.replaceWith(active.position, active.position + node.nodeSize, blockquote.create(null, node)).scrollIntoView())
+        if (node.type.name === 'bullet_list' || node.type.name === 'ordered_list') {
+          const convertedBlocks = visualBlocksForListConversion(node, action, view.state.schema)
+          if (convertedBlocks.length) view.dispatch(view.state.tr.replaceWith(active.position, active.position + node.nodeSize, Fragment.fromArray(convertedBlocks)).scrollIntoView())
+          return
+        }
+        if (action.kind === 'blockquote' && node.type.name === 'blockquote') return
+        if (converted) view.dispatch(view.state.tr.replaceWith(active.position, active.position + node.nodeSize, converted).scrollIntoView())
         return
       }
 
@@ -1019,12 +1072,9 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     { kind: 'ordered-list', label: t('有序列表'), icon: '1.' },
     { kind: 'task', label: t('待办事项'), icon: '☐' },
   ]
-  const listBlock = activeBlock && (activeBlock.kind === 'bullet-list' || activeBlock.kind === 'ordered-list' || activeBlock.kind === 'task' || activeBlock.kind === 'list-item')
   const activeBlockOptions = activeBlock?.kind === 'table'
     ? []
-    : listBlock
-      ? blockOptions.filter((option) => option.kind === 'bullet-list' || option.kind === 'ordered-list' || option.kind === 'task')
-      : blockOptions
+    : blockOptions
   const blockHandleLabel = !activeBlock
     ? ''
     : activeBlock.kind === 'heading'
@@ -1033,7 +1083,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
         ? '</>'
         : activeBlock.kind === 'blockquote'
           ? '❝'
-          : activeBlock.kind === 'ordered-list'
+          : activeBlock.kind === 'ordered-list' || (activeBlock.kind === 'list-item' && activeBlock.listType === 'ordered')
             ? '1.'
             : activeBlock.kind === 'bullet-list' || activeBlock.kind === 'list-item'
               ? '•'
@@ -1067,7 +1117,11 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     if (!activeBlock) return false
     return option.kind === 'heading'
       ? activeBlock.kind === 'heading' && activeBlock.level === option.level
-      : activeBlock.kind === option.kind
+      : option.kind === 'ordered-list'
+        ? activeBlock.kind === 'ordered-list' || (activeBlock.kind === 'list-item' && activeBlock.listType === 'ordered')
+        : option.kind === 'bullet-list'
+          ? activeBlock.kind === 'bullet-list' || (activeBlock.kind === 'list-item' && activeBlock.listType === 'bullet')
+          : activeBlock.kind === option.kind
   }
 
   return <div className={`visual-markdown-editor ${dark ? 'dark' : ''}${activeBlock ? ' has-active-heading' : ''}`} style={editorStyle}>
