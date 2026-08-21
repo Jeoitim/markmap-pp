@@ -1307,10 +1307,10 @@ function resolveThemeDark(mode: ThemeMode) {
   return mode === 'dark' || (mode === 'system' && systemPrefersDark())
 }
 
-function accessibleLinkColor(backgroundColor: string, baseColor = defaultLinkColor) {
+function accessibleColor(backgroundColor: string, baseColor: string, minimumContrast: number) {
   const backgroundLuminance = colorLuminance(backgroundColor)
   const baseLuminance = colorLuminance(baseColor)
-  if (contrastRatio(backgroundLuminance, baseLuminance) >= 4.5) return baseColor
+  if (contrastRatio(backgroundLuminance, baseLuminance) >= minimumContrast) return baseColor
   const hsl = rgbToHsl(baseColor)
   if (!hsl) return baseColor
   const darken = backgroundLuminance > baseLuminance
@@ -1321,10 +1321,30 @@ function accessibleLinkColor(backgroundColor: string, baseColor = defaultLinkCol
       const lightness = hsl.lightness + (darken ? -index : index) * lightnessStep
       if (lightness < 0 || lightness > 1) break
       const candidate = hslToHex(hsl.hue, Math.max(0, saturation), lightness)
-      if (contrastRatio(backgroundLuminance, colorLuminance(candidate)) >= 4.5) return candidate
+      if (contrastRatio(backgroundLuminance, colorLuminance(candidate)) >= minimumContrast) return candidate
     }
   }
   return darken ? '#000000' : '#ffffff'
+}
+
+function accessibleLinkColor(backgroundColor: string, baseColor = defaultLinkColor) {
+  return accessibleColor(backgroundColor, baseColor, 4.5)
+}
+
+function accessibleBranchColor(backgroundColor: string, baseColor: string) {
+  // WCAG 1.4.11 uses 3:1 for non-text graphical objects. Keep the branch
+  // hue/saturation and only move its lightness far enough to reach that floor.
+  return accessibleColor(backgroundColor, baseColor, 3)
+}
+
+function adjustMarkmapLineColors(root: ParentNode, backgroundColor: string) {
+  root.querySelectorAll<SVGPathElement | SVGLineElement>('.markmap-link, g.markmap-node > line').forEach((element) => {
+    const baseColor = element.getAttribute('stroke')
+    if (!baseColor || baseColor === 'none') return
+    // This writes a presentation attribute only. A document style rule has
+    // higher CSS precedence, so explicit metadata styling remains authoritative.
+    element.setAttribute('stroke', accessibleBranchColor(backgroundColor, baseColor))
+  })
 }
 
 function mixHexColors(first: string, second: string, amount: number) {
@@ -1736,6 +1756,9 @@ export default function MarkmapHooks() {
   const previewDarkMode = userPreviewBackground || previewBackgroundOverride ? shouldUseDarkTheme(previewBackgroundColor) : dark
   const previewCodeBackground = codeBackgroundColor(previewBackgroundColor, previewDarkMode)
   const previewLinkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(previewBackgroundColor)
+  const documentOwnsBranchColors = Array.isArray(documentRenderConfig.jsonOptions.color) && documentRenderConfig.jsonOptions.color.length > 0
+  const previewBackgroundRef = useRef(previewBackgroundColor)
+  previewBackgroundRef.current = previewBackgroundColor
   const exportAutoDarkMode = shouldUseDarkTheme(settings.exportBackgroundColor)
   const exportDarkMode = exportTextTheme === 'auto' ? exportAutoDarkMode : exportTextTheme === 'dark'
   const exportUsesTransparentBackground = exportFormat === 'png' && exportTransparentBackground
@@ -2133,21 +2156,28 @@ export default function MarkmapHooks() {
     const data = mmRef.current?.getData(true)
     if (data) updateMarkdown(toMarkdown(data), 'map')
   }, [updateMarkdown])
-  const viewOptions = useCallback((codeOptions: Partial<IMarkmapOptions>): Partial<IMarkmapOptions> => ({
-    ...defaultOptions,
-    autoFit: false,
-    editable: true,
-    addable: true,
-    deletable: true,
-    collapseOnHover: false,
-    hoverBorder: true,
-    clickBorder: true,
-    duration: 220,
-    inputPlaceholder: '输入节点内容',
-    onNodeEdit: syncFromMap,
-    onNodeAdd: syncFromMap,
-    ...codeOptions,
-  }), [syncFromMap])
+  const viewOptions = useCallback((codeOptions: Partial<IMarkmapOptions>, backgroundColor?: string, preserveDocumentColors = false): Partial<IMarkmapOptions> => {
+    const baseColor = codeOptions.color || defaultOptions.color
+    const color = backgroundColor && !preserveDocumentColors
+      ? (node: Parameters<IMarkmapOptions['color']>[0]) => accessibleBranchColor(backgroundColor, baseColor(node))
+      : baseColor
+    return {
+      ...defaultOptions,
+      autoFit: false,
+      editable: true,
+      addable: true,
+      deletable: true,
+      collapseOnHover: false,
+      hoverBorder: true,
+      clickBorder: true,
+      duration: 220,
+      inputPlaceholder: '输入节点内容',
+      onNodeEdit: syncFromMap,
+      onNodeAdd: syncFromMap,
+      ...codeOptions,
+      color,
+    }
+  }, [syncFromMap])
 
   const undoLastChange = useCallback(() => {
     const previous = historyRef.current.pop()
@@ -3802,10 +3832,12 @@ export default function MarkmapHooks() {
     if (documentMode === 'mermaid') return
     if (!svgRef.current) return
     const initialConfig = buildDocumentRenderConfig(initialMarkdownRef.current)
-    const mm = Markmap.create(svgRef.current, viewOptions(deriveOptions({
+    const initialOptions = deriveOptions({
       ...initialConfig.jsonOptions,
       colorFreezeLevel: initialConfig.colorFreezeLevel ?? defaultSettings.colorFreezeLevel,
-    })))
+    })
+    const initialOwnsBranchColors = Array.isArray(initialConfig.jsonOptions.color) && initialConfig.jsonOptions.color.length > 0
+    const mm = Markmap.create(svgRef.current, viewOptions(initialOptions, previewBackgroundRef.current, initialOwnsBranchColors))
     mmRef.current = mm
     void mm.setData(initialConfig.root).then(() => {
       const { width, height } = svgRef.current?.getBoundingClientRect() || { width: 0, height: 0 }
@@ -3984,7 +4016,7 @@ export default function MarkmapHooks() {
     void (async () => {
       await waitForFontReady(effectiveMarkmapFont)
       if (disposed) return
-      await mm.setData(documentRenderConfig.root, viewOptions(effectiveMarkmapOptions))
+      await mm.setData(documentRenderConfig.root, viewOptions(effectiveMarkmapOptions, previewBackgroundColor, documentOwnsBranchColors))
       if (disposed) return
       svg.querySelectorAll('img').forEach((image) => {
         if (image.complete) return
@@ -4011,7 +4043,7 @@ export default function MarkmapHooks() {
         imageRelayoutTimerRef.current = null
       }
     }
-  }, [documentMode, documentRenderConfig, effectiveMarkmapFont, effectiveMarkmapOptions, previewDarkMode, settings.previewMermaid, viewOptions])
+  }, [documentMode, documentOwnsBranchColors, documentRenderConfig, effectiveMarkmapFont, effectiveMarkmapOptions, previewBackgroundColor, previewDarkMode, settings.previewMermaid, viewOptions])
 
   useEffect(() => {
     if (documentMode === 'mermaid') {
@@ -4336,10 +4368,11 @@ ${documentRenderConfig.style}
     return { source: new XMLSerializer().serializeToString(clone), width, height: outputHeight }
   }
 
-  const prepareExportSvg = async (source: string, darkMode: boolean, backgroundColor: string) => {
+  const prepareExportSvg = async (source: string, darkMode: boolean, backgroundColor: string, transparentBackground = false) => {
     const liveForeignObjects = Array.from(svgRef.current?.querySelectorAll<SVGForeignObjectElement>('foreignObject') || [])
     const documentNode = new DOMParser().parseFromString(source, 'image/svg+xml')
     documentNode.querySelectorAll('style').forEach((style) => { style.textContent = removeExternalFontFaces(style.textContent || '') })
+    if (!transparentBackground && !documentOwnsBranchColors) adjustMarkmapLineColors(documentNode, backgroundColor)
     const foreignObjects = Array.from(documentNode.querySelectorAll('foreignObject'))
     foreignObjects.forEach((foreignObject, index) => {
       const liveForeignObject = liveForeignObjects[index]
@@ -4746,7 +4779,7 @@ ${documentRenderConfig.style}
         await waitForFontReady(effectiveMarkmapFont)
         await renderStableMarkmap(mm)
         const { source, width, height } = createExportSvg(exportBackgroundColor, exportDarkMode, exportUsesTransparentBackground, exportFormat === 'pdf' ? 1 : exportScale)
-        const exportSource = await prepareExportSvg(source, exportDarkMode, exportBackgroundColor)
+        const exportSource = await prepareExportSvg(source, exportDarkMode, exportBackgroundColor, exportUsesTransparentBackground)
         if (exportFormat === 'svg') await saveBlob(new Blob([exportSource], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`)
         else if (exportFormat === 'pdf') {
           const pdfHtml = createStaticPdfHtml(exportSource, width, height, exportBackgroundColor)
