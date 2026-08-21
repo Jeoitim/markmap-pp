@@ -12,7 +12,8 @@ import '@fontsource-variable/jetbrains-mono'
 import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
-import MarkdownEditor, { type MarkdownEditorHandle, type MarkdownEditorSelection, type MarkdownThemeKey } from './markdown-editor'
+import MarkdownEditor, { type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
+import { markdownThemePalette, type MarkdownThemeKey } from './markdown-theme'
 import VisualMarkdownEditor, { type VisualMarkdownEditorHandle, type VisualMarkdownSelection } from './visual-markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { mermaidRenderId, mermaidViewBoxSize, renderMermaidSvg } from './mermaid-renderer'
@@ -1749,13 +1750,20 @@ export default function MarkmapHooks() {
   const userPreviewBackground = documentMode === 'mermaid' ? undefined : readUserPreviewBackground(documentRenderConfig.style)
   const activeThemePreset: MarkdownThemeKey = dark ? settings.darkThemePreset : settings.lightThemePreset
   const editorHighlightTheme: MarkdownThemeKey = settings.editorHighlightTheme === 'follow' ? activeThemePreset : settings.editorHighlightTheme
+  const activeThemePalette = markdownThemePalette[activeThemePreset]
   const activeThemeBackground = dark ? settings.darkThemeBackground : settings.lightThemeBackground
   const previewBackgroundColor = userPreviewBackground || activeThemeBackground
   const previewBackgroundOverride = dark ? settings.darkThemeBackgroundOverride : settings.lightThemeBackgroundOverride
   const previewBackgroundControlsDisabled = Boolean(userPreviewBackground) || !previewBackgroundOverride
   const previewDarkMode = userPreviewBackground || previewBackgroundOverride ? shouldUseDarkTheme(previewBackgroundColor) : dark
-  const previewCodeBackground = codeBackgroundColor(previewBackgroundColor, previewDarkMode)
-  const previewLinkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(previewBackgroundColor)
+  const configuredPreviewTextColor = cssDeclaration(documentRenderConfig.style, '--markmap-text-color')
+  const configuredPreviewCodeBackground = cssDeclaration(documentRenderConfig.style, '--markmap-code-bg')
+  const configuredPreviewCodeColor = cssDeclaration(documentRenderConfig.style, '--markmap-code-color')
+  const configuredPreviewLinkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color')
+  const previewTextColor = configuredPreviewTextColor || accessibleColor(previewBackgroundColor, activeThemePalette.foreground || (previewDarkMode ? previewLightText : previewDarkText), 4.5)
+  const previewCodeBackground = configuredPreviewCodeBackground || activeThemePalette.codeBackground || codeBackgroundColor(previewBackgroundColor, previewDarkMode)
+  const previewCodeColor = configuredPreviewCodeColor || previewTextColor
+  const previewLinkColor = configuredPreviewLinkColor || accessibleLinkColor(previewBackgroundColor, activeThemePalette.link || defaultLinkColor)
   const documentOwnsBranchColors = Array.isArray(documentRenderConfig.jsonOptions.color) && documentRenderConfig.jsonOptions.color.length > 0
   const previewBackgroundRef = useRef(previewBackgroundColor)
   previewBackgroundRef.current = previewBackgroundColor
@@ -4113,13 +4121,13 @@ export default function MarkmapHooks() {
     const svg = svgRef.current
     if (svg) {
       const codeStyle = documentRenderConfig.style
-      svg.style.setProperty('--markmap-text-color', cssDeclaration(codeStyle, '--markmap-text-color') || (previewDarkMode ? previewLightText : previewDarkText))
+      svg.style.setProperty('--markmap-text-color', previewTextColor)
       svg.style.setProperty('--markmap-circle-open-bg', cssDeclaration(codeStyle, '--markmap-circle-open-bg') || (previewDarkMode ? '#191c22' : '#ffffff'))
-      svg.style.setProperty('--markmap-code-bg', cssDeclaration(codeStyle, '--markmap-code-bg') || previewCodeBackground)
-      svg.style.setProperty('--markmap-code-color', cssDeclaration(codeStyle, '--markmap-code-color') || (previewDarkMode ? previewLightText : previewDarkText))
+      svg.style.setProperty('--markmap-code-bg', previewCodeBackground)
+      svg.style.setProperty('--markmap-code-color', previewCodeColor)
       svg.style.setProperty('--markmap-a-color', previewLinkColor)
     }
-  }, [activeThemePreset, dark, documentRenderConfig.style, previewCodeBackground, previewDarkMode, previewLinkColor])
+  }, [activeThemePreset, dark, documentRenderConfig.style, previewCodeBackground, previewCodeColor, previewDarkMode, previewLinkColor, previewTextColor])
 
   useEffect(() => {
     const desktop = desktopApi()
@@ -4307,14 +4315,15 @@ export default function MarkmapHooks() {
     restoreMarkmapMermaidPreviews(clone)
     const tablePadding = clone.querySelectorAll('foreignObject table').length * 20
     const outputHeight = height + tablePadding
-    const textColor = darkMode ? previewLightText : previewDarkText
-    const exportCodeBackground = codeBackgroundColor(backgroundColor, darkMode)
-    const linkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(backgroundColor)
+    const textColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-text-color')) || accessibleColor(backgroundColor, activeThemePalette.foreground || (darkMode ? previewLightText : previewDarkText), 4.5)
+    const codeColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-color')) || textColor
+    const exportCodeBackground = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-bg')) || activeThemePalette.codeBackground || codeBackgroundColor(backgroundColor, darkMode)
+    const linkColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-a-color')) || accessibleLinkColor(backgroundColor, activeThemePalette.link || defaultLinkColor)
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
     clone.style.setProperty('--markmap-font', effectiveMarkmapFont)
     clone.style.setProperty('--markmap-text-color', textColor)
     clone.style.setProperty('--markmap-code-bg', exportCodeBackground)
-    clone.style.setProperty('--markmap-code-color', textColor)
+    clone.style.setProperty('--markmap-code-color', codeColor)
     clone.style.setProperty('--markmap-circle-open-bg', darkMode ? '#191c22' : '#ffffff')
     clone.style.setProperty('--markmap-a-color', linkColor)
     clone.querySelectorAll<SVGTextElement>('text, tspan').forEach((element) => element.style.setProperty('fill', textColor, 'important'))
@@ -4331,7 +4340,7 @@ export default function MarkmapHooks() {
 .markmap-foreign img[alt$='图标'], .markmap-foreign img[alt$='icon'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; }
 .markmap-foreign pre { max-width: 100%; white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
 .markmap-foreign pre > code { display: block; width: 100%; max-width: 100%; box-sizing: border-box; white-space: inherit !important; overflow-wrap: inherit !important; word-break: inherit !important; }
-.markmap-foreign pre, .markmap-foreign code { color: ${textColor} !important; background: ${exportCodeBackground} !important; }
+.markmap-foreign pre, .markmap-foreign code { color: ${codeColor} !important; background: ${exportCodeBackground} !important; }
 .markmap-foreign .markmap-task-box { display: inline-block; width: 1em; height: 1em; margin: 0 .35em -.15em 0; border: 1.5px solid currentColor; border-radius: .25em; vertical-align: baseline; }
 .markmap-foreign .markmap-task-box[data-checked='true'] { color: #fff !important; background: #7056e8 !important; border-color: #7056e8 !important; }
 .markmap-foreign .markmap-task-box[data-checked='true']::after { content: '✓'; display: block; font-size: .75em; line-height: 1.25em; text-align: center; }
@@ -4380,9 +4389,10 @@ ${documentRenderConfig.style}
       const targetContent = foreignObject.firstElementChild?.firstElementChild
       if (liveContent && targetContent) inlineComputedStyles(liveContent, targetContent)
     })
-    const textColor = darkMode ? previewLightText : previewDarkText
-    const exportCodeBackground = codeBackgroundColor(backgroundColor, darkMode)
-    const linkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(backgroundColor)
+    const textColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-text-color')) || accessibleColor(backgroundColor, activeThemePalette.foreground || (darkMode ? previewLightText : previewDarkText), 4.5)
+    const codeColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-color')) || textColor
+    const exportCodeBackground = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-bg')) || activeThemePalette.codeBackground || codeBackgroundColor(backgroundColor, darkMode)
+    const linkColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-a-color')) || accessibleLinkColor(backgroundColor, activeThemePalette.link || defaultLinkColor)
     const appendInlineStyle = (element: Element, declarations: string) => {
       const existing = element.getAttribute('style') || ''
       element.setAttribute('style', `${existing}${existing ? ';' : ''}${declarations}`)
@@ -4392,7 +4402,7 @@ ${documentRenderConfig.style}
       if (!content) return
       appendInlineStyle(content, `color:${textColor} !important;-webkit-text-fill-color:${textColor} !important`)
       content.querySelectorAll('a, a *').forEach((element) => appendInlineStyle(element, `color:${linkColor} !important;-webkit-text-fill-color:${linkColor} !important`))
-      content.querySelectorAll('pre, code').forEach((element) => appendInlineStyle(element, `color:${textColor} !important;background-color:${exportCodeBackground} !important`))
+      content.querySelectorAll('pre, code').forEach((element) => appendInlineStyle(element, `color:${codeColor} !important;background-color:${exportCodeBackground} !important`))
       content.querySelectorAll('table, th, td').forEach((element) => appendInlineStyle(element, `background-color:transparent !important`))
       content.querySelectorAll('th').forEach((element) => appendInlineStyle(element, `color:${textColor} !important`))
     })
@@ -5148,7 +5158,7 @@ ${documentRenderConfig.style}
              </nav>
              {!hasOpenDocument && <div className="document-empty-state preview-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>新建或打开 Markdown 后，这里会显示思维导图。</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
             {documentMode === 'mermaid'
-              ? <div className={effectiveShowGrid ? 'standalone-mermaid-canvas' : 'standalone-mermaid-canvas no-grid'} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText, '--mermaid-font-family': previewFonts[settings.previewFont].family, '--mermaid-font-size': String(settings.previewFontSize) + 'px', '--mermaid-font-weight': settings.previewWeight } as React.CSSProperties}>
+              ? <div className={effectiveShowGrid ? 'standalone-mermaid-canvas' : 'standalone-mermaid-canvas no-grid'} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewTextColor, '--mermaid-font-family': previewFonts[settings.previewFont].family, '--mermaid-font-size': String(settings.previewFontSize) + 'px', '--mermaid-font-weight': settings.previewWeight } as React.CSSProperties}>
                   <div className="preview-floating-tools">
                     <button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button>
                     <button type="button" onClick={() => standaloneMermaidFit?.()} disabled={!standaloneMermaidFit} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button>
@@ -5156,7 +5166,7 @@ ${documentRenderConfig.style}
                   </div>
                   <StandaloneMermaidPreview source={renderedMarkdown} theme={previewDarkMode ? 'dark' : 'default'} onRendered={setStandaloneMermaidViewer} onFitReady={registerStandaloneMermaidFit} />
                 </div>
-              : <div className={effectiveShowGrid ? 'map-canvas' : 'map-canvas no-grid'} onContextMenu={handlePreviewContextMenu} onPointerDown={handlePreviewBlankPointerDown} onClickCapture={handlePreviewClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewDarkMode ? previewLightText : previewDarkText } as React.CSSProperties}>
+              : <div className={effectiveShowGrid ? 'map-canvas' : 'map-canvas no-grid'} onContextMenu={handlePreviewContextMenu} onPointerDown={handlePreviewBlankPointerDown} onClickCapture={handlePreviewClick} style={{ '--preview-background': previewBackgroundColor, '--preview-foreground': previewTextColor } as React.CSSProperties}>
                   <div className="preview-floating-tools">
                     <button type="button" className="mobile-pane-switch" onClick={() => setMobilePane('editor')} title={t('返回编辑器')}><Icon name="svg-editor" /><span>{t('编辑器')}</span></button>
                     <button type="button" onClick={() => mmRef.current?.fit()} title={t('适应画布')} aria-label={t('适应画布')}><Icon name="focus" /></button>
