@@ -66,7 +66,7 @@ const MARKMAP_PREVIEW_ID = 'markmap-preview'
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/markmap-plus-plus-icon.png`
 
 type Pane = 'editor' | 'preview'
-type PreferenceSection = 'editor' | 'preview' | 'appearance' | 'spelling' | 'global'
+type PreferenceSection = 'editor' | 'preview' | 'appearance' | 'spelling' | 'global' | 'shortcuts'
 type EditorHighlightTheme = 'follow' | MarkdownThemeKey
 type Panel = 'preferences' | 'export' | 'github' | 'help' | 'about' | 'links' | null
 const HELP_TIP_COUNT = 5
@@ -86,6 +86,87 @@ type EditorView = 'markdown' | 'repository' | 'agent'
 type DocumentMode = 'markdown' | 'mermaid'
 type DocumentEditorMode = 'source' | 'visual'
 const EDITOR_MODE_KEY = 'markmap-plus-plus:editor-mode'
+
+const shortcutDefinitions = [
+  { id: 'newTab', label: '新建标签页', defaultBinding: 'Mod+T', webBinding: 'Mod+Alt+T' },
+  { id: 'openFile', label: '打开文件…', defaultBinding: 'Mod+O', webBinding: 'Mod+Alt+O' },
+  { id: 'save', label: '保存', defaultBinding: 'Mod+S' },
+  { id: 'closeTab', label: '关闭标签页', defaultBinding: 'Mod+W', webBinding: 'Mod+Alt+W' },
+  { id: 'undo', label: '撤回', defaultBinding: 'Mod+Z' },
+  { id: 'redo', label: '重做', defaultBinding: 'Mod+Shift+Z' },
+  { id: 'copy', label: '复制', defaultBinding: 'Mod+C' },
+  { id: 'cut', label: '剪切', defaultBinding: 'Mod+X' },
+  { id: 'paste', label: '粘贴', defaultBinding: 'Mod+V' },
+  { id: 'delete', label: '删除', defaultBinding: 'Delete' },
+  { id: 'selectAll', label: '全选', defaultBinding: 'Mod+A' },
+  { id: 'openPreferences', label: '偏好设置', defaultBinding: 'Mod+,' },
+  { id: 'toggleFullscreen', label: '全屏', defaultBinding: 'F11' },
+] as const
+
+type ShortcutId = typeof shortcutDefinitions[number]['id']
+type ShortcutOverrides = Partial<Record<ShortcutId, string | null>>
+
+const shortcutModifierOrder = ['Mod', 'Alt', 'Shift'] as const
+const shortcutModifierNames = new Set<string>(shortcutModifierOrder)
+const shortcutModifierKeys = new Set(['Control', 'Meta', 'Alt', 'Shift', 'OS', 'Command'])
+
+function normalizeShortcutKey(value: string) {
+  if (value === ' ') return 'Space'
+  const key = value.trim()
+  if (!key) return null
+  if (key.length === 1) return key.toUpperCase()
+  if (/^f\d{1,2}$/i.test(key)) return key.toUpperCase()
+  return key
+}
+
+function normalizeShortcutBinding(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const parts = value.split('+').map((part) => part.trim()).filter(Boolean)
+  if (!parts.length) return null
+  const rawKey = parts.pop()!
+  const key = normalizeShortcutKey(rawKey)
+  if (!key || shortcutModifierNames.has(key) || shortcutModifierKeys.has(rawKey)) return null
+  const modifiers = parts.map((part) => part === 'Ctrl' ? 'Mod' : part)
+  if (modifiers.some((part) => !shortcutModifierNames.has(part))) return null
+  const uniqueModifiers = shortcutModifierOrder.filter((part) => modifiers.includes(part))
+  return [...uniqueModifiers, key].join('+')
+}
+
+function shortcutBindingFromEvent(event: KeyboardEvent) {
+  const key = normalizeShortcutKey(event.key)
+  if (!key || shortcutModifierNames.has(key) || shortcutModifierKeys.has(event.key)) return null
+  const modifiers = [
+    event.ctrlKey || event.metaKey ? 'Mod' : null,
+    event.altKey ? 'Alt' : null,
+    event.shiftKey ? 'Shift' : null,
+  ].filter((part): part is 'Mod' | 'Alt' | 'Shift' => Boolean(part))
+  return [...modifiers, key].join('+')
+}
+
+function isTextEditingElement(element: Element | null) {
+  return element instanceof HTMLInputElement
+    || element instanceof HTMLTextAreaElement
+    || element instanceof HTMLElement && (element.isContentEditable || element.classList.contains('cm-content'))
+}
+
+function isDocumentEditorElement(element: Element | null) {
+  return Boolean(element?.closest('.code-editor, .ProseMirror'))
+}
+
+function normalizeShortcutOverrides(value: unknown): ShortcutOverrides {
+  if (!value || typeof value !== 'object') return {}
+  const stored = value as Record<string, unknown>
+  const overrides: ShortcutOverrides = {}
+  shortcutDefinitions.forEach(({ id }) => {
+    if (!Object.prototype.hasOwnProperty.call(stored, id)) return
+    if (stored[id] === null) overrides[id] = null
+    else {
+      const binding = normalizeShortcutBinding(stored[id])
+      if (binding) overrides[id] = binding
+    }
+  })
+  return overrides
+}
 
 interface ThemePreset {
   label: string
@@ -290,6 +371,7 @@ interface AppSettings {
   repositorySortDirection: RepositorySortDirection
   titleBarBrand: TitleBarBrand
   titleBarMaterial: boolean
+  shortcuts: ShortcutOverrides
 }
 
 const defaultSettings: AppSettings = {
@@ -324,6 +406,7 @@ const defaultSettings: AppSettings = {
   repositorySortDirection: 'asc',
   titleBarBrand: 'both',
   titleBarMaterial: true,
+  shortcuts: {},
 }
 
 const AUTO_SAVE_DELAY_MIN = 100
@@ -685,7 +768,7 @@ function buildRepositoryRows(remoteFiles: RemoteMarkdownFile[], cachedFiles: Cac
   return sortRepositoryRows(rows, collapsedFolders, sortMode, sortDirection)
 }
 
-type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'copy' | 'download' | 'expand' | 'focus' | 'folder' | 'github' | 'globe' | 'help' | 'link' | 'map' | 'menu' | 'mermaid-svg' | 'minus' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'svg-editor' | 'sync' | 'tabs' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
+type IconName = 'bot' | 'branch' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'clock' | 'collapse' | 'copy' | 'download' | 'edit' | 'expand' | 'focus' | 'folder' | 'github' | 'globe' | 'help' | 'link' | 'map' | 'menu' | 'mermaid-svg' | 'minus' | 'moon' | 'more' | 'plus' | 'refresh' | 'settings' | 'sun' | 'svg-editor' | 'sync' | 'tabs' | 'trash' | 'undo' | 'warning' | 'window-minimize' | 'window-maximize' | 'window-restore' | 'x'
 
 const iconPaths: Record<IconName, React.ReactNode> = {
   bot: <><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M8 16c2 1.3 6 1.3 8 0"/></>,
@@ -698,6 +781,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   collapse: <><path d="M4 14h6v6M20 10h-6V4"/><path d="M14 20v-6h6M10 4v6H4"/></>,
   copy: <><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></>,
   download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>,
+  edit: <><path d="m4 16-.8 4.8L8 20l11.2-11.2a2.8 2.8 0 0 0-4-4Z"/><path d="m13.8 6.2 4 4"/></>,
   expand: <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>,
   focus: <><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></>,
   folder: <><path d="M3 7.5V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3Z"/><path d="M3 9h18"/></>,
@@ -718,6 +802,7 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   'svg-editor': <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m8 9-3 3 3 3m8-6 3 3-3 3m-3-7-2 8"/></>,
   sync: <><path d="m8 15 4-4 4 4m-4-4v9"/><path d="M7 18H5.8A3.8 3.8 0 0 1 5 10.5 7 7 0 0 1 18.5 9a4.5 4.5 0 0 1 .5 8.9"/></>,
   tabs: <><rect x="7" y="4" width="13" height="15" rx="2"/><path d="M4 8v10a2 2 0 0 0 2 2h10"/></>,
+  trash: <><path d="M4 7h16M10 11v6m4-6v6"/><path d="M9 7V4h6v3m-9 0 1 13h10l1-13"/></>,
   undo: <><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6v1"/></>,
   warning: <><path d="M10.3 3.7 2.5 17.2A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.8L13.7 3.7a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/></>,
   'window-minimize': <path d="M5 18h14"/>,
@@ -1207,6 +1292,7 @@ function loadSettings(): AppSettings {
     const repositorySortDirection = stored.repositorySortDirection === 'desc' || stored.repositorySortDirection === 'asc' ? stored.repositorySortDirection : defaultSettings.repositorySortDirection
     const titleBarBrand = stored.titleBarBrand === 'both' || stored.titleBarBrand === 'icon' || stored.titleBarBrand === 'name' || stored.titleBarBrand === 'none' ? stored.titleBarBrand : defaultSettings.titleBarBrand
     const titleBarMaterial = typeof stored.titleBarMaterial === 'boolean' ? stored.titleBarMaterial : defaultSettings.titleBarMaterial
+    const shortcuts = normalizeShortcutOverrides(stored.shortcuts)
     const exportThemePreset: ExportThemePreset = stored.exportThemePreset === 'follow' || stored.exportThemePreset === 'custom' || isMarkdownThemeKey(stored.exportThemePreset)
       ? stored.exportThemePreset
       : defaultSettings.exportThemePreset
@@ -1235,6 +1321,7 @@ function loadSettings(): AppSettings {
       repositorySortDirection,
       titleBarBrand,
       titleBarMaterial,
+      shortcuts,
     }
   } catch {
     return defaultSettings
@@ -1457,6 +1544,9 @@ export default function MarkmapHooks() {
   const [activePanel, setActivePanel] = useState<Panel>(null)
   const [preferenceSection, setPreferenceSection] = useState<PreferenceSection>('global')
   const [mobilePreferenceNavOpen, setMobilePreferenceNavOpen] = useState(false)
+  const [shortcutEditing, setShortcutEditing] = useState<ShortcutId | null>(null)
+  const [shortcutNotice, setShortcutNotice] = useState('')
+  const [shortcutConflictId, setShortcutConflictId] = useState<ShortcutId | null>(null)
   const [helpTipIndex, setHelpTipIndex] = useState(0)
   const [editorWidth, setEditorWidth] = useState(38)
   const [editorCollapsed, setEditorCollapsed] = useState(false)
@@ -1871,6 +1961,7 @@ export default function MarkmapHooks() {
         return { ...current, themeMode: defaultSettings.themeMode, lightThemePreset: defaultSettings.lightThemePreset, darkThemePreset: defaultSettings.darkThemePreset, lightThemeBackgroundOverride: defaultSettings.lightThemeBackgroundOverride, darkThemeBackgroundOverride: defaultSettings.darkThemeBackgroundOverride, lightThemeBackground: defaultSettings.lightThemeBackground, darkThemeBackground: defaultSettings.darkThemeBackground, previewBackgroundColor: nextDark ? defaultSettings.darkThemeBackground : defaultSettings.lightThemeBackground }
       }
       if (section === 'spelling') return { ...current, editorSpellCheck: defaultSettings.editorSpellCheck, spellCheckLanguage: defaultSettings.spellCheckLanguage, userDictionary: [...defaultSettings.userDictionary] }
+      if (section === 'shortcuts') return { ...current, shortcuts: {} }
       return { ...current, autoSave: defaultSettings.autoSave, autoSaveDelay: defaultSettings.autoSaveDelay, startupBehavior: defaultSettings.startupBehavior, repositorySort: defaultSettings.repositorySort, repositorySortDirection: defaultSettings.repositorySortDirection, titleBarBrand: defaultSettings.titleBarBrand, titleBarMaterial: defaultSettings.titleBarMaterial }
     })
     if (section === 'editor') {
@@ -1878,6 +1969,7 @@ export default function MarkmapHooks() {
       savePreferredEditorMode('source')
     }
     if (section === 'appearance') setDark(resolveThemeDark(defaultSettings.themeMode))
+    if (section === 'shortcuts') { setShortcutEditing(null); setShortcutNotice(''); setShortcutConflictId(null) }
   }
   const addDictionaryWord = (word: string) => {
     const normalized = word.trim()
@@ -1907,16 +1999,16 @@ export default function MarkmapHooks() {
       setDictionaryNotice(t('用户词典文件格式无效'))
     }
   }
-  const preferenceSectionTitle = t(preferenceSection === 'editor' ? '编辑器' : preferenceSection === 'preview' ? '预览' : preferenceSection === 'appearance' ? '外观' : preferenceSection === 'spelling' ? '拼写' : '全局')
+  const preferenceSectionTitle = t(preferenceSection === 'editor' ? '编辑器' : preferenceSection === 'preview' ? '预览' : preferenceSection === 'appearance' ? '外观' : preferenceSection === 'spelling' ? '拼写' : preferenceSection === 'shortcuts' ? '快捷键' : '全局')
   const selectPreferenceSection = (section: PreferenceSection) => {
     setPreferenceSection(section)
     setMobilePreferenceNavOpen(false)
   }
-  const openPreferencesPanel = (section: PreferenceSection = 'global') => {
+  const openPreferencesPanel = useCallback((section: PreferenceSection = 'global') => {
     setPreferenceSection(section)
     setMobilePreferenceNavOpen(false)
     setActivePanel('preferences')
-  }
+  }, [])
   const openHelpPanel = () => { setHelpTipIndex(0); setActivePanel('help') }
   const openAboutPanel = () => setActivePanel('about')
   const toggleDesktopMenu = () => setDesktopMenuOpen((value) => {
@@ -2859,7 +2951,7 @@ export default function MarkmapHooks() {
     }
   }, [activeLocalFile?.repositoryId, localGitState.activeId, localGitState.repositories])
 
-  const saveActiveLocalDocument = async () => {
+  const saveActiveLocalDocument = useCallback(async () => {
     const desktop = desktopApi()
     if (!desktop || !activeLocalFile) return
     setLocalGitBusy(true); setLocalGitError(''); setLocalGitNotice('')
@@ -2871,7 +2963,7 @@ export default function MarkmapHooks() {
       setSaveState('saved')
     } catch (error) { setLocalGitError(error instanceof Error ? error.message : '保存本地 Markdown 失败') }
     finally { setLocalGitBusy(false) }
-  }
+  }, [activeLocalFile, markActiveDocumentSaved])
 
   useEffect(() => {
     const desktop = desktopApi()
@@ -3001,7 +3093,29 @@ export default function MarkmapHooks() {
   const isWindowsDesktop = desktopPlatform === 'win32'
   const isMacDesktop = desktopPlatform === 'darwin' || navigator.platform.toLowerCase().includes('mac')
   const shortcutModifier = isMacDesktop ? '⌘' : 'Ctrl'
-  const shortcut = (key: string) => `${shortcutModifier}+${key}`
+  const isDesktopRuntime = Boolean(desktopApi())
+  const defaultShortcutBinding = useCallback((id: ShortcutId) => {
+    const definition = shortcutDefinitions.find((item) => item.id === id)
+    return !isDesktopRuntime && definition && 'webBinding' in definition && definition.webBinding ? definition.webBinding : definition?.defaultBinding || ''
+  }, [isDesktopRuntime])
+  const hasShortcutOverride = useCallback((id: ShortcutId) => Object.prototype.hasOwnProperty.call(settings.shortcuts, id), [settings.shortcuts])
+  const shortcutBinding = useCallback((id: ShortcutId) => hasShortcutOverride(id) ? settings.shortcuts[id] ?? null : defaultShortcutBinding(id), [defaultShortcutBinding, hasShortcutOverride, settings.shortcuts])
+  const shortcutLabel = useCallback((id: ShortcutId) => {
+    const binding = shortcutBinding(id)
+    if (!binding) return t('已禁用')
+    return binding.split('+').map((part) => part === 'Mod' ? shortcutModifier : part).join('+')
+  }, [shortcutBinding, shortcutModifier, t])
+  const shortcutConflicts = useMemo(() => {
+    const groups = new Map<string, ShortcutId[]>()
+    shortcutDefinitions.forEach(({ id }) => {
+      const binding = shortcutBinding(id)
+      if (!binding) return
+      groups.set(binding, [...(groups.get(binding) || []), id])
+    })
+    const conflicts = new Set<ShortcutId>()
+    groups.forEach((ids) => { if (ids.length > 1) ids.forEach((id) => conflicts.add(id)) })
+    return conflicts
+  }, [shortcutBinding])
 
   useEffect(() => {
     const desktop = desktopApi()
@@ -3011,17 +3125,6 @@ export default function MarkmapHooks() {
     const unsubscribe = desktop.windowControl.onMaximizedChanged(setDesktopWindowMaximized)
     return () => { active = false; unsubscribe() }
   }, [isWindowsDesktop])
-
-  useEffect(() => {
-    const saveWithShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase() !== 's') return
-      event.preventDefault()
-      if (activeLocalFile) void saveActiveLocalDocument()
-      else if (!activeRepoPath) void saveStandaloneDocument()
-    }
-    window.addEventListener('keydown', saveWithShortcut)
-    return () => window.removeEventListener('keydown', saveWithShortcut)
-  }, [activeLocalFile, activeRepoPath, saveStandaloneDocument])
 
   const commitLocalRepository = async () => {
     const desktop = desktopApi()
@@ -4333,7 +4436,7 @@ export default function MarkmapHooks() {
     event.target.value = ''
   }
 
-  const chooseMarkdownFile = async () => {
+  const chooseMarkdownFile = useCallback(async () => {
     const desktop = desktopApi()
     if (!desktop) {
       fileInputRef.current?.click()
@@ -4341,27 +4444,84 @@ export default function MarkmapHooks() {
     }
     const file = await desktop.openMarkdown()
     if (file) applyOpenedMarkdown(file.name, file.content, `desktop:${file.id}`, { desktopFileId: file.id, desktopPath: file.path, savedContent: file.content })
-  }
+  }, [applyOpenedMarkdown])
 
-  useEffect(() => {
-    if (!desktopApi()) return
-    const handleDesktopShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey)) return
-      const key = event.key.toLocaleLowerCase()
-      if (!['t', 'o', 'w'].includes(key)) return
-      event.preventDefault()
-      if (key === 't') createBlankDocumentTab()
-      else if (key === 'o') void chooseMarkdownFile()
-      else closeDocumentTab(activeTabId)
-    }
-    window.addEventListener('keydown', handleDesktopShortcut)
-    return () => window.removeEventListener('keydown', handleDesktopShortcut)
-  }, [activeTabId, closeDocumentTab, createBlankDocumentTab])
-
-  const toggleFullscreen = async () => {
+  const toggleFullscreen = useCallback(async () => {
     if (document.fullscreenElement) await document.exitFullscreen()
     else await document.documentElement.requestFullscreen()
-  }
+  }, [])
+
+  useEffect(() => {
+    if (activePanel === 'preferences' && preferenceSection === 'shortcuts') return
+    setShortcutEditing(null)
+    setShortcutNotice('')
+    setShortcutConflictId(null)
+  }, [activePanel, preferenceSection])
+
+  useEffect(() => {
+    if (!shortcutEditing || activePanel !== 'preferences' || preferenceSection !== 'shortcuts') return
+    const handleShortcutCapture = (event: KeyboardEvent) => {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (event.key === 'Escape') {
+        setShortcutEditing(null)
+        setShortcutNotice('')
+        return
+      }
+      const binding = shortcutBindingFromEvent(event)
+      if (!binding) return
+      const conflict = shortcutDefinitions.find((definition) => definition.id !== shortcutEditing && shortcutBinding(definition.id) === binding)
+      if (conflict) {
+        setShortcutConflictId(shortcutEditing)
+        setShortcutNotice(`${t('快捷键冲突')}：${t(conflict.label)}`)
+        return
+      }
+      setSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, [shortcutEditing]: binding } }))
+      setShortcutEditing(null)
+      setShortcutConflictId(null)
+      setShortcutNotice(t('快捷键已更新'))
+    }
+    window.addEventListener('keydown', handleShortcutCapture, true)
+    return () => window.removeEventListener('keydown', handleShortcutCapture, true)
+  }, [activePanel, preferenceSection, shortcutBinding, shortcutEditing, t])
+
+  useEffect(() => {
+    const handleApplicationShortcut = (event: KeyboardEvent) => {
+      if (shortcutEditing && activePanel === 'preferences' && preferenceSection === 'shortcuts') return
+      const binding = shortcutBindingFromEvent(event)
+      if (!binding) return
+      const definition = shortcutDefinitions.find((item) => shortcutBinding(item.id) === binding)
+      const activeElement = document.activeElement
+      const isTextEditing = isTextEditingElement(activeElement)
+      const isDocumentEditor = isDocumentEditorElement(activeElement)
+      const editorOnlyAction = definition && ['undo', 'redo'].includes(definition.id)
+      const textAction = definition && ['copy', 'cut', 'paste', 'delete', 'selectAll'].includes(definition.id)
+      if (!definition) {
+        const changedDefault = shortcutDefinitions.find((item) => hasShortcutOverride(item.id) && defaultShortcutBinding(item.id) === binding)
+        if (!changedDefault) return
+        if (['undo', 'redo'].includes(changedDefault.id) && isDocumentEditor) { event.preventDefault(); event.stopPropagation() }
+        else if (['copy', 'cut', 'paste', 'delete', 'selectAll'].includes(changedDefault.id) && isTextEditing) { event.preventDefault(); event.stopPropagation() }
+        return
+      }
+      if (editorOnlyAction && !isDocumentEditor) return
+      if (textAction && !isTextEditing) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (definition.id === 'newTab') createBlankDocumentTab()
+      else if (definition.id === 'openFile') void chooseMarkdownFile()
+      else if (definition.id === 'save') {
+        if (activeLocalFile) void saveActiveLocalDocument()
+        else if (!activeRepoPath) void saveStandaloneDocument()
+      } else if (definition.id === 'closeTab') closeDocumentTab(activeTabId)
+      else if (definition.id === 'undo') undoLastChange()
+      else if (definition.id === 'redo') redoLastChange()
+      else if (definition.id === 'openPreferences') openPreferencesPanel()
+      else if (definition.id === 'toggleFullscreen') void toggleFullscreen()
+      else if (['copy', 'cut', 'paste', 'delete', 'selectAll'].includes(definition.id)) void runEditorCommand(definition.id as EditorCommand)
+    }
+    window.addEventListener('keydown', handleApplicationShortcut, true)
+    return () => window.removeEventListener('keydown', handleApplicationShortcut, true)
+  }, [activeLocalFile, activePanel, activeRepoPath, activeTabId, chooseMarkdownFile, closeDocumentTab, createBlankDocumentTab, defaultShortcutBinding, hasShortcutOverride, openPreferencesPanel, preferenceSection, redoLastChange, runEditorCommand, saveActiveLocalDocument, saveStandaloneDocument, shortcutBinding, shortcutEditing, toggleFullscreen, undoLastChange])
 
   const startResize = (event: React.PointerEvent) => {
     if (editorCollapsed) return
@@ -5085,23 +5245,23 @@ ${documentRenderConfig.style}
                   <button className={locale === 'en-US' ? 'active' : ''} onClick={() => { setLocale('en-US'); setDesktopMenuOpen(false); setDesktopMenuLanguageOpen(false) }} aria-pressed={locale === 'en-US'}><span>{t('English')}</span></button>
                 </div>
               </> : desktopMenuSection === 'file' ? <>
-                <button onClick={() => { setDesktopMenuOpen(false); createBlankDocumentTab() }}><span>{t('新建标签页')}</span><kbd>{shortcut('T')}</kbd></button>
-                <button onClick={() => { setDesktopMenuOpen(false); void chooseMarkdownFile() }}><span>{t('打开文件…')}</span><kbd>{shortcut('O')}</kbd></button>
+                <button onClick={() => { setDesktopMenuOpen(false); createBlankDocumentTab() }}><span>{t('新建标签页')}</span><kbd>{shortcutLabel('newTab')}</kbd></button>
+                <button onClick={() => { setDesktopMenuOpen(false); void chooseMarkdownFile() }}><span>{t('打开文件…')}</span><kbd>{shortcutLabel('openFile')}</kbd></button>
                 {desktopApi() && <button onClick={() => { setDesktopMenuOpen(false); void openLocalGitFolder() }}><span>{t('打开本地文件夹…')}</span></button>}
                 <hr />
-                <button disabled={Boolean(activeRepoPath) || !activeTabUnsaved} onClick={() => { setDesktopMenuOpen(false); if (activeLocalFile) void saveActiveLocalDocument(); else void saveStandaloneDocument() }}><span>{t('保存')}</span><kbd>{shortcut('S')}</kbd></button>
+                <button disabled={Boolean(activeRepoPath) || !activeTabUnsaved} onClick={() => { setDesktopMenuOpen(false); if (activeLocalFile) void saveActiveLocalDocument(); else void saveStandaloneDocument() }}><span>{t('保存')}</span><kbd>{shortcutLabel('save')}</kbd></button>
                 <button onClick={() => { setDesktopMenuOpen(false); setExportError(''); setExportFormat('md'); setExportTab('file'); setActivePanel('export') }}><span>{t('另存 / 导出…')}</span></button>
                 <hr />
-                <button onClick={() => { setDesktopMenuOpen(false); closeDocumentTab(activeTabId) }}><span>{t('关闭标签页')}</span><kbd>{shortcut('W')}</kbd></button>
+                <button onClick={() => { setDesktopMenuOpen(false); closeDocumentTab(activeTabId) }}><span>{t('关闭标签页')}</span><kbd>{shortcutLabel('closeTab')}</kbd></button>
               </> : desktopMenuSection === 'edit' ? <>
-                <button disabled={!canUndo} onClick={() => { setDesktopMenuOpen(false); undoLastChange() }}><span>{t('撤回上一次修改')}</span><kbd>{shortcut('Z')}</kbd></button>
-                <button disabled={!canRedo} onClick={() => { setDesktopMenuOpen(false); redoLastChange() }}><span>{t('重做')}</span><kbd>{shortcut('Shift+Z')}</kbd></button>
+                <button disabled={!canUndo} onClick={() => { setDesktopMenuOpen(false); undoLastChange() }}><span>{t('撤回上一次修改')}</span><kbd>{shortcutLabel('undo')}</kbd></button>
+                <button disabled={!canRedo} onClick={() => { setDesktopMenuOpen(false); redoLastChange() }}><span>{t('重做')}</span><kbd>{shortcutLabel('redo')}</kbd></button>
                 <hr />
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('copy') }}><span>{t('复制')}</span><kbd>{shortcut('C')}</kbd></button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('cut') }}><span>{t('剪切')}</span><kbd>{shortcut('X')}</kbd></button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('paste') }}><span>{t('粘贴')}</span><kbd>{shortcut('V')}</kbd></button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('delete') }}><span>{t('删除')}</span><kbd>Delete</kbd></button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('selectAll') }}><span>{t('全选')}</span><kbd>{shortcut('A')}</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('copy') }}><span>{t('复制')}</span><kbd>{shortcutLabel('copy')}</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('cut') }}><span>{t('剪切')}</span><kbd>{shortcutLabel('cut')}</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('paste') }}><span>{t('粘贴')}</span><kbd>{shortcutLabel('paste')}</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('delete') }}><span>{t('删除')}</span><kbd>{shortcutLabel('delete')}</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('selectAll') }}><span>{t('全选')}</span><kbd>{shortcutLabel('selectAll')}</kbd></button>
                 <hr />
                 <button onClick={() => { setDesktopMenuOpen(false); openPreferencesPanel('editor') }}><span>{t('编辑器偏好设置')}</span></button>
               </> : desktopMenuSection === 'view' ? <>
@@ -5375,6 +5535,7 @@ ${documentRenderConfig.style}
               <button type="button" className={preferenceSection === 'preview' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'preview'} onClick={() => selectPreferenceSection('preview')}><Icon name="map" /><span><strong>{t('预览')}</strong><small>{t('思维导图与图表预览')}</small></span></button>
               <button type="button" className={preferenceSection === 'appearance' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'appearance'} onClick={() => selectPreferenceSection('appearance')}><Icon name="sun" /><span><strong>{t('外观')}</strong><small>{t('主题与界面颜色')}</small></span></button>
               <button type="button" className={preferenceSection === 'spelling' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'spelling'} onClick={() => selectPreferenceSection('spelling')}><Icon name="globe" /><span><strong>{t('拼写')}</strong><small>{t('语言与用户词典')}</small></span></button>
+              <button type="button" className={preferenceSection === 'shortcuts' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'shortcuts'} onClick={() => selectPreferenceSection('shortcuts')}><Icon name="settings" /><span><strong>{t('快捷键')}</strong><small>{t('自定义操作组合')}</small></span></button>
             </nav>
             <div className="preferences-content">
               <div className="preferences-page-toolbar"><div><strong>{preferenceSectionTitle}</strong><small>{t('当前页设置会立即生效')}</small></div><button className="reset-settings-button" type="button" onClick={() => resetPreferenceSection(preferenceSection)}><Icon name="refresh" />{t('恢复默认设置')}</button></div>
@@ -5460,6 +5621,35 @@ ${documentRenderConfig.style}
                 </div>
                 {dictionaryNotice && <div className="dictionary-transfer-note" role="status" aria-live="polite"><Icon name="check" />{dictionaryNotice}</div>}
                 {settings.userDictionary.length ? <div className="dictionary-chips" aria-label={t('用户词典')}>{settings.userDictionary.map((word) => <button type="button" key={word} onClick={() => removeDictionaryWord(word)} title={t('移除词条')}>{word}<Icon name="x" /></button>)}</div> : <div className="settings-note"><Icon name="check" /><span>{t('还没有自定义词条。')}</span></div>}
+              </div>}
+              {preferenceSection === 'shortcuts' && <div className="settings-body preferences-section-body shortcuts-preferences-body">
+                <div className="settings-note"><Icon name="settings" /><span>{t('快捷键设置说明')}</span></div>
+                <div className="preferences-section-heading"><strong>{t('快捷键')}</strong><small>{t('自定义键盘快捷键。')}</small></div>
+                {shortcutNotice && <div className="shortcut-notice" role="status" aria-live="polite"><Icon name="warning" />{shortcutNotice}</div>}
+                <div className="shortcut-table" role="table" aria-label={t('快捷键')}>
+                  <div className="shortcut-table-row shortcut-table-head" role="row"><span role="columnheader">{t('描述')}</span><span role="columnheader">{t('组合键')}</span><span role="columnheader">{t('选项')}</span></div>
+                  {shortcutDefinitions.map((definition) => {
+                    const binding = shortcutBinding(definition.id)
+                    const conflictNames = shortcutDefinitions.filter((item) => item.id !== definition.id && Boolean(binding) && shortcutBinding(item.id) === binding).map((item) => t(item.label)).join('、')
+                    const hasConflict = shortcutConflicts.has(definition.id) || shortcutConflictId === definition.id
+                    const conflictText = conflictNames || (shortcutConflictId === definition.id ? t('快捷键冲突') : '')
+                    const hasOverride = hasShortcutOverride(definition.id)
+                    const isDisabled = hasOverride && !settings.shortcuts[definition.id]
+                    return <div className={`shortcut-table-row${hasConflict ? ' has-conflict' : ''}${shortcutEditing === definition.id ? ' is-editing' : ''}`} key={definition.id} role="row">
+                      <span className="shortcut-description" role="cell">{t(definition.label)}</span>
+                      <span className="shortcut-binding-cell" role="cell">
+                        {shortcutEditing === definition.id ? <button type="button" className="shortcut-capture-button" onClick={() => { setShortcutEditing(null); setShortcutNotice(''); setShortcutConflictId(null) }}>{t('按下新的组合键…')}</button> : <kbd>{shortcutLabel(definition.id)}</kbd>}
+                        {hasConflict && <span className="shortcut-conflict-mark" title={`${t('快捷键冲突')}${conflictText ? `：${conflictText}` : ''}`} aria-label={`${t('快捷键冲突')}${conflictText ? `：${conflictText}` : ''}`}>!</span>}
+                      </span>
+                      <span className="shortcut-actions" role="cell">
+                        <button type="button" aria-label={`${t('编辑快捷键')}：${t(definition.label)}`} title={t('编辑快捷键')} onClick={() => { setShortcutEditing(definition.id); setShortcutNotice(''); setShortcutConflictId(null) }}><Icon name="edit" /></button>
+                        <button type="button" aria-label={`${t('恢复默认')}：${t(definition.label)}`} title={t('恢复默认')} disabled={!hasOverride} onClick={() => { setSettings((current) => { const shortcuts = { ...current.shortcuts }; delete shortcuts[definition.id]; return { ...current, shortcuts } }); if (shortcutEditing === definition.id) setShortcutEditing(null); setShortcutNotice(''); setShortcutConflictId(null) }}><Icon name="refresh" /></button>
+                        <button type="button" aria-label={`${t('禁用快捷键')}：${t(definition.label)}`} title={t('禁用快捷键')} disabled={isDisabled} onClick={() => { setSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, [definition.id]: null } })); if (shortcutEditing === definition.id) setShortcutEditing(null); setShortcutNotice(''); setShortcutConflictId(null) }}><Icon name="trash" /></button>
+                      </span>
+                    </div>
+                  })}
+                </div>
+                <small className="shortcut-help-text">{t('编辑时按 Esc 取消；同一组合键不能分配给多个操作。')}</small>
               </div>}
               {preferenceSection === 'global' && <div className="settings-body preferences-section-body">
                 <div className="settings-note"><Icon name="settings" /><span>{t('全局设置会影响后续打开的文档和仓库视图；已经打开的内容会立即使用新的排序和保存策略。')}</span></div>

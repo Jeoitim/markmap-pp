@@ -793,6 +793,30 @@ svg { flex: 0 0 auto; }
 .preferences-section-heading + .preferences-section-heading { margin-top: 2px; }
 .preferences-section-heading strong { color: var(--text); font-size: 14px; }
 .preferences-section-heading small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.shortcuts-preferences-body { gap: 14px; }
+.shortcut-notice { display: flex; align-items: flex-start; gap: 7px; padding: 10px 11px; border: 1px solid color-mix(in srgb, #c57932 38%, var(--border)); border-radius: 9px; color: #b56f2d; background: color-mix(in srgb, #c57932 8%, var(--panel)); font-size: 11px; line-height: 1.45; }
+.shortcut-notice svg { width: 15px; height: 15px; flex: 0 0 15px; }
+.shortcut-table { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-soft); }
+.shortcut-table-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 170px 92px; align-items: center; border-top: 1px solid var(--border); color: var(--text); font-size: 12px; }
+.shortcut-table-row:first-child { border-top: 0; }
+.shortcut-table-row > span { min-width: 0; padding: 10px 11px; }
+.shortcut-table-head { min-height: 35px; color: var(--muted); background: color-mix(in srgb, var(--panel) 70%, var(--panel-soft)); font-size: 11px; font-weight: 650; }
+.shortcut-table-head > span { padding-top: 8px; padding-bottom: 8px; }
+.shortcut-table-head > span:nth-child(2), .shortcut-table-head > span:nth-child(3) { text-align: center; }
+.shortcut-description { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shortcut-binding-cell { display: flex; align-items: center; justify-content: center; gap: 7px; }
+.shortcut-binding-cell kbd { min-width: 56px; display: inline-flex; align-items: center; justify-content: center; min-height: 25px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--panel); font-family: inherit; font-size: 11px; line-height: 1; white-space: nowrap; }
+.shortcut-capture-button { min-width: 145px; min-height: 28px; padding: 0 8px; border: 1px dashed color-mix(in srgb, var(--accent) 60%, var(--border)); border-radius: 6px; color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); font-size: 11px; cursor: pointer; }
+.shortcut-capture-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 2px; }
+.shortcut-actions { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.shortcut-actions button { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; cursor: pointer; }
+.shortcut-actions button:hover:not(:disabled) { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.shortcut-actions button:disabled { opacity: .32; cursor: not-allowed; }
+.shortcut-actions svg { width: 15px; height: 15px; }
+.shortcut-table-row.is-editing { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.shortcut-table-row.has-conflict { background: color-mix(in srgb, #c57932 7%, transparent); }
+.shortcut-conflict-mark { width: 17px; height: 17px; display: inline-grid; place-items: center; flex: 0 0 17px; border-radius: 50%; color: #fff; background: #c57932; font-size: 11px; font-weight: 800; line-height: 1; }
+.shortcut-help-text { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .theme-active-note { display: flex; align-items: center; gap: 8px; min-height: 36px; margin: -2px 0 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--panel-soft); font-size: 11px; }
 .theme-swatch { width: 13px; height: 13px; flex: 0 0 13px; border: 1px solid var(--border); border-radius: 50%; background: var(--accent); box-shadow: inset 0 0 0 3px var(--panel); }
 .theme-swatch.dark { background: var(--accent); box-shadow: inset 0 0 0 3px var(--panel); }
@@ -1245,6 +1269,14 @@ svg { flex: 0 0 auto; }
   .preferences-page-toolbar strong { font-size: 14px; }
   .preferences-page-toolbar small { font-size: 9px; }
   .preferences-content .settings-body { padding: 18px 14px calc(18px + env(safe-area-inset-bottom)); }
+  .shortcut-table-row { grid-template-columns: minmax(0, 1fr) 116px 92px; }
+  .shortcut-table-row > span { padding: 9px 7px; }
+  .shortcut-table-head > span { padding-top: 7px; padding-bottom: 7px; }
+  .shortcut-binding-cell kbd { min-width: 48px; padding: 0 6px; font-size: 10px; }
+  .shortcut-capture-button { min-width: 118px; padding: 0 6px; font-size: 10px; }
+  .shortcut-actions { gap: 0; }
+  .shortcut-actions button { width: 26px; height: 27px; }
+  .shortcut-actions svg { width: 14px; height: 14px; }
   .about-panel { width: 100%; }
   .about-body { padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
   .about-meta, .about-actions { grid-template-columns: 1fr; }
