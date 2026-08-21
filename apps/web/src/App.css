@@ -378,25 +378,25 @@ svg { flex: 0 0 auto; }
 .agent-settings, .agent-conversation, .agent-history, .agent-proposals, .agent-diff, .agent-git-history,
 .agent-code-block pre, .agent-mermaid-source, .agent-markdown pre, .agent-composer .agent-scope,
 .action-overflow-menu, .diagnostics-popover, .panel-backdrop,
-.settings-body, .github-body, .help-body, .help-tip-card,
+.settings-body, .github-body, .help-body, .help-tip-card, .preferences-content,
 .repository-tree, .repository-context-menu, .repository-history-list,
 .repository-graph-branches, .repository-graph-list,
 .repository-save-breadcrumbs, .repository-save-tree { scrollbar-color: color-mix(in srgb,var(--muted) 55%,transparent) transparent; scrollbar-width: thin; }.agent-settings::-webkit-scrollbar, .agent-conversation::-webkit-scrollbar, .agent-history::-webkit-scrollbar, .agent-proposals::-webkit-scrollbar, .agent-diff::-webkit-scrollbar, .agent-git-history::-webkit-scrollbar,
 .agent-code-block pre::-webkit-scrollbar, .agent-mermaid-source::-webkit-scrollbar, .agent-markdown pre::-webkit-scrollbar, .agent-composer .agent-scope::-webkit-scrollbar,
 .action-overflow-menu::-webkit-scrollbar, .diagnostics-popover::-webkit-scrollbar, .panel-backdrop::-webkit-scrollbar,
-.settings-body::-webkit-scrollbar, .github-body::-webkit-scrollbar, .help-body::-webkit-scrollbar, .help-tip-card::-webkit-scrollbar,
+.settings-body::-webkit-scrollbar, .github-body::-webkit-scrollbar, .help-body::-webkit-scrollbar, .help-tip-card::-webkit-scrollbar, .preferences-content::-webkit-scrollbar,
 .repository-tree::-webkit-scrollbar, .repository-context-menu::-webkit-scrollbar, .repository-history-list::-webkit-scrollbar,
 .repository-graph-branches::-webkit-scrollbar, .repository-graph-list::-webkit-scrollbar,
 .repository-save-breadcrumbs::-webkit-scrollbar, .repository-save-tree::-webkit-scrollbar { width: 8px; height: 8px; }.agent-settings::-webkit-scrollbar-track, .agent-conversation::-webkit-scrollbar-track, .agent-history::-webkit-scrollbar-track, .agent-proposals::-webkit-scrollbar-track, .agent-diff::-webkit-scrollbar-track, .agent-git-history::-webkit-scrollbar-track,
 .agent-code-block pre::-webkit-scrollbar-track, .agent-mermaid-source::-webkit-scrollbar-track, .agent-markdown pre::-webkit-scrollbar-track, .agent-composer .agent-scope::-webkit-scrollbar-track,
 .action-overflow-menu::-webkit-scrollbar-track, .diagnostics-popover::-webkit-scrollbar-track, .panel-backdrop::-webkit-scrollbar-track,
-.settings-body::-webkit-scrollbar-track, .github-body::-webkit-scrollbar-track, .help-body::-webkit-scrollbar-track, .help-tip-card::-webkit-scrollbar-track,
+.settings-body::-webkit-scrollbar-track, .github-body::-webkit-scrollbar-track, .help-body::-webkit-scrollbar-track, .help-tip-card::-webkit-scrollbar-track, .preferences-content::-webkit-scrollbar-track,
 .repository-tree::-webkit-scrollbar-track, .repository-context-menu::-webkit-scrollbar-track, .repository-history-list::-webkit-scrollbar-track,
 .repository-graph-branches::-webkit-scrollbar-track, .repository-graph-list::-webkit-scrollbar-track,
 .repository-save-breadcrumbs::-webkit-scrollbar-track, .repository-save-tree::-webkit-scrollbar-track { background: transparent; }.agent-settings::-webkit-scrollbar-thumb, .agent-conversation::-webkit-scrollbar-thumb, .agent-history::-webkit-scrollbar-thumb, .agent-proposals::-webkit-scrollbar-thumb, .agent-diff::-webkit-scrollbar-thumb, .agent-git-history::-webkit-scrollbar-thumb,
 .agent-code-block pre::-webkit-scrollbar-thumb, .agent-mermaid-source::-webkit-scrollbar-thumb, .agent-markdown pre::-webkit-scrollbar-thumb, .agent-composer .agent-scope::-webkit-scrollbar-thumb,
 .action-overflow-menu::-webkit-scrollbar-thumb, .diagnostics-popover::-webkit-scrollbar-thumb, .panel-backdrop::-webkit-scrollbar-thumb,
-.settings-body::-webkit-scrollbar-thumb, .github-body::-webkit-scrollbar-thumb, .help-body::-webkit-scrollbar-thumb, .help-tip-card::-webkit-scrollbar-thumb,
+.settings-body::-webkit-scrollbar-thumb, .github-body::-webkit-scrollbar-thumb, .help-body::-webkit-scrollbar-thumb, .help-tip-card::-webkit-scrollbar-thumb, .preferences-content::-webkit-scrollbar-thumb,
 .repository-tree::-webkit-scrollbar-thumb, .repository-context-menu::-webkit-scrollbar-thumb, .repository-history-list::-webkit-scrollbar-thumb,
 .repository-graph-branches::-webkit-scrollbar-thumb, .repository-graph-list::-webkit-scrollbar-thumb,
 .repository-save-breadcrumbs::-webkit-scrollbar-thumb, .repository-save-tree::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: color-mix(in srgb,var(--muted) 55%,transparent); background-clip: padding-box; }.agent-settings .agent-field-grid + .agent-field { margin-top: 15px; }.agent-settings .agent-field-grid { margin-top: 2px; }.agent-provider-field { margin-bottom: 15px; }.agent-field-grid { gap: 14px; }.agent-field { gap: 7px; }.agent-settings-actions { margin-top: 14px; }.agent-advanced { margin-top: 14px; padding-top: 13px; }
@@ -749,7 +749,7 @@ svg { flex: 0 0 auto; }
 .reset-settings-button { display: inline-flex; align-items: center; flex: 0 0 auto; min-width: max-content; gap: 5px; height: 29px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: var(--panel); cursor: pointer; font-size: 12px; white-space: nowrap; transition: border-color .16s ease, background-color .16s ease, color .16s ease; }
 .reset-settings-button:hover { border-color: var(--accent-border); color: var(--text); background: var(--panel-soft); }
 .reset-settings-button svg { width: 14px; height: 14px; }
-.settings-body, .github-body, .help-body { min-height: 0; max-height: calc(100dvh - 95px); overflow: auto; scrollbar-gutter: stable; }
+.settings-body, .github-body, .help-body { min-height: 0; max-height: calc(100dvh - 95px); overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
 .settings-body { display: grid; gap: 21px; padding: 22px; }
 .preferences-panel { width: min(820px, 100%); }
 .preferences-layout { min-height: 0; display: grid; grid-template-columns: 190px minmax(0, 1fr); flex: 1 1 auto; }
@@ -762,7 +762,7 @@ svg { flex: 0 0 auto; }
 .preferences-nav button > span { min-width: 0; display: grid; gap: 3px; }
 .preferences-nav button strong { color: currentColor; font-size: 13px; }
 .preferences-nav button small { overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.preferences-content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; }
+.preferences-content { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; }
 .preferences-content > .settings-body { overflow: visible; }
 .preferences-page-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 19px 26px 0; }
 .preferences-page-toolbar > div { min-width: 0; display: grid; gap: 3px; }
@@ -1100,15 +1100,17 @@ svg { flex: 0 0 auto; }
 .font-samples { display: grid; gap: 8px; padding: 15px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-soft); }
 .font-samples span { font-size: 18px; }
 .font-samples small { color: var(--muted); font-family: "Inter Variable", sans-serif; font-size: 12px; font-weight: 600; }
-.export-panel-body { gap: 17px; }
+.export-panel-body { min-width: 0; gap: 17px; overflow-x: hidden; }
+.export-panel-body > * { min-width: 0; max-width: 100%; }
 .export-appearance-options { display: grid; gap: 11px; padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-soft); }
-.export-section-heading { display: grid; gap: 3px; }
+.export-appearance-options > *, .export-panel-body .settings-note > span, .export-panel-body .field > small { min-width: 0; }
+.export-section-heading { min-width: 0; display: grid; gap: 3px; }
 .export-section-heading strong { color: var(--text); font-size: 13px; }
-.export-section-heading small { color: var(--muted); font-size: 11px; line-height: 1.45; }
-.export-color-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); font-size: 13px; font-weight: 600; }
-.export-color-field > span:first-child { display: inline-flex; align-items: baseline; gap: 6px; }
+.export-section-heading small { min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.export-color-field { min-width: 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; color: var(--text); font-size: 13px; font-weight: 600; }
+.export-color-field > span:first-child { min-width: 0; display: inline-flex; align-items: baseline; flex: 1 1 100px; gap: 6px; overflow-wrap: anywhere; }
 .export-color-field > span:first-child small { color: var(--muted); font-size: 11px; font-weight: 450; }
-.export-color-control { display: inline-flex; align-items: center; gap: 8px; }
+.export-color-control { min-width: 0; display: inline-flex; align-items: center; flex: 0 0 auto; gap: 8px; }
 .export-color-control input[type='color'] { width: 42px; height: 30px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); cursor: pointer; }
 .export-color-control input[type='color']:disabled { opacity: .45; cursor: not-allowed; }
 .export-color-control code { min-width: 64px; color: var(--muted); font: 11px "JetBrains Mono Variable",monospace; letter-spacing: .02em; }
@@ -1119,7 +1121,8 @@ svg { flex: 0 0 auto; }
 .export-color-presets button span { width: 14px; height: 14px; display: block; border: 1px solid #8d929c55; border-radius: 4px; }
 .export-appearance-switch { padding-top: 10px; border-top: 1px solid var(--border); }
 .export-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-soft); }
-.export-tabs button { min-width: 0; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; }
+.export-tabs button { min-width: 0; min-height: 34px; height: auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; }
+.export-tabs button span { min-width: 0; overflow-wrap: anywhere; text-align: center; }
 .export-tabs button:hover { color: var(--text); background: color-mix(in srgb,var(--accent) 7%,transparent); }
 .export-tabs button.active { color: var(--accent); background: var(--panel); box-shadow: 0 1px 4px #1111; font-weight: 650; }
 .export-tabs button svg { width: 15px; height: 15px; }
