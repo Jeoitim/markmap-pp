@@ -63,6 +63,8 @@ interface MarkdownEditorProps {
   fontFamily: string
   fontWeight: number
   spellCheck: boolean
+  spellCheckLanguage: string
+  userDictionary: string[]
   scheme: HighlightScheme
   locale: Locale
   mode: 'markdown' | 'mermaid'
@@ -90,7 +92,7 @@ export interface MarkdownEditorHandle {
   revealLine: (line: number) => void
 }
 
-const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, scheme, locale, mode, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink }, ref) {
+const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, spellCheckLanguage, userDictionary, scheme, locale, mode, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink }, ref) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
@@ -103,7 +105,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   const externalUpdate = useRef(false)
   const localeRef = useRef(locale)
   const modeRef = useRef(mode)
-  const initialConfigRef = useRef({ value, dark, fontSize, fontFamily, fontWeight, spellCheck, scheme })
+  const initialConfigRef = useRef({ value, dark, fontSize, fontFamily, fontWeight, spellCheck, spellCheckLanguage, userDictionary, scheme })
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onSelectionContextMenuRef.current = onSelectionContextMenu }, [onSelectionContextMenu])
@@ -156,7 +158,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         linter((editor) => modeRef.current === 'mermaid' ? inspectMermaid(editor.state.doc.toString(), localeRef.current) : inspectMarkdown(editor.state.doc.toString(), localeRef.current), { delay: 250 }),
         EditorView.lineWrapping,
         keymap.of([indentWithTab]),
-        EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: String(initialConfigRef.current.spellCheck) }),
+        EditorView.contentAttributes.of({ 'aria-label': 'Markdown 内容', spellcheck: String(initialConfigRef.current.spellCheck), ...(initialConfigRef.current.spellCheckLanguage === 'auto' ? {} : { lang: initialConfigRef.current.spellCheckLanguage }), 'data-user-dictionary': initialConfigRef.current.userDictionary.join('|') }),
         EditorView.domEventHandlers({
           contextmenu: (event, editor) => {
             if (nativeSelectionModeRef.current) return false
@@ -214,6 +216,17 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     const content = viewRef.current?.contentDOM
     if (content) content.setAttribute('spellcheck', String(spellCheck))
   }, [spellCheck])
+
+  useEffect(() => {
+    const content = viewRef.current?.contentDOM
+    if (!content) return
+    if (spellCheckLanguage === 'auto') content.removeAttribute('lang')
+    else content.setAttribute('lang', spellCheckLanguage)
+  }, [spellCheckLanguage])
+
+  useEffect(() => {
+    viewRef.current?.contentDOM.setAttribute('data-user-dictionary', userDictionary.join('|'))
+  }, [userDictionary])
 
   useEffect(() => {
     const view = viewRef.current

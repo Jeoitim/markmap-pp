@@ -14,6 +14,8 @@ export interface VisualMarkdownEditorProps {
   fontFamily: string
   fontWeight: number
   spellCheck: boolean
+  spellCheckLanguage: string
+  userDictionary: string[]
   onSelectionContextMenu?: (selection: VisualMarkdownSelection) => void
   onSelectionChange?: (selection: VisualMarkdownSelection | null) => void
   nativeSelectionMode?: boolean
@@ -74,7 +76,7 @@ function frontmatterLineCount(frontmatter: string) {
   return frontmatter ? Math.max(0, frontmatter.split(/\r?\n/).length - 1) : 0
 }
 
-const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink }, ref) {
+const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, spellCheckLanguage, userDictionary, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink }, ref) {
   const { t } = useI18n()
   const [initialParts] = useState(() => splitMarkdown(value))
   const [activeHeading, setActiveHeading] = useState<ActiveHeading | null>(null)
@@ -194,9 +196,13 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     const editor = getInstance()
     if (!editor) return
     editor.action((ctx) => {
-      ctx.get(editorViewCtx).dom.setAttribute('spellcheck', String(spellCheck))
+      const dom = ctx.get(editorViewCtx).dom
+      dom.setAttribute('spellcheck', String(spellCheck))
+      if (spellCheckLanguage === 'auto') dom.removeAttribute('lang')
+      else dom.setAttribute('lang', spellCheckLanguage)
+      dom.setAttribute('data-user-dictionary', userDictionary.join('|'))
     })
-  }, [getInstance, loading, spellCheck])
+  }, [getInstance, loading, spellCheck, spellCheckLanguage, userDictionary])
 
   useImperativeHandle(ref, () => ({
     revealLine: (lineNumber, text) => {
