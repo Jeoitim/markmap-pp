@@ -5087,9 +5087,7 @@ ${documentRenderConfig.style}
       {linkNotice && <div className="link-notice" role="status" aria-live="polite">{linkNotice}</div>}
 
       {activePanel && <div className="panel-backdrop" onMouseDown={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }}>
-        <div className={`settings-panel-frame ${activePanel === 'preferences' ? 'preferences-panel' : ''} ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'about' ? 'about-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`}>
-          <div className="settings-panel-glass-layer" aria-hidden="true" />
-          <section ref={settingsPanelRef} tabIndex={-1} className="settings-panel" role="dialog" aria-label={activePanel === 'preferences' ? t('偏好设置') : activePanel === 'export' ? t('导出设置') : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
+        <section ref={settingsPanelRef} tabIndex={-1} className={`settings-panel ${activePanel === 'preferences' ? 'preferences-panel' : ''} ${activePanel === 'help' ? 'help-panel' : ''} ${activePanel === 'about' ? 'about-panel' : ''} ${activePanel === 'github' ? 'github-panel' : ''} ${activePanel === 'links' ? 'note-links-settings-panel' : ''} ${activePanel === 'export' && exportTab === 'repository' && repositorySaveMode ? 'repository-save-panel' : ''}`} role="dialog" aria-label={activePanel === 'preferences' ? t('偏好设置') : activePanel === 'export' ? t('导出设置') : activePanel === 'github' ? 'GitHub 仓库' : activePanel === 'help' ? '使用说明' : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? '笔记链接' : '显示设置'} onMouseDown={(event) => event.stopPropagation()}>
           <header><div><strong>{activePanel === 'preferences' ? t('偏好设置') : activePanel === 'github' ? t('仓库设置') : activePanel === 'help' ? t('使用说明') : activePanel === 'about' ? t('关于 markmap++') : activePanel === 'links' ? t('笔记链接') : exportTab === 'repository' ? t('另存到 Git 仓库') : documentMode === 'mermaid' ? t('导出 Mermaid 文档') : t('导出思维导图')}</strong>{activePanel !== 'help' && <small>{activePanel === 'preferences' ? t('编辑器与预览的显示偏好') : activePanel === 'export' ? exportTab === 'repository' ? t(documentMode === 'mermaid' ? '选择仓库位置并暂存当前 Mermaid' : '选择仓库位置并暂存当前 Markdown') : documentMode === 'mermaid' ? t('Mermaid 图形与 .mmd 源文件') : t('选择格式与清晰度') : activePanel === 'github' ? t('在远程仓库与本地文件夹之间随时切换') : activePanel === 'about' ? t('版本、作者与上游项目鸣谢') : activePanel === 'links' ? t('反向链接、出站链接与失效目标') : t('更改会立即生效')}</small>}</div><div className="panel-header-actions"><button className="header-icon" onClick={() => { if (repositorySaveMode) cancelRepositorySave(); setActivePanel(null) }} aria-label={t('关闭')}><Icon name="x" /></button></div></header>
           {activePanel === 'github' && <div className="github-body">
             <div className="repository-settings-tabs" role="tablist"><button role="tab" aria-selected={repositorySettingsTab === 'remote'} className={repositorySettingsTab === 'remote' ? 'active' : ''} onClick={() => { setRepositorySettingsTab('remote'); if (githubConfig) setRepositorySource('remote') }}><Icon name="github" /><span>{t('远程仓库')}</span><b>{githubProfiles.length}</b></button><button role="tab" aria-selected={repositorySettingsTab === 'local'} className={repositorySettingsTab === 'local' ? 'active' : ''} onClick={() => { setRepositorySettingsTab('local'); if (localGitState.activeId) setRepositorySource('local') }}><Icon name="folder" /><span>{t('本地文件夹')}</span><b>{localGitState.repositories.length}</b></button></div>
@@ -5296,8 +5294,7 @@ ${documentRenderConfig.style}
               </>}
             </>}
           </div>}
-          </section>
-        </div>
+        </section>
       </div>}
       {mermaidViewer && <MermaidPreviewModal viewer={mermaidViewer} onClose={() => setMermaidViewer(null)} />}
     </main>

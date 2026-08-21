@@ -671,16 +671,16 @@ svg { flex: 0 0 auto; }
 .grab-zone span { width: 2px; height: 100%; background: var(--border); transition: .15s; }
 .grab-zone:hover span, .workspace.resizing .grab-zone span { background: var(--accent); }
 
-.panel-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; isolation: isolate; overflow: hidden; padding: 20px; background: rgb(8 10 16 / .20); -webkit-app-region: no-drag; }
-.panel-backdrop::before { content: ''; position: absolute; z-index: 0; inset: 0; pointer-events: none; background: rgb(8 10 16 / .01); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); transform: translateZ(0); backface-visibility: hidden; }
-.settings-panel-frame { position: relative; z-index: 1; width: min(430px, 100%); max-width: 100%; max-height: calc(100dvh - 40px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; isolation: isolate; border: 1px solid var(--border); border-radius: 15px; background: transparent; box-shadow: 0 24px 70px #0b0d1338; transform: translateZ(0); backface-visibility: hidden; -webkit-app-region: no-drag; }
-.settings-panel-glass-layer { position: absolute; z-index: 0; inset: 0; pointer-events: none; border-radius: inherit; background: var(--overlay-surface); -webkit-backdrop-filter: blur(30px) saturate(1.12); backdrop-filter: blur(30px) saturate(1.12); transform: translateZ(0); backface-visibility: hidden; }
-.settings-panel { position: relative; z-index: 1; width: 100%; max-width: none; max-height: none; min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; overflow: hidden; border: 0; border-radius: inherit; background: transparent; box-shadow: none; animation: none; -webkit-app-region: no-drag; }
-.settings-panel > * { position: relative; z-index: 1; }
+.panel-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: auto; padding: 20px; background: #14151b40; backdrop-filter: blur(2px); }
+.settings-panel { width: min(430px, 100%); max-width: 100%; max-height: calc(100dvh - 40px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 15px; background: var(--panel); box-shadow: 0 24px 70px #0b0d1338; animation: panel-in .16s ease-out; }
 :root[data-desktop-platform='win32'] .panel-backdrop,
 :root[data-desktop-platform='darwin'] .panel-backdrop { padding: calc(64px + var(--native-titlebar-height, 0px) + 20px) 20px 20px; }
-:root[data-desktop-platform='win32'] .settings-panel-frame,
-:root[data-desktop-platform='darwin'] .settings-panel-frame { max-height: calc(100dvh - 104px - var(--native-titlebar-height, 0px)); }
+:root[data-desktop-platform='win32'] .settings-panel,
+:root[data-desktop-platform='darwin'] .settings-panel { max-height: calc(100dvh - 104px - var(--native-titlebar-height, 0px)); }
+:root[data-desktop-platform='win32'] .panel-backdrop,
+:root[data-desktop-platform='darwin'] .panel-backdrop,
+:root[data-desktop-platform='win32'] .settings-panel,
+:root[data-desktop-platform='darwin'] .settings-panel { -webkit-app-region: no-drag; }
 .settings-panel:focus { outline: none; }
 .settings-panel > header { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 17px 18px 14px; border-bottom: 1px solid var(--border); }
 .settings-panel > header > div { min-width: 0; display: grid; gap: 3px; }
@@ -1628,8 +1628,6 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
 .agent-drawer-backdrop { -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
 .agent-drawer-backdrop.portal { -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
 
-/* The preferences dialog keeps its blur on the fixed backdrop pseudo-layer;
-   the scrolling panel itself stays out of the filter's repaint path. */
 /* Agent composer tools: keep reasoning first and center icon-only controls. */
 .agent-composer-tools > .agent-option-wrap:has(.agent-reasoning-trigger) { order: 0; }
 .agent-composer-tools > .agent-option-wrap:has(.agent-scope-trigger),
