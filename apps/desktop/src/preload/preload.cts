@@ -4,6 +4,7 @@ import type { DesktopAppInfo, DesktopLocalGitCommit, DesktopLocalGitGraph, Deskt
 const desktopChannels = {
   appInfo: 'desktop:app-info',
   setNativeTheme: 'desktop:set-native-theme',
+  setTitleBarMaterial: 'desktop:set-title-bar-material',
   nativeThemeChanged: 'desktop:native-theme-changed',
   openExternal: 'desktop:open-external',
   openMarkdown: 'desktop:open-markdown',
@@ -52,6 +53,7 @@ const desktopChannels = {
 const api = {
   getAppInfo: () => ipcRenderer.invoke(desktopChannels.appInfo) as Promise<DesktopAppInfo>,
   setNativeTheme: (theme: 'dark' | 'light' | 'system') => ipcRenderer.invoke(desktopChannels.setNativeTheme, theme) as Promise<{ shouldUseDarkColors: boolean }>,
+  setTitleBarMaterial: (enabled: boolean) => ipcRenderer.invoke(desktopChannels.setTitleBarMaterial, enabled) as Promise<boolean>,
   onNativeThemeChanged: (listener: (state: { shouldUseDarkColors: boolean; themeSource: 'dark' | 'light' | 'system' }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: { shouldUseDarkColors: boolean; themeSource: 'dark' | 'light' | 'system' }) => listener(state)
     ipcRenderer.on(desktopChannels.nativeThemeChanged, handler)

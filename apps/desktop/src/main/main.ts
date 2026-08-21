@@ -70,6 +70,7 @@ const allowedExternalProtocols = new Set(['https:', 'mailto:']);
 let mainWindow: BrowserWindow | null = null;
 const openedMarkdownFiles = new Map<string, string>();
 const approvedWindowCloses = new WeakSet<BrowserWindow>();
+const nativeTitleBarMaterial = new WeakMap<BrowserWindow, boolean>();
 let stopLocalGitWatcher: (() => void) | null = null;
 
 protocol.registerSchemesAsPrivileged([
@@ -223,6 +224,18 @@ function safeExternalUrl(value: string) {
   return url.toString();
 }
 
+function setNativeWindowMaterial(window: BrowserWindow, enabled: boolean) {
+  if (process.platform === 'win32') {
+    window.setBackgroundMaterial(enabled ? 'mica' : 'none');
+    return true;
+  }
+  if (process.platform === 'darwin') {
+    window.setVibrancy(enabled ? 'titlebar' : null);
+    return true;
+  }
+  return false;
+}
+
 function contentSecurityPolicy() {
   return [
     "default-src 'self'",
@@ -318,8 +331,18 @@ function registerIpc() {
     }
     nativeTheme.themeSource = theme;
     const window = BrowserWindow.fromWebContents(event.sender);
-    if (process.platform === 'win32') window?.setBackgroundMaterial('mica');
+    if (window && !window.isDestroyed()) {
+      setNativeWindowMaterial(window, nativeTitleBarMaterial.get(window) ?? true);
+    }
     return { shouldUseDarkColors: nativeTheme.shouldUseDarkColors };
+  });
+  ipcMain.handle(desktopChannels.setTitleBarMaterial, (event, enabled: unknown) => {
+    assertTrusted(event);
+    if (typeof enabled !== 'boolean') throw new Error('Invalid title bar material setting');
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window.isDestroyed()) return false;
+    nativeTitleBarMaterial.set(window, enabled);
+    return setNativeWindowMaterial(window, enabled);
   });
   ipcMain.handle(
     desktopChannels.openExternal,
@@ -711,9 +734,8 @@ async function createWindow() {
       webSecurity: true,
     },
   });
-  if (process.platform === 'win32') {
-    window.setBackgroundMaterial('mica');
-  }
+  nativeTitleBarMaterial.set(window, true);
+  setNativeWindowMaterial(window, true);
   const sendNativeTheme = () => {
     if (!window.isDestroyed()) {
       window.webContents.send(desktopChannels.nativeThemeChanged, {
@@ -723,11 +745,14 @@ async function createWindow() {
     }
   };
   const nativeThemeListener = () => {
-    if (process.platform === 'win32') window.setBackgroundMaterial('mica');
+    setNativeWindowMaterial(window, nativeTitleBarMaterial.get(window) ?? true);
     sendNativeTheme();
   };
   nativeTheme.on('updated', nativeThemeListener);
-  window.on('closed', () => nativeTheme.removeListener('updated', nativeThemeListener));
+  window.on('closed', () => {
+    nativeTheme.removeListener('updated', nativeThemeListener);
+    nativeTitleBarMaterial.delete(window);
+  });
   window.setMenuBarVisibility(false);
   window.webContents.setWindowOpenHandler(({ url }) => {
     try {

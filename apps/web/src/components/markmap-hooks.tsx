@@ -281,6 +281,7 @@ interface AppSettings {
   repositorySort: RepositorySort
   repositorySortDirection: RepositorySortDirection
   titleBarBrand: TitleBarBrand
+  titleBarMaterial: boolean
 }
 
 const defaultSettings: AppSettings = {
@@ -313,6 +314,7 @@ const defaultSettings: AppSettings = {
   repositorySort: 'name',
   repositorySortDirection: 'asc',
   titleBarBrand: 'both',
+  titleBarMaterial: true,
 }
 
 const AUTO_SAVE_DELAY_MIN = 100
@@ -1195,6 +1197,7 @@ function loadSettings(): AppSettings {
     const repositorySort = stored.repositorySort === 'time' || stored.repositorySort === 'name' ? stored.repositorySort : defaultSettings.repositorySort
     const repositorySortDirection = stored.repositorySortDirection === 'desc' || stored.repositorySortDirection === 'asc' ? stored.repositorySortDirection : defaultSettings.repositorySortDirection
     const titleBarBrand = stored.titleBarBrand === 'both' || stored.titleBarBrand === 'icon' || stored.titleBarBrand === 'name' || stored.titleBarBrand === 'none' ? stored.titleBarBrand : defaultSettings.titleBarBrand
+    const titleBarMaterial = typeof stored.titleBarMaterial === 'boolean' ? stored.titleBarMaterial : defaultSettings.titleBarMaterial
     return {
       ...defaultSettings,
       ...stored,
@@ -1218,6 +1221,7 @@ function loadSettings(): AppSettings {
       repositorySort,
       repositorySortDirection,
       titleBarBrand,
+      titleBarMaterial,
     }
   } catch {
     return defaultSettings
@@ -1837,7 +1841,7 @@ export default function MarkmapHooks() {
         return { ...current, themeMode: defaultSettings.themeMode, lightThemePreset: defaultSettings.lightThemePreset, darkThemePreset: defaultSettings.darkThemePreset, lightThemeBackgroundOverride: defaultSettings.lightThemeBackgroundOverride, darkThemeBackgroundOverride: defaultSettings.darkThemeBackgroundOverride, lightThemeBackground: defaultSettings.lightThemeBackground, darkThemeBackground: defaultSettings.darkThemeBackground, previewBackgroundColor: nextDark ? defaultSettings.darkThemeBackground : defaultSettings.lightThemeBackground }
       }
       if (section === 'spelling') return { ...current, editorSpellCheck: defaultSettings.editorSpellCheck, spellCheckLanguage: defaultSettings.spellCheckLanguage, userDictionary: [...defaultSettings.userDictionary] }
-      return { ...current, autoSave: defaultSettings.autoSave, autoSaveDelay: defaultSettings.autoSaveDelay, startupBehavior: defaultSettings.startupBehavior, repositorySort: defaultSettings.repositorySort, repositorySortDirection: defaultSettings.repositorySortDirection, titleBarBrand: defaultSettings.titleBarBrand }
+      return { ...current, autoSave: defaultSettings.autoSave, autoSaveDelay: defaultSettings.autoSaveDelay, startupBehavior: defaultSettings.startupBehavior, repositorySort: defaultSettings.repositorySort, repositorySortDirection: defaultSettings.repositorySortDirection, titleBarBrand: defaultSettings.titleBarBrand, titleBarMaterial: defaultSettings.titleBarMaterial }
     })
     if (section === 'editor') {
       setDocumentEditorMode('source')
@@ -4142,6 +4146,16 @@ export default function MarkmapHooks() {
 
   useEffect(() => {
     const desktop = desktopApi()
+    if (!desktop) {
+      delete document.documentElement.dataset.titlebarMaterial
+      return
+    }
+    document.documentElement.dataset.titlebarMaterial = settings.titleBarMaterial ? 'on' : 'off'
+    void desktop.setTitleBarMaterial(settings.titleBarMaterial).catch(() => {})
+  }, [settings.titleBarMaterial])
+
+  useEffect(() => {
+    const desktop = desktopApi()
     if (!desktop || settings.themeMode !== 'system') return
     return desktop.onNativeThemeChanged(({ shouldUseDarkColors, themeSource }) => {
       if (themeSource !== 'system') return
@@ -5362,6 +5376,7 @@ ${documentRenderConfig.style}
                 <label className="field"><span>{t('自动保存延迟')}<b>{settings.autoSaveDelay} ms</b></span><input type="range" min={AUTO_SAVE_DELAY_MIN} max={AUTO_SAVE_DELAY_MAX} step={AUTO_SAVE_DELAY_STEP} value={settings.autoSaveDelay} disabled={!settings.autoSave} onChange={(event) => updateSettings('autoSaveDelay', normalizeAutoSaveDelay(Number(event.target.value)))} /><small>{t('自动保存延迟说明')}</small></label>
                 <div className="preferences-section-heading"><strong>{t('标题栏')}</strong><small>{t('控制顶部标题栏中的应用图标和软件名称显示。')}</small></div>
                 <label className="field"><span>{t('标题栏显示')}</span><select value={settings.titleBarBrand} onChange={(event) => updateSettings('titleBarBrand', event.target.value as TitleBarBrand)}><option value="both">{t('图标和名称')}</option><option value="icon">{t('仅图标')}</option><option value="name">{t('仅名称')}</option><option value="none">{t('都隐藏')}</option></select></label>
+                {desktopApi() && <label className="switch-field"><span><strong>{t('标题栏使用系统材质')}</strong><small>{t('使用 Windows Mica 或 macOS 透明模糊标题栏；关闭后使用普通窗口背景。')}</small></span><input type="checkbox" checked={settings.titleBarMaterial} onChange={(event) => updateSettings('titleBarMaterial', event.target.checked)} /></label>}
                 <div className="preferences-section-heading"><strong>{t('启动')}</strong><small>{t('桌面版下次启动时使用；浏览器不会恢复文件系统工作区。')}</small></div>
                 <label className="field"><span>{t('启动行为')}</span><select value={settings.startupBehavior} onChange={(event) => updateSettings('startupBehavior', event.target.value as StartupBehavior)}><option value="restore">{t('恢复上次工作区')}</option><option value="blank">{t('新建空白页')}</option></select></label>
                 <div className="preferences-section-heading"><strong>{t('仓库文件排序')}</strong><small>{t('时间排序优先使用本地文件或缓存文件的更新时间；远程未下载文件会回退到名称。')}</small></div>

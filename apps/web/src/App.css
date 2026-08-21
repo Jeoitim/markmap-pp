@@ -117,6 +117,8 @@ svg { flex: 0 0 auto; }
 .topbar { height: calc(64px + var(--native-titlebar-height, 0px)); display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 24px; padding: var(--native-titlebar-height, 0px) 22px 0; background: var(--panel); border-bottom: 1px solid var(--border); }
 .topbar:has(.desktop-menu-trigger) { padding-left: 7px; }
 :root[data-desktop-platform='win32'] .topbar, :root[data-desktop-platform='darwin'] .topbar { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; -webkit-app-region: drag; }
+:root[data-desktop-platform='win32'][data-titlebar-material='off'] .app-shell, :root[data-desktop-platform='darwin'][data-titlebar-material='off'] .app-shell { background: var(--bg); }
+:root[data-desktop-platform='win32'][data-titlebar-material='off'] .topbar, :root[data-desktop-platform='darwin'][data-titlebar-material='off'] .topbar { background: var(--panel); }
 :root[data-desktop-platform='darwin'] .topbar, :root[data-desktop-platform='darwin'] .topbar:has(.desktop-menu-trigger) { padding-left: 84px; }
 :root[data-desktop-platform='win32'] .topbar button, :root[data-desktop-platform='win32'] .topbar a, :root[data-desktop-platform='darwin'] .topbar button, :root[data-desktop-platform='darwin'] .topbar a { -webkit-app-region: no-drag; }
 .brand-area { position: relative; display: flex; align-items: center; gap: 7px; }

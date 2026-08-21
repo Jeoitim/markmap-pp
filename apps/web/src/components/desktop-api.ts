@@ -68,6 +68,7 @@ export interface DesktopLocalGitState {
 export interface MarkmapDesktopApi {
   getAppInfo(): Promise<DesktopAppInfo>
   setNativeTheme(theme: 'dark' | 'light' | 'system'): Promise<{ shouldUseDarkColors: boolean }>
+  setTitleBarMaterial(enabled: boolean): Promise<boolean>
   onNativeThemeChanged(listener: (state: { shouldUseDarkColors: boolean; themeSource: 'dark' | 'light' | 'system' }) => void): () => void
   openExternal(url: string): Promise<boolean>
   openMarkdown(): Promise<DesktopOpenedFile | null>

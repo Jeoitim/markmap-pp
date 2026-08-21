@@ -156,6 +156,8 @@ const translations: Record<string, string> = {
   '标题栏': 'Title bar',
   '控制顶部标题栏中的应用图标和软件名称显示。': 'Choose whether the top bar shows the app icon, name, or both.',
   '标题栏显示': 'Title bar content',
+  '标题栏使用系统材质': 'Use system title-bar material',
+  '使用 Windows Mica 或 macOS 透明模糊标题栏；关闭后使用普通窗口背景。': 'Use the Windows Mica or macOS translucent blurred title bar; turn it off to use a regular window background.',
   '图标和名称': 'Icon and name',
   '仅图标': 'Icon only',
   '仅名称': 'Name only',
