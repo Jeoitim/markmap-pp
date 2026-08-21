@@ -14,6 +14,14 @@ This page records the main changes that have reached a released or stable baseli
 - Added native search integrations for OpenAI, Anthropic, Gemini, MiMo, Azure OpenAI, DeepSeek, Groq and Moonshot / Kimi; Agent parses available citations, URLs, grounding sources and search operations.
 - Added MiMo `force_search`; the [Agent guide](/en/agent/) documents protocol selection, model detection, source availability and provider plugin or permission requirements.
 
+## 1.1.1
+
+Cross-device editing and desktop window behavior received another refinement:
+
+- Refined the Notion-style block actions, heading conversion, formatting bubble and mobile toolbar in the visual Markdown editor while preserving native copy, paste and other system context-menu actions.
+- Fixed theme colors flowing through body text, hyperlinks, code-block backgrounds and Markmap previews; code text without an explicit color now inherits the theme text color.
+- Added “Use system title-bar material” under Preferences > Global in Electron, enabled by default. Windows uses Mica and macOS uses a translucent blurred title bar; users can turn it off to return to the regular window background.
+
 ## 1.2.0
 
 The theme system and accessibility work became part of the stable release:

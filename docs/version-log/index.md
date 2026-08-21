@@ -14,6 +14,14 @@ outline: deep
 - 联网搜索新增 OpenAI、Anthropic、Gemini、MiMo、Azure OpenAI、DeepSeek、Groq 和 Moonshot / Kimi 的原生协议适配；Agent 会解析可用的引用、URL、grounding 来源和搜索操作。
 - MiMo 增加 `force_search` 开关；搜索协议、模型识别、来源是否可展示以及服务商插件和权限限制已在 [Agent 指南](/agent/) 中说明。
 
+## 1.1.1
+
+跨端编辑器和桌面窗口体验进一步收敛：
+
+- 优化视觉 Markdown 编辑器的 Notion 式区块操作、标题层级转换、格式气泡和移动端底栏，同时保留系统右键中的复制、粘贴等原生能力。
+- 修正主题对正文、超链接、代码块背景和 Markmap 预览颜色的传递；未显式指定的代码块文字会继承主题文字色。
+- Electron 偏好设置 > 全局新增“标题栏使用系统材质”，默认开启；Windows 使用 Mica，macOS 使用透明模糊标题栏，也可以关闭后切回普通窗口背景。
+
 ## 1.2.0
 
 主题系统和可访问性进入稳定版本：
