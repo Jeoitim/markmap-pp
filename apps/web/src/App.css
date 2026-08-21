@@ -348,10 +348,12 @@ svg { flex: 0 0 auto; }
 .agent-settings > header small, .agent-local-note { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .agent-field { min-width: 0; display: grid; gap: 7px; }
 .agent-field > span { color: var(--text); font-size: 11px; font-weight: 650; }
+.agent-field > small { color: var(--muted); font-size: 10px; line-height: 1.45; }
 .agent-field input, .agent-field select { width: 100%; height: 36px; min-width: 0; padding: 0 11px; border: 1px solid var(--border); border-radius: 10px; outline: 0; color: var(--text); background: var(--panel); font-size: 12px; box-shadow: 0 3px 10px color-mix(in srgb,var(--accent) 4%,transparent); }
 .agent-field input:focus, .agent-field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .agent-provider-field { width: min(220px, 100%); margin-bottom: 13px; }
 .agent-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.agent-api-protocol-field { grid-column: 1 / -1; }
 .agent-model-input { display: flex; gap: 8px; }
 .agent-model-input button, .agent-settings-actions button, .agent-proposal footer button { height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; padding: 0 11px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--panel); font-size: 11px; cursor: pointer; }
 .agent-model-input button svg, .agent-settings-actions button svg, .agent-proposal footer button svg { width: 14px; height: 14px; }
@@ -437,6 +439,8 @@ svg { flex: 0 0 auto; }
 .agent-settings { top: 51px; max-height: calc(50% - 58px); margin: 0; padding: 17px 18px; }
 .agent-typing { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; }
 .agent-typing > span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: agent-thinking 1.05s ease-in-out infinite; }
+.agent-processing-status { display: flex; align-items: center; gap: 8px; min-height: 38px; color: var(--muted); font-size: calc(var(--agent-font-size) * .86); }
+.agent-processing-status .agent-typing { min-height: 0; }
 .agent-pending { display: flex; align-items: center; gap: 9px; min-height: 38px; color: var(--muted); font-size: calc(var(--agent-font-size) * .86); }
 @keyframes agent-thinking { 50% { transform: scale(.55); opacity: .35; } }
 :root[data-theme='dark'] .agent-field input, :root[data-theme='dark'] .agent-field select { border-color: var(--border); background: var(--panel); box-shadow: none; }
@@ -1849,4 +1853,38 @@ svg { flex: 0 0 auto; }
 }
 :root[data-theme='dark'] .agent-reasoning summary,
 :root[data-theme='dark'] .agent-reasoning span { color: var(--muted); }
+
+/* Keep the activity treatment on the main thinking bubble, away from the bot avatar and tool rows. */
+.agent-reasoning-live.is-active {
+  border-color: transparent;
+  background: linear-gradient(color-mix(in srgb, var(--accent) 8%, var(--panel)), color-mix(in srgb, var(--accent) 8%, var(--panel))) padding-box, linear-gradient(105deg, color-mix(in srgb, var(--accent) 14%, var(--border)), var(--accent), color-mix(in srgb, var(--accent) 14%, var(--border))) border-box;
+  background-size: 100% 100%, 230% 100%;
+  background-position: 0 0, 0% 50%;
+  animation: agent-flow-border 2.8s linear infinite;
+}
+.agent-live-operations { margin-top: 10px; margin-bottom: 14px; }
+.agent-reasoning summary { min-width: 0; }
+.agent-reasoning-title { min-width: max-content; padding: 0 !important; }
+.agent-reasoning-preview { min-width: 0; flex: 1 1 auto; max-width: 100%; overflow-wrap: anywhere; padding: 0 !important; color: var(--muted); font-size: .92em; font-weight: 400; line-height: 1.45; white-space: pre-wrap; }
+.agent-reasoning-content { display: block; max-height: min(260px, 35dvh); overflow: auto; padding: 0 9px 9px !important; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-color: color-mix(in srgb,var(--muted) 55%,transparent) transparent; scrollbar-width: thin; }
+.agent-reasoning-content::-webkit-scrollbar { width: 8px; height: 8px; }
+.agent-reasoning-content::-webkit-scrollbar-track { background: transparent; }
+.agent-reasoning-content::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: color-mix(in srgb,var(--muted) 55%,transparent); background-clip: padding-box; }
+.agent-reasoning .agent-thinking-label, .agent-processing-status .agent-thinking-label { display: inline-block; color: transparent !important; background: linear-gradient(100deg, var(--muted) 0%, var(--muted) 34%, var(--accent) 50%, var(--muted) 66%, var(--muted) 100%); background-size: 220% 100%; background-position: 200% 50%; background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: agent-thinking-shimmer 1.8s linear infinite; }
+.agent-sources ul { display: grid; gap: 5px; max-height: min(180px, 25dvh); overflow: auto; margin: 0; padding: 0 9px 9px 27px; }
+.agent-sources li { padding-left: 1px; color: var(--muted); line-height: 1.35; }
+.agent-sources a { color: var(--accent); overflow-wrap: anywhere; }
+.agent-web-search-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding: 10px 11px; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
+.agent-web-search-setting > div { min-width: 0; display: grid; gap: 3px; }
+.agent-web-search-setting strong { color: var(--text); font-size: 12px; }
+.agent-web-search-setting small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.agent-web-search-setting button { flex: 0 0 auto; min-width: 54px; height: 27px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: var(--panel-soft); font-size: 11px; cursor: pointer; }
+.agent-web-search-setting button.on { border-color: var(--accent-border); color: var(--accent); background: var(--accent-soft); }
+.agent-web-search-setting button:disabled { opacity: .48; cursor: not-allowed; }
+@keyframes agent-flow-border { to { background-position: 0 0, 230% 50%; } }
+@keyframes agent-thinking-shimmer { from { background-position: 200% 50%; } to { background-position: -20% 50%; } }
+@media (prefers-reduced-motion: reduce) {
+  .agent-reasoning-live.is-active { animation: none; }
+  .agent-reasoning .agent-thinking-label, .agent-processing-status .agent-thinking-label { animation: none; background: none; color: var(--muted) !important; -webkit-text-fill-color: currentColor; }
+}
 

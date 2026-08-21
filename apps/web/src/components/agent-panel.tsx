@@ -2,10 +2,10 @@ import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, 
 import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessage, type AgentProposal, type AgentSourceFile } from './agent-client'
+import { askAgent, testAgentConnection, type AgentAppliedChange, type AgentMessage, type AgentProposal, type AgentSourceCitation, type AgentSourceFile } from './agent-client'
 import { buildAgentDiff } from './agent-diff'
 import { activeContent, AGENT_WELCOME_MESSAGE, conversationMarkdown, createConversation, flattenMessages, loadAgentConversations, normalizeStoredWorkspaceKey, saveAgentConversations, truncateAtPath, updateAtPath, type AgentConversation, type AgentWorkspaceRef, type AgentWorkspaceSelectionResult } from './agent-history'
-import { defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, providerDefinition, providerDefinitions, saveAgentProviderConfig, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
+import { agentApiProtocol, defaultAgentApiProtocol, defaultAgentProviderConfig, fetchProviderModels, loadAgentProviderConfig, nativeWebSearchProviderForProtocol, providerDefinition, providerDefinitions, saveAgentProviderConfig, supportsNativeWebSearchForProtocol, type AgentApiProtocol, type AgentProviderConfig, type AgentProviderId, type AgentProviderProfile } from './agent-provider'
 import { saveBlob } from './desktop-api'
 import { renderMermaidSvg } from './mermaid-renderer'
 import { useI18n } from '../i18n-hook'
@@ -16,7 +16,18 @@ export type AgentMutationResult = { ok: true } | { ok: false; error: string }
 export type AgentCommitResult = { ok: true; commitSha: string; message: string } | { ok: false; error: string }
 
 function profileOf(config: AgentProviderConfig): AgentProviderProfile {
-  return { apiKey: config.apiKey, baseUrl: config.baseUrl, model: config.model, availableModels: config.availableModels }
+  return { apiKey: config.apiKey, baseUrl: config.baseUrl, model: config.model, availableModels: config.availableModels, apiProtocol: config.apiProtocol, forceWebSearch: config.forceWebSearch }
+}
+
+const apiProtocolKeys: Record<AgentApiProtocol, string> = {
+  anthropic: 'Anthropic Messages',
+  'openai-chat': 'OpenAI Chat Completions',
+  'openai-responses': 'OpenAI Responses API',
+  gemini: 'Gemini Native generateContent',
+}
+
+function isAgentApiProtocol(value: unknown): value is AgentApiProtocol {
+  return value === 'anthropic' || value === 'openai-chat' || value === 'openai-responses' || value === 'gemini'
 }
 
 // 工具行是横向滚动容器（overflow-x），absolute 定位的 popover 会被裁剪，
@@ -310,11 +321,15 @@ function ConversationMessage({ message, path, editing, editText, files, busy, re
   const content = message.role === 'user' ? activeContent(message) : version?.content || message.content
   const localizedContent = content === AGENT_WELCOME_MESSAGE ? t(AGENT_WELCOME_MESSAGE) : content
   const reasoningSummary = version?.reasoningSummary || message.reasoningSummary
+  const reasoningPreview = version?.reasoningPreview || message.reasoningPreview
   const reasoningDurationSeconds = version?.reasoningDurationSeconds ?? message.reasoningDurationSeconds
+  const webSearchUsed = version?.webSearchUsed || message.webSearchUsed
+  const sources = version?.sources || message.sources || []
   const copy = async () => { try { await navigator.clipboard.writeText(content); setCopied(true); window.setTimeout(() => setCopied(false), 1600) } catch { setCopied(false) } }
   const recordedProposalPaths = new Set(message.proposals?.map((proposal) => proposal.path))
   return <><div className={`agent-message ${message.role}`}><i><AgentGlyph name={message.role === 'assistant' ? 'bot' : 'send'} /></i><div>
-    {message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" />{t('已思考（用时')} {reasoningDurationSeconds}s）</summary>{reasoningSummary && <span>{reasoningSummary}</span>}</details>}
+    {message.role === 'assistant' && reasoningDurationSeconds !== undefined && <details className="agent-reasoning"><summary><AgentGlyph name="brain" /><span className="agent-reasoning-title">{t('已思考（用时')} {reasoningDurationSeconds}s）</span>{reasoningPreview && <small className="agent-reasoning-preview" title={reasoningPreview}>{reasoningPreview}</small>}</summary>{reasoningSummary && <span className="agent-reasoning-content">{reasoningSummary}</span>}</details>}
+    {message.role === 'assistant' && webSearchUsed && <details className="agent-reasoning agent-sources"><summary><AgentGlyph name="search" /><span className="agent-reasoning-title">{sources.length ? `${t('联网来源')}（${sources.length}）` : t('已使用联网搜索')}</span></summary>{sources.length ? <ul>{sources.map((source) => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title || source.url}</a></li>)}</ul> : <span className="agent-reasoning-content">{t('服务商未返回可展示来源')}</span>}</details>}
     {message.role === 'assistant' && Boolean(message.operations?.length) && <details className="agent-reasoning"><summary><AgentGlyph name="code" />{t('已完成')} {message.operations!.length} {t('项仓库操作')}</summary><span>{message.operations!.map((operation) => `${operation.status === 'failed' ? '×' : '✓'} ${operation.summary}`).join('\n')}</span></details>}
     {message.role === 'user' && editing ? <div className="agent-question-editor" role="group" aria-label={t('修改提问')}>
       <textarea autoFocus value={editText} onChange={(event) => onEditText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); onCancelEdit() } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && editText.trim()) { event.preventDefault(); onSubmitEdit(path) } }} aria-label={t('修改提问内容')} />
@@ -452,7 +467,10 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
   const [error, setError] = useState('')
   const [streamingReply, setStreamingReply] = useState('')
   const [streamingReasoning, setStreamingReasoning] = useState('')
+  const [streamingReasoningPreview, setStreamingReasoningPreview] = useState('')
   const [liveOperations, setLiveOperations] = useState<NonNullable<AgentMessage['operations']>>([])
+  const [liveWebSearch, setLiveWebSearch] = useState<{ queries: string[]; sources: AgentSourceCitation[] } | null>(null)
+  const [liveReasoningOpen, setLiveReasoningOpen] = useState(false)
   const [editingQuestion, setEditingQuestion] = useState<number | null>(null)
   const [editedQuestion, setEditedQuestion] = useState('')
   const [lastRequest, setLastRequest] = useState<{ text: string; userIndex?: number } | null>(null)
@@ -461,9 +479,12 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
   const [answerStarted, setAnswerStarted] = useState(false)
   const settingsRef = useRef<HTMLElement | null>(null)
   const configImportRef = useRef<HTMLInputElement | null>(null)
+  const providerConfigLoadedRef = useRef(false)
+  const providerConfigRef = useRef<AgentProviderConfig>(defaultAgentProviderConfig)
   const replyBufferRef = useRef('')
   const receivedStreamTextRef = useRef(false)
   const streamedContentRef = useRef('')
+  const liveReasoningSeenRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
   const conversationRef = useRef<HTMLDivElement | null>(null)
   const conversationStateRef = useRef<AgentConversation | null>(null)
@@ -492,9 +513,20 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
       setModels(saved.availableModels || [])
       setConnectionStatus(saved.provider === 'ollama' || saved.apiKey ? 'configured' : 'unconfigured')
       setSettingsOpen(saved.provider !== 'ollama' && !saved.apiKey)
+      providerConfigLoadedRef.current = true
     }).catch(() => { if (!disposed) setError('无法读取本地 AI 配置') })
     return () => { disposed = true }
   }, [])
+
+  useEffect(() => {
+    providerConfigRef.current = config
+  }, [config])
+
+  // 思考开关和思考程度直接影响下一次对话，不应因为没有再次打开设置抽屉而丢失。
+  useEffect(() => {
+    if (!providerConfigLoadedRef.current) return
+    void saveAgentProviderConfig(withActiveProfile(providerConfigRef.current)).catch(() => setError('AI 配置保存失败'))
+  }, [config.reasoningEnabled, config.reasoningEffort])
 
   useEffect(() => {
     if (!permissionOpen && !reasoningOpen && !scopeOpen) return
@@ -623,9 +655,9 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
         if (!providerDefinitions.some((item) => item.id === id) || !isRecord(value)) return
         const key = id as AgentProviderId
         const current = profiles[key]
-        profiles[key] = { apiKey: typeof value.apiKey === 'string' && value.apiKey ? value.apiKey : current?.apiKey || '', baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : current?.baseUrl || '', model: typeof value.model === 'string' ? value.model : current?.model || '', availableModels: Array.isArray(value.availableModels) ? value.availableModels.filter((item): item is string => typeof item === 'string') : current?.availableModels || [] }
+        profiles[key] = { apiKey: typeof value.apiKey === 'string' && value.apiKey ? value.apiKey : current?.apiKey || '', baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : current?.baseUrl || '', model: typeof value.model === 'string' ? value.model : current?.model || '', availableModels: Array.isArray(value.availableModels) ? value.availableModels.filter((item): item is string => typeof item === 'string') : current?.availableModels || [], ...(isAgentApiProtocol(value.apiProtocol) ? { apiProtocol: value.apiProtocol } : current?.apiProtocol ? { apiProtocol: current.apiProtocol } : {}), forceWebSearch: typeof value.forceWebSearch === 'boolean' ? value.forceWebSearch : current?.forceWebSearch }
       })
-      const next: AgentProviderConfig = { ...config, provider, apiKey: typeof source.apiKey === 'string' && source.apiKey ? source.apiKey : config.apiKey, baseUrl: typeof source.baseUrl === 'string' ? source.baseUrl : config.baseUrl, model: typeof source.model === 'string' ? source.model : config.model, availableModels: Array.isArray(source.availableModels) ? source.availableModels.filter((item): item is string => typeof item === 'string') : config.availableModels, providerProfiles: profiles, maxTokens: typeof source.maxTokens === 'number' ? Math.min(32000, Math.max(128, source.maxTokens)) : config.maxTokens, temperature: typeof source.temperature === 'number' ? Math.min(2, Math.max(0, source.temperature)) : config.temperature, permissionMode: source.permissionMode === 'auto' ? 'auto' : 'confirm', reasoningEnabled: typeof source.reasoningEnabled === 'boolean' ? source.reasoningEnabled : config.reasoningEnabled, reasoningEffort: ['low', 'medium', 'high', 'xhigh', 'max'].includes(String(source.reasoningEffort)) ? source.reasoningEffort as AgentProviderConfig['reasoningEffort'] : config.reasoningEffort }
+      const next: AgentProviderConfig = { ...config, provider, apiKey: typeof source.apiKey === 'string' && source.apiKey ? source.apiKey : config.apiKey, baseUrl: typeof source.baseUrl === 'string' ? source.baseUrl : config.baseUrl, model: typeof source.model === 'string' ? source.model : config.model, availableModels: Array.isArray(source.availableModels) ? source.availableModels.filter((item): item is string => typeof item === 'string') : config.availableModels, providerProfiles: profiles, maxTokens: typeof source.maxTokens === 'number' ? Math.min(32000, Math.max(128, source.maxTokens)) : config.maxTokens, temperature: typeof source.temperature === 'number' ? Math.min(2, Math.max(0, source.temperature)) : config.temperature, permissionMode: source.permissionMode === 'auto' ? 'auto' : 'confirm', reasoningEnabled: typeof source.reasoningEnabled === 'boolean' ? source.reasoningEnabled : config.reasoningEnabled, reasoningEffort: ['low', 'medium', 'high', 'xhigh', 'max'].includes(String(source.reasoningEffort)) ? source.reasoningEffort as AgentProviderConfig['reasoningEffort'] : config.reasoningEffort, webSearchEnabled: typeof source.webSearchEnabled === 'boolean' ? source.webSearchEnabled : config.webSearchEnabled, ...(isAgentApiProtocol(source.apiProtocol) ? { apiProtocol: source.apiProtocol } : {}), forceWebSearch: typeof source.forceWebSearch === 'boolean' ? source.forceWebSearch : config.forceWebSearch }
       await saveAgentProviderConfig(next)
       setConfig(next); setModels(next.availableModels); setConnectionStatus(next.provider === 'ollama' || next.apiKey ? 'configured' : 'unconfigured')
       setNotice('AI 配置与 API 密钥已导入，可以直接迁移使用。'); setError('')
@@ -704,6 +736,8 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
       baseUrl: targetProfile?.baseUrl || definition.baseUrl,
       model: targetProfile?.model || definition.model,
       availableModels: targetProfile?.availableModels || [],
+      apiProtocol: targetProfile?.apiProtocol,
+      forceWebSearch: targetProfile?.forceWebSearch || false,
     }
     setConfig(nextConfig); setModels(nextConfig.availableModels); setNotice(''); setError('')
     setConnectionStatus(id === 'ollama' || nextConfig.apiKey ? 'configured' : 'unconfigured')
@@ -767,11 +801,11 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
     const startedAt = Date.now()
     saveConversation({ ...conversation, mode, title: conversation.title === '新对话' ? text.slice(0, 28) : conversation.title, messages: nextMessages, updatedAt: Date.now() })
     if (!revising) setInput('')
-    setEditingQuestion(null); setBusy('send'); setError(''); setStreamingReply(''); setStreamingReasoning(''); setLiveOperations([]); setAnswerStarted(false); setThinkingSeconds(0); setThinkingStartedAt(startedAt); replyBufferRef.current = ''; receivedStreamTextRef.current = false; streamedContentRef.current = ''; abortRef.current = new AbortController()
+    setEditingQuestion(null); setBusy('send'); setError(''); setStreamingReply(''); setStreamingReasoning(''); setStreamingReasoningPreview(''); setLiveOperations([]); setLiveWebSearch(null); setLiveReasoningOpen(false); setAnswerStarted(false); setThinkingSeconds(0); setThinkingStartedAt(startedAt); replyBufferRef.current = ''; receivedStreamTextRef.current = false; streamedContentRef.current = ''; liveReasoningSeenRef.current = false; abortRef.current = new AbortController()
     // 把新的回答挂到正确位置：重新生成覆盖旧回答（加新版本），修改提问追加到问题分支尾部，普通发送直接追加。
-    const withAnswer = (messages: AgentMessage[], answer: AgentMessage, reply: string, reasoningSummary: string | undefined, duration: number) => replacingAnswerPath
+    const withAnswer = (messages: AgentMessage[], answer: AgentMessage, reply: string, reasoningSummary: string | undefined, reasoningPreview: string | undefined, webSearchUsed: boolean | undefined, webSearchQueries: string[] | undefined, sources: AgentSourceCitation[] | undefined, duration: number) => replacingAnswerPath
       ? updateAtPath(messages, replacingAnswerPath, (message) => {
-          const versions = [...(message.answerVersions || [{ content: message.content, reasoningSummary: message.reasoningSummary, reasoningDurationSeconds: message.reasoningDurationSeconds }]), { content: reply, reasoningSummary, reasoningDurationSeconds: duration }]
+          const versions = [...(message.answerVersions || [{ content: message.content, reasoningSummary: message.reasoningSummary, reasoningPreview: message.reasoningPreview, webSearchUsed: message.webSearchUsed, webSearchQueries: message.webSearchQueries, sources: message.sources, reasoningDurationSeconds: message.reasoningDurationSeconds }]), { content: reply, reasoningSummary, reasoningPreview, webSearchUsed, webSearchQueries, sources, reasoningDurationSeconds: duration }]
           return {
             ...message,
             answerVersions: versions,
@@ -813,10 +847,21 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
           const index = current.findIndex((item) => item.id === operation.id)
           return index < 0 ? [...current, operation] : current.map((item, itemIndex) => itemIndex === index ? operation : item)
         }),
+        onWebSearch: (search) => setLiveWebSearch((current) => ({
+          queries: [...new Set([...(current?.queries || []), ...(search.queries || [])])],
+          sources: [...new Map([...(current?.sources || []), ...(search.sources || [])].map((source) => [source.url, source])).values()],
+        })),
         signal: abortRef.current?.signal,
         onDelta: (delta) => {
           // 关闭思考时不累积推理内容；推理模型仍可能返回 reasoning，但界面不再显示。
-          if (delta.reasoning && config.reasoningEnabled) setStreamingReasoning((current) => current + delta.reasoning!)
+          if ((delta.reasoning || delta.reasoningPreview) && config.reasoningEnabled) {
+            if (!liveReasoningSeenRef.current) {
+              liveReasoningSeenRef.current = true
+              setLiveReasoningOpen(true)
+            }
+            if (delta.reasoning) setStreamingReasoning((current) => current + delta.reasoning!)
+            if (delta.reasoningPreview) setStreamingReasoningPreview(delta.reasoningPreview)
+          }
           if (delta.content && mode === 'chat') { receivedStreamTextRef.current = true; streamedContentRef.current += delta.content; setThinkingSeconds(Math.max(1, Math.round((Date.now() - startedAt) / 1000))); setAnswerStarted(true); replyBufferRef.current += delta.content }
         },
       })
@@ -854,13 +899,14 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
         role: 'assistant',
         content: result.reply,
         operations: result.operations,
-        ...(keepReasoning ? { reasoningSummary: result.reasoningSummary, reasoningDurationSeconds } : {}),
+        ...(keepReasoning ? { reasoningSummary: result.reasoningSummary, reasoningPreview: result.reasoningPreview, reasoningDurationSeconds } : {}),
+        ...(result.webSearchUsed ? { webSearchUsed: true, webSearchQueries: result.webSearchQueries, sources: result.sources } : {}),
         ...(mode === 'edit' && resolvedProposals.length ? { proposals: resolvedProposals } : {}),
         ...(mode === 'edit' && result.commitRequested ? { commitRequested: true } : {}),
         ...(appliedFiles.length ? { appliedFiles } : {}),
         ...(failedChanges && result.commitRequested ? { commitError: `有 ${failedChanges} 个文件应用失败，已暂停自动提交。` } : {}),
       }
-      let finalMessages = withAnswer(nextMessages, answer, result.reply, keepReasoning ? result.reasoningSummary : undefined, reasoningDurationSeconds)
+      let finalMessages = withAnswer(nextMessages, answer, result.reply, keepReasoning ? result.reasoningSummary : undefined, keepReasoning ? result.reasoningPreview : undefined, result.webSearchUsed, result.webSearchQueries, result.sources, reasoningDurationSeconds)
       const conversationTitle = conversation.title === '新对话' ? text.slice(0, 28) : conversation.title
       saveConversation({ ...conversation, mode, title: conversationTitle, messages: finalMessages, updatedAt: Date.now() })
       if (result.proposals.length) {
@@ -961,9 +1007,19 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
   const connectionLabel = { unconfigured: t('未配置'), configured: t('已配置'), checking: t('检查中'), connected: t('已连接'), failed: t('连接失败') }[connectionStatus]
   const providerLabel = providerDefinition(config.provider).label
   const modelLabel = config.model || t('未选择模型')
+  const selectedApiProtocol = agentApiProtocol(config)
+  const defaultApiProtocol = defaultAgentApiProtocol(config)
+  const webSearchProvider = nativeWebSearchProviderForProtocol(config)
+  const webSearchSupported = supportsNativeWebSearchForProtocol(config)
+  const isMimoProvider = config.provider === 'mimo' || config.baseUrl.trim().toLowerCase().includes('xiaomimimo.com')
+  const forceWebSearchSupported = isMimoProvider && webSearchProvider === 'mimo' && selectedApiProtocol === 'openai-chat'
   const agentTextStyle = { '--agent-font-size': `${fontSize}px`, '--agent-font-family': fontFamily, '--agent-font-weight': fontWeight } as CSSProperties
   const changedFileCount = files.filter((file) => file.status !== 'clean').length
   const contextStatus = [files.length < remoteFileCount ? `未读取 ${remoteFileCount - files.length} 篇` : '', changedFileCount ? `${changedFileCount} 个修改` : ''].filter(Boolean)
+  const runningOperation = liveOperations.some((operation) => operation.status === 'running')
+  const workingState = answerStarted ? 'complete' : runningOperation ? 'operation' : 'thinking'
+  const hasLiveReasoning = config.reasoningEnabled && Boolean(streamingReasoning || streamingReasoningPreview)
+  const showLiveProcessing = !answerStarted && !hasLiveReasoning && !liveOperations.length
 
   return <div className="agent-workspace" style={agentTextStyle}>
     <header className="agent-toolbar"><div className="agent-mode-tabs" role="tablist" aria-label={t('AI 模式')}><button type="button" role="tab" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'active' : ''} onClick={() => switchMode('chat')}>{t('对话')}</button><button type="button" role="tab" aria-selected={mode === 'edit'} className={mode === 'edit' ? 'active' : ''} onClick={() => switchMode('edit')}>{t('编辑')}</button></div><span className="agent-provider-summary" title={`${providerLabel} · ${modelLabel} · ${connectionLabel}`} aria-label={`${providerLabel}，${modelLabel}，${connectionLabel}`}><i className={`agent-connection-dot ${connectionStatus}`} /><b>{providerLabel}</b><small>{connectionLabel}</small></span><button type="button" className="agent-settings-button" onClick={() => { setHistoryOpen((value) => !value); setSettingsOpen(false) }} title={t('对话历史')} aria-label={historyOpen ? t('关闭对话历史') : t('打开对话历史')} aria-expanded={historyOpen}><AgentGlyph name="history" /></button><button type="button" className="agent-settings-button" onClick={() => { setSettingsOpen((value) => !value); setHistoryOpen(false) }} title={locale === 'en-US' ? `${t('AI 配置')}: ${modelLabel}` : `${t('AI 配置')}：${modelLabel}`} aria-label={settingsOpen ? t('关闭 AI 配置') : t('打开 AI 配置')} aria-expanded={settingsOpen}><AgentGlyph name="settings" /></button></header>
@@ -975,7 +1031,9 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
       <label className="agent-field"><span>{t('模型名称')}</span><div className="agent-model-input"><div className="agent-select-control"><select value={config.model} onChange={(event) => setConfig((current) => ({ ...current, model: event.target.value }))}>{!models.includes(config.model) && <option value={config.model}>{config.model || t('请选择模型')}</option>}{models.map((model) => <option key={model} value={model}>{model}</option>)}</select><AgentGlyph name="chevron" /></div><button type="button" onClick={() => void getModels()} disabled={busy !== null}><AgentGlyph name="refresh" />{busy === 'models' ? t('获取中…') : t('获取模型列表')}</button></div></label>
       <div className="agent-settings-actions"><button type="button" className="agent-test-button" onClick={() => void testConnection()} disabled={busy !== null}><AgentGlyph name={busy === 'test' ? 'refresh' : 'check'} />{busy === 'test' ? t('测试中…') : connectionStatus === 'connected' ? t('连接成功') : t('测试连接')}</button><button type="button" className="agent-save-button" onClick={() => void saveConfig()} disabled={busy !== null}><AgentGlyph name="download" />{busy === 'save' ? t('保存中…') : t('保存配置')}</button></div>
       {(notice || error) && <div className={`agent-settings-result ${error ? 'error' : 'success'}`} role={error ? 'alert' : 'status'}><AgentGlyph name={error ? 'alert' : 'check'} /><span>{error || notice}</span></div>}
-      <div className="agent-advanced"><button type="button" onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen}><strong>{t('高级设置')}</strong><span className={advancedOpen ? 'open' : ''}><small>{advancedOpen ? t('收起') : t('展开')}</small><AgentGlyph name="chevron" /></span></button>{advancedOpen && <div className="agent-field-grid"><label className="agent-field"><span>{t('最大 Token 数')}</span><input type="number" min="128" max="32000" value={config.maxTokens} onChange={(event) => setConfig((current) => ({ ...current, maxTokens: Number(event.target.value) || 128 }))} /></label><label className="agent-field"><span>{t('Temperature（随机性）')}</span><input type="number" min="0" max="2" step="0.1" value={config.temperature} onChange={(event) => setConfig((current) => ({ ...current, temperature: Number(event.target.value) || 0 }))} /></label></div>}</div>
+      <div className="agent-web-search-setting"><div><strong>{t('联网搜索')}</strong><small>{webSearchSupported ? webSearchProvider === 'mimo' ? t('MiMo 已识别；请先在控制台启用 Web Search 插件，生效可能需要约 5 分钟。') : webSearchProvider === 'deepseek' ? t('DeepSeek 已识别；OpenAI 入口使用 Responses，Anthropic 兼容入口使用 Messages 原生搜索。') : webSearchProvider === 'gemini' ? t('Gemini 已识别；2.0、2.5 与 3 系列使用 Native generateContent 的 Google Search。') : t('支持时模型可按需搜索实时互联网，可能产生服务商费用。') : isMimoProvider && selectedApiProtocol !== 'openai-chat' ? t('MiMo 的原生联网搜索仅适用于 OpenAI Chat Completions；Responses API 仍可使用，但不包含已验证的 web_search 扩展。') : t('当前服务商或模型没有可用的原生联网搜索。')}</small></div><button type="button" className={config.webSearchEnabled && webSearchSupported ? 'on' : ''} disabled={!webSearchSupported} onClick={() => setConfig((current) => ({ ...current, webSearchEnabled: !current.webSearchEnabled, ...(current.webSearchEnabled ? { forceWebSearch: false } : {}) }))}>{config.webSearchEnabled && webSearchSupported ? t('已开启') : t('已关闭')}</button></div>
+      {isMimoProvider && <div className="agent-web-search-setting agent-force-search-setting"><div><strong>{t('强制联网搜索')}</strong><small>{t('每次请求都要求 MiMo 尝试联网，可能增加费用；仅 Chat Completions 生效。')}</small></div><button type="button" className={config.forceWebSearch && forceWebSearchSupported ? 'on' : ''} disabled={!forceWebSearchSupported} onClick={() => setConfig((current) => ({ ...current, webSearchEnabled: true, forceWebSearch: !current.forceWebSearch }))}>{config.forceWebSearch && forceWebSearchSupported ? t('已开启') : t('已关闭')}</button></div>}
+      <div className="agent-advanced"><button type="button" onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen}><strong>{t('高级设置')}</strong><span className={advancedOpen ? 'open' : ''}><small>{advancedOpen ? t('收起') : t('展开')}</small><AgentGlyph name="chevron" /></span></button>{advancedOpen && <div className="agent-field-grid"><label className="agent-field agent-api-protocol-field"><span>{t('上游 API 格式')}</span><div className="agent-select-control"><select value={config.apiProtocol || ''} onChange={(event) => setConfig((current) => ({ ...current, apiProtocol: isAgentApiProtocol(event.target.value) ? event.target.value : undefined }))}><option value="">{t('默认')}（{t(apiProtocolKeys[defaultApiProtocol])}）</option><option value="anthropic">{t(apiProtocolKeys.anthropic)}</option><option value="openai-chat">{t(apiProtocolKeys['openai-chat'])}</option><option value="openai-responses">{t(apiProtocolKeys['openai-responses'])}</option><option value="gemini">{t(apiProtocolKeys.gemini)}</option></select><AgentGlyph name="chevron" /></div><small>{t('通常使用默认格式；仅在服务商文档明确支持其他格式时调整。')}</small></label><label className="agent-field"><span>{t('最大 Token 数')}</span><input type="number" min="128" max="32000" value={config.maxTokens} onChange={(event) => setConfig((current) => ({ ...current, maxTokens: Number(event.target.value) || 128 }))} /></label><label className="agent-field"><span>{t('Temperature（随机性）')}</span><input type="number" min="0" max="2" step="0.1" value={config.temperature} onChange={(event) => setConfig((current) => ({ ...current, temperature: Number(event.target.value) || 0 }))} /></label></div>}</div>
       <p className="agent-local-note">{t('密钥仅保存在当前浏览器本地；请求会直接发送到所选 AI 服务商。')}</p>
       </div>
     </section></>}
@@ -983,7 +1041,7 @@ export default function AgentPanel({ workspaceKey, workspaceLabel, workspaceKind
     {notice && <div className="agent-notice" role="status" aria-live="polite" aria-atomic="true"><AgentGlyph name="check" />{notice}</div>}
     {error && <div className="agent-error" role="alert" aria-live="assertive" aria-atomic="true"><span>{error}</span>{lastRequest && <button type="button" onClick={() => void send(lastRequest)}><AgentGlyph name="refresh" />{t('重试')}</button>}</div>}
     {historyOpen && <AgentHistoryDrawer conversations={conversations} activeId={conversation.id} currentWorkspaceKey={workspaceKey} onClose={() => { pendingConversationIdRef.current = null; setHistoryOpen(false); setWorkspaceWarning(null) }} onNew={startConversation} onSelect={(item) => void selectConversation(item)} workspaceWarning={workspaceWarning} onConfirmWorkspaceWarning={() => { if (workspaceWarning) void selectConversation(workspaceWarning.item, true) }} onCancelWorkspaceWarning={() => { pendingConversationIdRef.current = null; setWorkspaceWarning(null) }} onRename={renameConversation} onDelete={deleteConversation} onExport={exportConversation} onImportAll={(file) => void importConversationHistory(file)} onExportAll={exportConversationHistory} />}
-    <div className="agent-conversation" ref={conversationRef} onScroll={(event) => { const el = event.currentTarget; stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32 }}>{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} repositoryBranch={repositoryBranch} changedFileCount={files.filter((file) => file.status !== 'clean').length} textStyle={agentTextStyle} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={(path, proposalId) => void acceptProposalInMessage(path, proposalId)} onRejectProposal={rejectProposalInMessage} onOpenFile={onOpenFile} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{conversation.messages.length === 1 && <div className="agent-starters" aria-label="建议问法"><button type="button" onClick={() => setInput('结合这些笔记和你的知识，找出三个值得继续探索的关联。')}>发现跨笔记关联</button><button type="button" onClick={() => setInput('检查当前笔记的逻辑缺口，补充我可能忽略的背景知识。')}>补充背景与反例</button><button type="button" onClick={() => { setMode('edit'); setInput('整理当前笔记的结构，保留原意并提升可读性。') }}>整理并完善笔记</button></div>}{busy === 'send' && <div className="agent-message assistant"><i><AgentGlyph name="bot" /></i><div>{config.reasoningEnabled && <details className="agent-reasoning" open={!answerStarted}><summary><AgentGlyph name="brain" />{answerStarted ? `已思考（用时 ${thinkingSeconds}s）` : `思考中（${thinkingSeconds}s）`}</summary>{streamingReasoning && <span>{streamingReasoning}</span>}</details>}{!answerStarted && Boolean(liveOperations.length) && <div className="agent-live-operations">{liveOperations.map((operation) => <span className={operation.status || 'succeeded'} key={operation.id || `${operation.tool}:${operation.at}`}><i>{operation.status === 'running' ? <span className="agent-operation-spinner" /> : operation.status === 'failed' ? '×' : '✓'}</i>{operation.summary}</span>)}</div>}{!answerStarted && !liveOperations.length && <div className="agent-pending"><span className="agent-typing"><span /><span /><span /></span>{mode === 'edit' ? '正在分析仓库并生成修改方案…' : '正在结合笔记与通用知识思考…'}</div>}{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
+    <div className="agent-conversation" ref={conversationRef} onScroll={(event) => { const el = event.currentTarget; stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32 }}>{flattenMessages(conversation.messages).map((entry, index) => <ConversationMessage key={entry.path.join('.')} message={entry.message} path={entry.path} editing={editingQuestion === index} editText={editedQuestion} files={files} busy={busy} repositoryBranch={repositoryBranch} changedFileCount={files.filter((file) => file.status !== 'clean').length} textStyle={agentTextStyle} onEdit={() => beginQuestionEdit(index, activeContent(entry.message))} onEditText={setEditedQuestion} onCancelEdit={() => setEditingQuestion(null)} onSubmitEdit={() => void send({ text: editedQuestion, userIndex: index })} onRegenerate={() => { const question = flattenMessages(conversation.messages)[index - 1]; if (question?.message.role === 'user') void send({ text: activeContent(question.message), userIndex: index - 1 }) }} onSelectVersion={(path, version) => selectAnswerVersion(path, version)} onSelectQuestionVersion={(path, delta) => selectQuestionVersion(path, delta)} onAcceptProposal={(path, proposalId) => void acceptProposalInMessage(path, proposalId)} onRejectProposal={rejectProposalInMessage} onOpenFile={onOpenFile} onCommitFromMessage={(msgPath) => void commitFromMessage(msgPath)} onCancelCommitFromMessage={cancelCommitFromMessage} />)}{conversation.messages.length === 1 && <div className="agent-starters" aria-label="建议问法"><button type="button" onClick={() => setInput('结合这些笔记和你的知识，找出三个值得继续探索的关联。')}>发现跨笔记关联</button><button type="button" onClick={() => setInput('检查当前笔记的逻辑缺口，补充我可能忽略的背景知识。')}>补充背景与反例</button><button type="button" onClick={() => { setMode('edit'); setInput('整理当前笔记的结构，保留原意并提升可读性。') }}>整理并完善笔记</button></div>}{busy === 'send' && <div className={`agent-message assistant agent-working agent-working-${workingState}`}><i><AgentGlyph name="bot" /></i><div>{hasLiveReasoning && <details className={`agent-reasoning agent-reasoning-live ${!answerStarted ? 'is-active' : ''}`} open={liveReasoningOpen} onToggle={(event) => setLiveReasoningOpen(event.currentTarget.open)}><summary><AgentGlyph name="brain" /><span className={`agent-reasoning-title ${!answerStarted ? 'agent-thinking-label' : ''}`}>{answerStarted ? `${t('已思考（用时')} ${thinkingSeconds}s）` : `${t('思考中（')}${thinkingSeconds}s）`}</span>{streamingReasoningPreview && <small className="agent-reasoning-preview" title={streamingReasoningPreview}>{streamingReasoningPreview}</small>}</summary>{streamingReasoning && <span className="agent-reasoning-content">{streamingReasoning}</span>}</details>}{showLiveProcessing && <div className="agent-processing-status"><span className="agent-typing" aria-hidden="true"><span /><span /><span /></span><span className={config.reasoningEnabled ? 'agent-thinking-label' : ''}>{config.reasoningEnabled ? `${t('思考中（')}${thinkingSeconds}s）` : t('处理中…')}</span></div>}{liveWebSearch && <details className="agent-reasoning agent-sources agent-sources-live"><summary><AgentGlyph name="search" /><span className="agent-reasoning-title">{liveWebSearch.sources.length ? `${t('联网来源')}（${liveWebSearch.sources.length}）` : t('已使用联网搜索')}</span>{liveWebSearch.queries.length > 0 && <small className="agent-reasoning-preview" title={liveWebSearch.queries.join(' · ')}>{liveWebSearch.queries.join(' · ')}</small>}</summary>{liveWebSearch.sources.length ? <ul>{liveWebSearch.sources.map((source) => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title || source.url}</a></li>)}</ul> : <span className="agent-reasoning-content">{liveWebSearch.queries.length ? t('正在获取联网来源…') : t('服务商未返回可展示来源')}</span>}</details>}{Boolean(liveOperations.length) && <div className="agent-live-operations">{liveOperations.map((operation) => <span className={operation.status || 'succeeded'} key={operation.id || `${operation.tool}:${operation.at}`}><i>{operation.status === 'running' ? <span className="agent-operation-spinner" /> : operation.status === 'failed' ? '×' : '✓'}</i>{operation.summary}</span>)}</div>}{answerStarted && <AgentMarkdown streaming>{streamingReply}</AgentMarkdown>}</div></div>}</div>
     <footer className="agent-composer">
       <div className="agent-composer-input">
         <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={mode === 'edit' ? canCreateFiles ? t('描述要修改或新建的笔记。AI 会先给出可审核的方案。') : t('描述要如何修改当前文件。AI 会先给出可审核的方案。') : t('询问笔记内容，Enter 发送…')} />
