@@ -135,6 +135,7 @@ interface LoopMessage {
   role: 'user' | 'assistant' | 'tool'
   content: string
   reasoning?: string
+  reasoningId?: string
   toolCalls?: ToolCall[]
   toolCallId?: string
   toolName?: string
@@ -143,6 +144,7 @@ interface LoopMessage {
 interface ModelOutput {
   content: string
   reasoning?: string
+  reasoningId?: string
   reasoningPreview?: string
   toolCalls: ToolCall[]
   streamed?: boolean
@@ -410,7 +412,7 @@ function openAiResponseInput(messages: LoopMessage[]): Array<Record<string, unkn
   return messages.flatMap((message): Array<Record<string, unknown>> => {
     if (message.role === 'tool') return [{ type: 'function_call_output', call_id: message.toolCallId, output: message.content }]
     if (message.role === 'assistant' && message.toolCalls?.length) return [
-      ...(message.reasoning ? [{ type: 'reasoning', content: message.reasoning }] : []),
+      ...(message.reasoning ? [{ type: 'reasoning', ...(message.reasoningId ? { id: message.reasoningId } : {}), content: [{ type: 'reasoning_text', text: message.reasoning }] }] : []),
       ...(message.content ? [{ role: 'assistant', content: message.content }] : []),
       ...message.toolCalls.map((call) => ({ type: 'function_call', call_id: call.id, name: call.name, arguments: JSON.stringify(call.arguments) })),
     ]
@@ -497,10 +499,11 @@ function searchResultItems(value: unknown) {
 function parseOpenAiResponse(result: Record<string, unknown>): ModelOutput {
   const output = Array.isArray(result.output) ? result.output.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : []
   const messageItems = output.filter((item) => item.type === 'message')
+  const reasoningItems = output.filter((item) => item.type === 'reasoning')
   const messageContentParts = messageItems.flatMap(responseContentParts)
   const content = messageContentParts.filter((item) => !isReasoningContentPart(item)).map(textContent).filter(Boolean).join('\n') || textContent(result.output_text)
   const reasoning = uniqueText([
-    ...output.filter((item) => item.type === 'reasoning'),
+    ...reasoningItems,
     ...messageContentParts.filter(isReasoningContentPart),
     result.reasoning_content,
     result.reasoning,
@@ -515,6 +518,7 @@ function parseOpenAiResponse(result: Record<string, unknown>): ModelOutput {
   const toolCalls = output.flatMap((item, index) => item.type === 'function_call' && typeof item.name === 'string'
     ? [{ id: typeof item.call_id === 'string' ? item.call_id : `call-${Date.now()}-${index}`, name: item.name, arguments: parseArguments(item.arguments) }]
     : [])
+  const reasoningId = reasoningItems.map((item) => typeof item.id === 'string' ? item.id : '').find(Boolean)
   const searchCalls = output.filter((item) => item.type === 'web_search_call')
   const sources = uniqueSources(collectSources(result))
   const queries = searchCalls.flatMap((call) => {
@@ -525,6 +529,7 @@ function parseOpenAiResponse(result: Record<string, unknown>): ModelOutput {
   return {
     content,
     ...(reasoning ? { reasoning } : {}),
+    ...(reasoningId ? { reasoningId } : {}),
     ...(reasoningPreview ? { reasoningPreview } : {}),
     toolCalls,
     ...(searchCalls.length ? { webSearchUsed: true } : {}),
@@ -925,7 +930,7 @@ export async function askAgent(config: AgentProviderConfig, mode: AgentMode, mes
       if (!output.streamed) options.onDelta?.({ content: reply })
       return { reply, proposals, commitRequested, ...(reasoningSummary ? { reasoningSummary } : {}), ...(reasoningPreview ? { reasoningPreview } : {}), ...(webSearchUsed ? { webSearchUsed: true } : {}), ...(webSearchQueries.length ? { webSearchQueries } : {}), ...(sources.length ? { sources } : {}), operations }
     }
-    loopMessages.push({ role: 'assistant', content: output.content, ...(output.reasoning ? { reasoning: output.reasoning } : {}), toolCalls: output.toolCalls })
+    loopMessages.push({ role: 'assistant', content: output.content, ...(output.reasoning ? { reasoning: output.reasoning } : {}), ...(output.reasoningId ? { reasoningId: output.reasoningId } : {}), toolCalls: output.toolCalls })
     for (const [callIndex, call] of output.toolCalls.entries()) {
       const summary = operationSummary(call)
       // 服务商有时会在不同轮次复用 call.id；操作展示 ID 必须由客户端保证唯一，

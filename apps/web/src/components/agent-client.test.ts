@@ -185,6 +185,33 @@ describe('Agent 默认模型预算', () => {
     expect(result.reply).toContain('DeepSeek Responses')
   })
 
+  it('DeepSeek Responses 工具续轮以 reasoning_text 数组回传思考内容', async () => {
+    const deepSeekConfig: AgentProviderConfig = { ...config, baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', apiProtocol: 'openai-responses', reasoningEnabled: true, webSearchEnabled: false }
+    const requests: Array<Record<string, unknown>> = []
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      requests.push(body)
+      if (requests.length === 1) return new Response(JSON.stringify({
+        output: [
+          { type: 'reasoning', id: 'rs_1', content: [{ type: 'reasoning_text', text: '先读取笔记，再回答用户。' }] },
+          { type: 'function_call', call_id: 'call_1', name: 'search_notes', arguments: JSON.stringify({ query: 'markmap' }) },
+        ],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ output: [{ type: 'message', content: [{ type: 'output_text', text: '已读取相关笔记。' }] }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await askAgent(deepSeekConfig, 'chat', [{ role: 'user', content: '介绍一下 markmap' }], [{ path: 'notes/markmap.md', content: '# markmap\n\n思维导图工具' }])
+
+    const input = requests[1].input as Array<Record<string, unknown>>
+    expect(input).toEqual(expect.arrayContaining([
+      { type: 'reasoning', id: 'rs_1', content: [{ type: 'reasoning_text', text: '先读取笔记，再回答用户。' }] },
+      { type: 'function_call', call_id: 'call_1', name: 'search_notes', arguments: '{"query":"markmap"}' },
+      { type: 'function_call_output', call_id: 'call_1', output: expect.stringContaining('# markmap') },
+    ]))
+    expect(result.reply).toBe('已读取相关笔记。')
+  })
+
   it('只有 Responses 明确返回摘要时才显示摘要行', async () => {
     const deepSeekConfig: AgentProviderConfig = { ...config, baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', reasoningEnabled: true, webSearchEnabled: true }
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
