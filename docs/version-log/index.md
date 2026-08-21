@@ -8,16 +8,13 @@ outline: deep
 
 这里记录已经发布或进入稳定基线的主要变化。日常修复会随对应版本一起归档；当前安装包版本与下载入口请查看[Web 与桌面 App](/app/)。
 
-## 未发布
+## 1.2.1
+
+Agent、跨端编辑器和桌面窗口体验进一步完善：
 
 - Agent 新增 Anthropic Messages、OpenAI Chat Completions、OpenAI Responses API 和 Gemini Native `generateContent` 的上游格式选择，并按服务商、Base URL、模型和搜索开关计算默认接口。
 - 联网搜索新增 OpenAI、Anthropic、Gemini、MiMo、Azure OpenAI、DeepSeek、Groq 和 Moonshot / Kimi 的原生协议适配；Agent 会解析可用的引用、URL、grounding 来源和搜索操作。
 - MiMo 增加 `force_search` 开关；搜索协议、模型识别、来源是否可展示以及服务商插件和权限限制已在 [Agent 指南](/agent/) 中说明。
-
-## 1.1.1
-
-跨端编辑器和桌面窗口体验进一步收敛：
-
 - 优化视觉 Markdown 编辑器的 Notion 式区块操作、标题层级转换、格式气泡和移动端底栏，同时保留系统右键中的复制、粘贴等原生能力。
 - 修正主题对正文、超链接、代码块背景和 Markmap 预览颜色的传递；未显式指定的代码块文字会继承主题文字色。
 - Electron 偏好设置 > 全局新增“标题栏使用系统材质”，默认开启；Windows 使用 Mica，macOS 使用透明模糊标题栏，也可以关闭后切回普通窗口背景。
