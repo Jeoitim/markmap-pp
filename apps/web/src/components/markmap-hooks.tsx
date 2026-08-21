@@ -66,6 +66,7 @@ const brandIconUrl = `${import.meta.env.BASE_URL}brand/markmap-plus-plus-icon.pn
 
 type Pane = 'editor' | 'preview'
 type PreferenceSection = 'editor' | 'preview' | 'appearance' | 'spelling' | 'global'
+type EditorHighlightTheme = 'follow' | MarkdownThemeKey
 type Panel = 'preferences' | 'export' | 'github' | 'help' | 'about' | 'links' | null
 const HELP_TIP_COUNT = 5
 type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html' | 'pdf'
@@ -138,6 +139,10 @@ function isLightThemePreset(value: unknown): value is LightThemePreset {
 
 function isDarkThemePreset(value: unknown): value is DarkThemePreset {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(darkThemePresets, value)
+}
+
+function isMarkdownThemeKey(value: unknown): value is MarkdownThemeKey {
+  return isLightThemePreset(value) || isDarkThemePreset(value)
 }
 
 function loadPreferredEditorMode(): DocumentEditorMode {
@@ -249,6 +254,7 @@ interface AppSettings {
   editorFontSize: number
   editorFont: PreviewFont
   editorWeight: number
+  editorHighlightTheme: EditorHighlightTheme
   editorSpellCheck: boolean
   spellCheckLanguage: SpellCheckLanguage
   userDictionary: string[]
@@ -262,6 +268,8 @@ interface AppSettings {
   themeMode: ThemeMode
   lightThemePreset: LightThemePreset
   darkThemePreset: DarkThemePreset
+  lightThemeBackgroundOverride: boolean
+  darkThemeBackgroundOverride: boolean
   lightThemeBackground: string
   darkThemeBackground: string
   previewBackgroundColor: string
@@ -278,6 +286,7 @@ const defaultSettings: AppSettings = {
   editorFontSize: 14,
   editorFont: 'notoSans',
   editorWeight: 400,
+  editorHighlightTheme: 'follow',
   editorSpellCheck: false,
   spellCheckLanguage: 'auto',
   userDictionary: [],
@@ -291,6 +300,8 @@ const defaultSettings: AppSettings = {
   themeMode: 'system',
   lightThemePreset: 'catppuccin-latte',
   darkThemePreset: 'catppuccin-mocha',
+  lightThemeBackgroundOverride: false,
+  darkThemeBackgroundOverride: false,
   lightThemeBackground: lightThemePresets['catppuccin-latte'].background,
   darkThemeBackground: darkThemePresets['catppuccin-mocha'].background,
   previewBackgroundColor: lightThemePresets['catppuccin-latte'].background,
@@ -311,6 +322,16 @@ function normalizeAutoSaveDelay(value: unknown) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return defaultSettings.autoSaveDelay
   const stepped = Math.round(value / AUTO_SAVE_DELAY_STEP) * AUTO_SAVE_DELAY_STEP
   return Math.min(AUTO_SAVE_DELAY_MAX, Math.max(AUTO_SAVE_DELAY_MIN, stepped))
+}
+
+function normalizeUserDictionary(value: unknown): string[] | null {
+  const words = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && 'words' in value
+      ? (value as { words?: unknown }).words
+      : null
+  if (!Array.isArray(words)) return null
+  return Array.from(new Set(words.filter((word): word is string => typeof word === 'string').map((word) => word.trim()).filter(Boolean))).slice(0, 500)
 }
 
 const previewFonts: Record<PreviewFont, { label: string; family: string }> = {
@@ -1131,11 +1152,14 @@ function isHexColor(value: unknown): value is string {
 
 function loadSettings(): AppSettings {
   try {
-    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') as Partial<AppSettings> & { previewFont?: string }
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') as Partial<AppSettings> & { previewFont?: string; highlightScheme?: string }
     const legacyFonts: Record<string, PreviewFont> = { serif: 'notoSerif' }
     const requestedFont = stored.previewFont ? legacyFonts[stored.previewFont] || stored.previewFont : defaultSettings.previewFont
     const previewFont = requestedFont in previewFonts ? requestedFont as PreviewFont : defaultSettings.previewFont
     const editorFont = typeof stored.editorFont === 'string' && stored.editorFont in previewFonts ? stored.editorFont as PreviewFont : defaultSettings.editorFont
+    const legacyHighlightThemes: Record<string, EditorHighlightTheme> = { violet: 'catppuccin-mocha', github: 'github-light', solarized: 'solarized-light' }
+    const requestedEditorHighlightTheme = stored.editorHighlightTheme || legacyHighlightThemes[stored.highlightScheme || ''] || defaultSettings.editorHighlightTheme
+    const editorHighlightTheme: EditorHighlightTheme = requestedEditorHighlightTheme === 'follow' || isMarkdownThemeKey(requestedEditorHighlightTheme) ? requestedEditorHighlightTheme : defaultSettings.editorHighlightTheme
     const themeMode = stored.themeMode === 'light' || stored.themeMode === 'dark' || stored.themeMode === 'system' ? stored.themeMode : defaultSettings.themeMode
     const storedLightThemePreset = typeof stored.lightThemePreset === 'string' ? stored.lightThemePreset : ''
     const storedDarkThemePreset = typeof stored.darkThemePreset === 'string' ? stored.darkThemePreset : ''
@@ -1146,6 +1170,12 @@ function loadSettings(): AppSettings {
     const previewBackgroundColor = isHexColor(stored.previewBackgroundColor) ? stored.previewBackgroundColor : defaultSettings.previewBackgroundColor
     const hasLightThemeBackground = isHexColor(stored.lightThemeBackground)
     const hasDarkThemeBackground = isHexColor(stored.darkThemeBackground)
+    const lightThemeBackgroundOverride = typeof stored.lightThemeBackgroundOverride === 'boolean'
+      ? stored.lightThemeBackgroundOverride
+      : hasLightThemeBackground && stored.lightThemeBackground !== lightThemePresets[lightThemePreset].background
+    const darkThemeBackgroundOverride = typeof stored.darkThemeBackgroundOverride === 'boolean'
+      ? stored.darkThemeBackgroundOverride
+      : hasDarkThemeBackground && stored.darkThemeBackground !== darkThemePresets[darkThemePreset].background
     const hasLegacyPreviewBackground = isHexColor(stored.previewBackgroundColor)
     const legacyLightBackgrounds: Record<string, string> = { violet: '#fafafa', paper: '#fffaf2', ocean: '#f1f8fc' }
     const legacyDarkBackgrounds: Record<string, string> = { midnight: '#15181d', forest: '#12201b' }
@@ -1155,9 +1185,7 @@ function loadSettings(): AppSettings {
     const migratedDarkBackground = !hasLightThemeBackground && !hasDarkThemeBackground && hasLegacyPreviewBackground && previewBackgroundColor && shouldUseDarkTheme(previewBackgroundColor)
       ? legacyDarkBackgrounds[storedDarkThemePreset] === previewBackgroundColor ? darkThemePresets[darkThemePreset].background : previewBackgroundColor
       : darkThemePresets[darkThemePreset].background
-    const userDictionary = Array.isArray(stored.userDictionary)
-      ? Array.from(new Set(stored.userDictionary.filter((word): word is string => typeof word === 'string').map((word) => word.trim()).filter(Boolean))).slice(0, 500)
-      : defaultSettings.userDictionary
+    const userDictionary = normalizeUserDictionary(stored.userDictionary) || defaultSettings.userDictionary
     const spellCheckLanguage = stored.spellCheckLanguage === 'zh-CN' || stored.spellCheckLanguage === 'en-US' || stored.spellCheckLanguage === 'ja-JP' || stored.spellCheckLanguage === 'auto'
       ? stored.spellCheckLanguage
       : defaultSettings.spellCheckLanguage
@@ -1170,14 +1198,17 @@ function loadSettings(): AppSettings {
       ...defaultSettings,
       ...stored,
       editorFont,
+      editorHighlightTheme,
       previewFont,
       spellCheckLanguage,
       userDictionary,
       themeMode,
       lightThemePreset,
       darkThemePreset,
-      lightThemeBackground: hasLightThemeBackground ? stored.lightThemeBackground! : migratedLightBackground,
-      darkThemeBackground: hasDarkThemeBackground ? stored.darkThemeBackground! : migratedDarkBackground,
+      lightThemeBackgroundOverride,
+      darkThemeBackgroundOverride,
+      lightThemeBackground: lightThemeBackgroundOverride ? (hasLightThemeBackground ? stored.lightThemeBackground! : migratedLightBackground) : lightThemePresets[lightThemePreset].background,
+      darkThemeBackground: darkThemeBackgroundOverride ? (hasDarkThemeBackground ? stored.darkThemeBackground! : migratedDarkBackground) : darkThemePresets[darkThemePreset].background,
       previewBackgroundColor,
       exportBackgroundColor: isHexColor(stored.exportBackgroundColor) ? stored.exportBackgroundColor : defaultSettings.exportBackgroundColor,
       autoSave: typeof stored.autoSave === 'boolean' ? stored.autoSave : defaultSettings.autoSave,
@@ -1385,9 +1416,9 @@ export default function MarkmapHooks() {
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
   const [settings, setSettings] = useState(() => initialSettingsRef.current)
   const [dark, setDark] = useState(() => resolveThemeDark(initialSettingsRef.current.themeMode))
-  const nativeThemeSyncSkippedRef = useRef(false)
   const [activePanel, setActivePanel] = useState<Panel>(null)
-  const [preferenceSection, setPreferenceSection] = useState<PreferenceSection>('editor')
+  const [preferenceSection, setPreferenceSection] = useState<PreferenceSection>('global')
+  const [mobilePreferenceNavOpen, setMobilePreferenceNavOpen] = useState(false)
   const [helpTipIndex, setHelpTipIndex] = useState(0)
   const [editorWidth, setEditorWidth] = useState(38)
   const [editorCollapsed, setEditorCollapsed] = useState(false)
@@ -1542,6 +1573,7 @@ export default function MarkmapHooks() {
     timer: number
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const dictionaryImportRef = useRef<HTMLInputElement | null>(null)
   const actionsRef = useRef<HTMLElement | null>(null)
   const desktopMenuRef = useRef<HTMLDivElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
@@ -1696,9 +1728,12 @@ export default function MarkmapHooks() {
   const effectiveShowGrid = documentMode === 'mermaid' ? settings.showGrid : documentRenderConfig.showGrid ?? settings.showGrid
   const userPreviewBackground = documentMode === 'mermaid' ? undefined : readUserPreviewBackground(documentRenderConfig.style)
   const activeThemePreset: MarkdownThemeKey = dark ? settings.darkThemePreset : settings.lightThemePreset
+  const editorHighlightTheme: MarkdownThemeKey = settings.editorHighlightTheme === 'follow' ? activeThemePreset : settings.editorHighlightTheme
   const activeThemeBackground = dark ? settings.darkThemeBackground : settings.lightThemeBackground
   const previewBackgroundColor = userPreviewBackground || activeThemeBackground
-  const previewDarkMode = documentMode === 'mermaid' ? dark : userPreviewBackground ? shouldUseDarkTheme(previewBackgroundColor) : dark
+  const previewBackgroundOverride = dark ? settings.darkThemeBackgroundOverride : settings.lightThemeBackgroundOverride
+  const previewBackgroundControlsDisabled = Boolean(userPreviewBackground) || !previewBackgroundOverride
+  const previewDarkMode = userPreviewBackground || previewBackgroundOverride ? shouldUseDarkTheme(previewBackgroundColor) : dark
   const previewCodeBackground = codeBackgroundColor(previewBackgroundColor, previewDarkMode)
   const previewLinkColor = cssDeclaration(documentRenderConfig.style, '--markmap-a-color') || accessibleLinkColor(previewBackgroundColor)
   const exportAutoDarkMode = shouldUseDarkTheme(settings.exportBackgroundColor)
@@ -1715,6 +1750,7 @@ export default function MarkmapHooks() {
   const updatePreviewBackground = (color: string) => {
     setSettings((current) => ({
       ...current,
+      [dark ? 'darkThemeBackgroundOverride' : 'lightThemeBackgroundOverride']: true,
       [dark ? 'darkThemeBackground' : 'lightThemeBackground']: color,
       previewBackgroundColor: color,
     }))
@@ -1722,9 +1758,25 @@ export default function MarkmapHooks() {
   const updateThemeBackground = (mode: 'light' | 'dark', color: string) => {
     setSettings((current) => ({
       ...current,
+      [mode === 'dark' ? 'darkThemeBackgroundOverride' : 'lightThemeBackgroundOverride']: true,
       [mode === 'dark' ? 'darkThemeBackground' : 'lightThemeBackground']: color,
       previewBackgroundColor: (mode === 'dark') === dark ? color : current.previewBackgroundColor,
     }))
+  }
+  const updateThemeBackgroundOverride = (mode: 'light' | 'dark', enabled: boolean) => {
+    setSettings((current) => {
+      const isDarkMode = mode === 'dark'
+      const backgroundKey = isDarkMode ? 'darkThemeBackground' : 'lightThemeBackground'
+      const overrideKey = isDarkMode ? 'darkThemeBackgroundOverride' : 'lightThemeBackgroundOverride'
+      const presetBackground = isDarkMode ? darkThemePresets[current.darkThemePreset].background : lightThemePresets[current.lightThemePreset].background
+      const background = enabled ? current[backgroundKey] : presetBackground
+      return {
+        ...current,
+        [overrideKey]: enabled,
+        [backgroundKey]: background,
+        previewBackgroundColor: isDarkMode === dark ? background : current.previewBackgroundColor,
+      }
+    })
   }
   const updateExportBackground = (color: string) => updateSettings('exportBackgroundColor', color)
   const updateThemeMode = (mode: ThemeMode) => {
@@ -1736,20 +1788,22 @@ export default function MarkmapHooks() {
   const updateThemePreset = (mode: 'light' | 'dark', preset: LightThemePreset | DarkThemePreset) => {
     if (mode === 'light' && isLightThemePreset(preset)) {
       const background = lightThemePresets[preset].background
-      setSettings((current) => ({ ...current, lightThemePreset: preset, lightThemeBackground: background, previewBackgroundColor: !dark ? background : current.previewBackgroundColor }))
+      setDark(false)
+      setSettings((current) => ({ ...current, themeMode: 'light', lightThemePreset: preset, lightThemeBackground: current.lightThemeBackgroundOverride ? current.lightThemeBackground : background, previewBackgroundColor: current.lightThemeBackgroundOverride ? current.lightThemeBackground : background }))
     }
     if (mode === 'dark' && isDarkThemePreset(preset)) {
       const background = darkThemePresets[preset].background
-      setSettings((current) => ({ ...current, darkThemePreset: preset, darkThemeBackground: background, previewBackgroundColor: dark ? background : current.previewBackgroundColor }))
+      setDark(true)
+      setSettings((current) => ({ ...current, themeMode: 'dark', darkThemePreset: preset, darkThemeBackground: current.darkThemeBackgroundOverride ? current.darkThemeBackground : background, previewBackgroundColor: current.darkThemeBackgroundOverride ? current.darkThemeBackground : background }))
     }
   }
   const resetPreferenceSection = (section: PreferenceSection) => {
     setSettings((current) => {
-      if (section === 'editor') return { ...current, editorFontSize: defaultSettings.editorFontSize, editorFont: defaultSettings.editorFont, editorWeight: defaultSettings.editorWeight }
+      if (section === 'editor') return { ...current, editorFontSize: defaultSettings.editorFontSize, editorFont: defaultSettings.editorFont, editorWeight: defaultSettings.editorWeight, editorHighlightTheme: defaultSettings.editorHighlightTheme }
       if (section === 'preview') return { ...current, previewNodeNavigation: defaultSettings.previewNodeNavigation, previewFontSize: defaultSettings.previewFontSize, previewFont: defaultSettings.previewFont, previewWeight: defaultSettings.previewWeight, colorFreezeLevel: defaultSettings.colorFreezeLevel, showGrid: defaultSettings.showGrid, previewMermaid: defaultSettings.previewMermaid }
       if (section === 'appearance') {
         const nextDark = resolveThemeDark(defaultSettings.themeMode)
-        return { ...current, themeMode: defaultSettings.themeMode, lightThemePreset: defaultSettings.lightThemePreset, darkThemePreset: defaultSettings.darkThemePreset, lightThemeBackground: defaultSettings.lightThemeBackground, darkThemeBackground: defaultSettings.darkThemeBackground, previewBackgroundColor: nextDark ? defaultSettings.darkThemeBackground : defaultSettings.lightThemeBackground }
+        return { ...current, themeMode: defaultSettings.themeMode, lightThemePreset: defaultSettings.lightThemePreset, darkThemePreset: defaultSettings.darkThemePreset, lightThemeBackgroundOverride: defaultSettings.lightThemeBackgroundOverride, darkThemeBackgroundOverride: defaultSettings.darkThemeBackgroundOverride, lightThemeBackground: defaultSettings.lightThemeBackground, darkThemeBackground: defaultSettings.darkThemeBackground, previewBackgroundColor: nextDark ? defaultSettings.darkThemeBackground : defaultSettings.lightThemeBackground }
       }
       if (section === 'spelling') return { ...current, editorSpellCheck: defaultSettings.editorSpellCheck, spellCheckLanguage: defaultSettings.spellCheckLanguage, userDictionary: [...defaultSettings.userDictionary] }
       return { ...current, autoSave: defaultSettings.autoSave, autoSaveDelay: defaultSettings.autoSaveDelay, startupBehavior: defaultSettings.startupBehavior, repositorySort: defaultSettings.repositorySort, repositorySortDirection: defaultSettings.repositorySortDirection, titleBarBrand: defaultSettings.titleBarBrand }
@@ -1767,8 +1821,35 @@ export default function MarkmapHooks() {
   }
   const removeDictionaryWord = (word: string) => setSettings((current) => ({ ...current, userDictionary: current.userDictionary.filter((item) => item !== word) }))
   const [dictionaryDraft, setDictionaryDraft] = useState('')
-  const openPreferencesPanel = (section: PreferenceSection = 'editor') => {
+  const [dictionaryNotice, setDictionaryNotice] = useState('')
+  const exportUserDictionary = () => {
+    const payload = JSON.stringify({ version: 1, words: settings.userDictionary }, null, 2)
+    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'markmap-plus-plus-user-dictionary.json'
+    link.click()
+    URL.revokeObjectURL(url)
+    setDictionaryNotice(t('用户词典已导出'))
+  }
+  const importUserDictionary = async (file: File) => {
+    try {
+      const imported = normalizeUserDictionary(JSON.parse(await file.text()))
+      if (!imported) throw new Error('invalid dictionary')
+      setSettings((current) => ({ ...current, userDictionary: Array.from(new Set([...current.userDictionary, ...imported])).slice(0, 500) }))
+      setDictionaryNotice(`${t('已导入用户词典')} ${imported.length} ${t('个词条。')}`)
+    } catch {
+      setDictionaryNotice(t('用户词典文件格式无效'))
+    }
+  }
+  const preferenceSectionTitle = t(preferenceSection === 'editor' ? '编辑器' : preferenceSection === 'preview' ? '预览' : preferenceSection === 'appearance' ? '外观' : preferenceSection === 'spelling' ? '拼写' : '全局')
+  const selectPreferenceSection = (section: PreferenceSection) => {
     setPreferenceSection(section)
+    setMobilePreferenceNavOpen(false)
+  }
+  const openPreferencesPanel = (section: PreferenceSection = 'global') => {
+    setPreferenceSection(section)
+    setMobilePreferenceNavOpen(false)
     setActivePanel('preferences')
   }
   const openHelpPanel = () => { setHelpTipIndex(0); setActivePanel('help') }
@@ -4011,11 +4092,12 @@ export default function MarkmapHooks() {
   useEffect(() => {
     const desktop = desktopApi()
     if (!desktop) return
-    if (!nativeThemeSyncSkippedRef.current) {
-      nativeThemeSyncSkippedRef.current = true
-      return
-    }
-    void desktop.setNativeTheme(settings.themeMode).catch(() => {})
+    let active = true
+    void desktop.setNativeTheme(settings.themeMode).then(({ shouldUseDarkColors }) => {
+      if (!active) return
+      setDark(settings.themeMode === 'system' ? shouldUseDarkColors : settings.themeMode === 'dark')
+    }).catch(() => {})
+    return () => { active = false }
   }, [settings.themeMode])
 
   useEffect(() => {
@@ -4921,7 +5003,7 @@ ${documentRenderConfig.style}
             </div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-               {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection) }} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} theme={activeThemePreset} locale={locale} mode={documentMode} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection ? { source: 'editor', ...selection } : null) }} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
+               {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection) }} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} theme={editorHighlightTheme} locale={locale} mode={documentMode} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection ? { source: 'editor', ...selection } : null) }} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
               <footer className="editor-status">
                 <button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button>
                 <span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span>
@@ -5133,17 +5215,20 @@ ${documentRenderConfig.style}
               <button type="button" className="help-tip-nav" onClick={() => moveHelpTip(1)} aria-label="下一条说明"><Icon name="chevron-right" /></button>
             </div>
             <div className="help-tip-footer"><div className="help-tip-dots" role="tablist" aria-label="选择说明提示"><span className="sr-only">当前提示</span>{helpTips.map((tip, index) => <button type="button" key={tip.kicker} className={index === helpTipIndex ? 'active' : ''} role="tab" aria-selected={index === helpTipIndex} aria-label={`查看第 ${index + 1} 条：${tip.title}`} onClick={() => setHelpTipIndex(index)} />)}</div></div>
-           </div>}
+          </div>}
           {activePanel === 'preferences' && <div className="preferences-layout">
-            <nav className="preferences-nav" role="tablist" aria-label={t('偏好设置分类')}>
-              <button type="button" className={preferenceSection === 'editor' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'editor'} onClick={() => setPreferenceSection('editor')}><Icon name="svg-editor" /><span><strong>{t('编辑器')}</strong><small>{t('Markdown 与编辑体验')}</small></span></button>
-              <button type="button" className={preferenceSection === 'preview' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'preview'} onClick={() => setPreferenceSection('preview')}><Icon name="map" /><span><strong>{t('预览')}</strong><small>{t('思维导图与图表预览')}</small></span></button>
-              <button type="button" className={preferenceSection === 'appearance' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'appearance'} onClick={() => setPreferenceSection('appearance')}><Icon name="sun" /><span><strong>{t('外观')}</strong><small>{t('主题与界面颜色')}</small></span></button>
-              <button type="button" className={preferenceSection === 'spelling' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'spelling'} onClick={() => setPreferenceSection('spelling')}><Icon name="globe" /><span><strong>{t('拼写')}</strong><small>{t('语言与用户词典')}</small></span></button>
-              <button type="button" className={preferenceSection === 'global' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'global'} onClick={() => setPreferenceSection('global')}><Icon name="settings" /><span><strong>{t('全局')}</strong><small>{t('保存、启动与排序')}</small></span></button>
+            <button type="button" className="preferences-mobile-selector" aria-expanded={mobilePreferenceNavOpen} aria-controls="preferences-nav-list" onClick={() => setMobilePreferenceNavOpen((value) => !value)}>
+              <span><small>{t('偏好设置分类')}</small><strong>{preferenceSectionTitle}</strong></span><Icon className={mobilePreferenceNavOpen ? 'open' : undefined} name="chevron-down" />
+            </button>
+            <nav id="preferences-nav-list" className={`preferences-nav ${mobilePreferenceNavOpen ? 'mobile-open' : ''}`} role="tablist" aria-label={t('偏好设置分类')}>
+              <button type="button" className={preferenceSection === 'global' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'global'} onClick={() => selectPreferenceSection('global')}><Icon name="settings" /><span><strong>{t('全局')}</strong><small>{t('保存、启动与排序')}</small></span></button>
+              <button type="button" className={preferenceSection === 'editor' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'editor'} onClick={() => selectPreferenceSection('editor')}><Icon name="svg-editor" /><span><strong>{t('编辑器')}</strong><small>{t('Markdown 与编辑体验')}</small></span></button>
+              <button type="button" className={preferenceSection === 'preview' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'preview'} onClick={() => selectPreferenceSection('preview')}><Icon name="map" /><span><strong>{t('预览')}</strong><small>{t('思维导图与图表预览')}</small></span></button>
+              <button type="button" className={preferenceSection === 'appearance' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'appearance'} onClick={() => selectPreferenceSection('appearance')}><Icon name="sun" /><span><strong>{t('外观')}</strong><small>{t('主题与界面颜色')}</small></span></button>
+              <button type="button" className={preferenceSection === 'spelling' ? 'active' : ''} role="tab" aria-selected={preferenceSection === 'spelling'} onClick={() => selectPreferenceSection('spelling')}><Icon name="globe" /><span><strong>{t('拼写')}</strong><small>{t('语言与用户词典')}</small></span></button>
             </nav>
             <div className="preferences-content">
-              <div className="preferences-page-toolbar"><div><strong>{t(preferenceSection === 'editor' ? '编辑器' : preferenceSection === 'preview' ? '预览' : preferenceSection === 'appearance' ? '外观' : preferenceSection === 'spelling' ? '拼写' : '全局')}</strong><small>{t('当前页设置会立即生效')}</small></div><button className="reset-settings-button" type="button" onClick={() => resetPreferenceSection(preferenceSection)}><Icon name="refresh" />{t('恢复默认设置')}</button></div>
+              <div className="preferences-page-toolbar"><div><strong>{preferenceSectionTitle}</strong><small>{t('当前页设置会立即生效')}</small></div><button className="reset-settings-button" type="button" onClick={() => resetPreferenceSection(preferenceSection)}><Icon name="refresh" />{t('恢复默认设置')}</button></div>
               {preferenceSection === 'editor' && <div className="settings-body preferences-section-body">
                 <div className="preferences-section-heading"><strong>{t('编辑体验')}</strong><small>{t('控制源码、视觉模式和输入辅助。')}</small></div>
                 <section className="editor-mode-setting experimental-setting" aria-labelledby="editor-mode-setting-title">
@@ -5171,11 +5256,12 @@ ${documentRenderConfig.style}
                   <div className="font-samples"><small>{t('Mermaid 预览字体')}</small><span style={{ fontFamily: previewFonts[settings.previewFont].family, fontSize: `${settings.previewFontSize}px`, fontWeight: settings.previewWeight }}>Mermaid Preview 0123</span></div>
                   <label className="field"><span>{t('字体')}</span><select value={settings.previewFont} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
                   <label className="field"><span>{t('字号')} <b>{settings.previewFontSize}px</b></span><input type="range" min="12" max="28" value={settings.previewFontSize} onChange={(event) => updateSettings('previewFontSize', Number(event.target.value))} /></label>
-                  <label className="field"><span>{t('字重')} <b>{settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
-                  <div className="preferences-section-heading"><strong>{t('画布与背景')}</strong><small>{t('控制预览画布的底色和辅助网格。')}</small></div>
-                  <label className="export-color-field preview-background-field"><span>{t('画布背景')}</span><span className="export-color-control"><input type="color" value={previewBackgroundColor} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{previewBackgroundColor.toUpperCase()}</code></span></label>
-                  <div className="export-color-presets preview-background-presets" aria-label={t('Mermaid 预览背景颜色预设')}>{exportBackgroundPresets.map(([color, label]) => <button type="button" key={color} className={previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('Mermaid 预览背景色：')}${t(label)}`} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
-                  <label className="switch-field"><span><strong>{t('点阵背景')}</strong><small>{t('辅助观察 Mermaid 画布范围')}</small></span><input type="checkbox" checked={settings.showGrid} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
+                   <label className="field"><span>{t('字重')} <b>{settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
+                   <div className="preferences-section-heading"><strong>{t('画布与背景')}</strong><small>{t('控制预览画布的底色和辅助网格。')}</small></div>
+                   <label className="switch-field"><span><strong>{t('单独设置画布背景')}</strong><small>{t('关闭时跟随主题预设；打开后颜色由 WCAG 自动匹配文字明暗。')}</small></span><input type="checkbox" checked={previewBackgroundOverride} onChange={(event) => updateThemeBackgroundOverride(dark ? 'dark' : 'light', event.target.checked)} /></label>
+                   <label className={`export-color-field preview-background-field ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`}><span>{t('画布背景')} <small>{previewBackgroundOverride ? t('WCAG 自动主题') : t('跟随主题预设')}</small></span><span className="export-color-control"><input type="color" value={previewBackgroundColor} disabled={previewBackgroundControlsDisabled} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{previewBackgroundColor.toUpperCase()}</code></span></label>
+                   <div className={`export-color-presets preview-background-presets ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`} aria-label={t('Mermaid 预览背景颜色预设')}>{exportBackgroundPresets.map(([color, label]) => <button type="button" key={color} className={previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('Mermaid 预览背景色：')}${t(label)}`} disabled={previewBackgroundControlsDisabled} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
+                   <label className="switch-field"><span><strong>{t('点阵背景')}</strong><small>{t('辅助观察 Mermaid 画布范围')}</small></span><input type="checkbox" checked={settings.showGrid} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
                 </> : <>
                   {documentRenderConfig.optionKeys.length > 0 && <div className="settings-note code-options-note"><Icon name="check" /><span>{locale === 'en-US' ? `${t('Frontmatter 正在控制：')}${documentRenderConfig.optionKeys.join(', ')}${t('。代码配置优先于此面板。')}` : `Frontmatter 正在控制：${documentRenderConfig.optionKeys.join('、')}。代码配置优先于此面板。`}</span></div>}
                   <div className="preferences-section-heading"><strong>{t('思维导图显示')}</strong><small>{t('调整节点文字、层级颜色和布局表现。')}</small></div>
@@ -5183,10 +5269,11 @@ ${documentRenderConfig.style}
                   <label className={`field ${codeFont.controlsFamily ? 'code-controlled' : ''}`}><span>{t('字体')}{codeFont.controlsFamily && <b>{t('由代码控制')}</b>}</span><select value={settings.previewFont} disabled={codeFont.controlsFamily} onChange={(event) => updateSettings('previewFont', event.target.value as PreviewFont)}>{Object.entries(previewFonts).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></label>
                   <label className={`field ${codeFont.controlsSize ? 'code-controlled' : ''}`}><span>{t('节点字号')} <b>{codeFont.controlsSize ? `${effectiveFontSizeCss} · ${t('代码')}` : `${settings.previewFontSize}px`}</b></span><input type="range" min="12" max="28" value={settings.previewFontSize} disabled={codeFont.controlsSize} onChange={(event) => updateSettings('previewFontSize', Number(event.target.value))} /><small>{t('适应画布后，文字显示大小基本不变；字号主要影响节点排版和换行，通常无需调整。')}</small></label>
                   <label className={`field ${codeFont.controlsWeight ? 'code-controlled' : ''}`}><span>{t('字重')} <b>{codeFont.controlsWeight ? `${effectiveFontWeightCss} · ${t('代码')}` : settings.previewWeight}</b></span><input type="range" min="300" max="700" step="50" value={settings.previewWeight} disabled={codeFont.controlsWeight} onChange={(event) => updateSettings('previewWeight', Number(event.target.value))} /></label>
-                  <label className={`field ${documentRenderConfig.colorFreezeLevel !== undefined ? 'code-controlled' : ''}`}><span>{t('颜色层级')} <b>{documentRenderConfig.colorFreezeLevel !== undefined ? `${effectiveColorFreezeLevel} · ${t('代码')}` : effectiveColorFreezeLevel}</b></span><input type="range" min="0" max="6" step="1" value={effectiveColorFreezeLevel} disabled={documentRenderConfig.colorFreezeLevel !== undefined} onChange={(event) => updateSettings('colorFreezeLevel', Number(event.target.value))} /><small>{t('从指定层级开始继承分支颜色，0 表示不锁定')}</small></label>
-                  <div className="preferences-section-heading"><strong>{t('画布与交互')}</strong><small>{t('控制背景、点阵辅助和节点定位。')}</small></div>
-                  <label className={`export-color-field preview-background-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span>{t('画布背景')} <small>{userPreviewBackground ? t('由 Markdown style 控制') : t('WCAG 自动主题')}</small></span><span className="export-color-control"><input type="color" value={previewBackgroundColor} disabled={Boolean(userPreviewBackground)} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{previewBackgroundColor.toUpperCase()}</code></span></label>
-                  <div className={`export-color-presets preview-background-presets ${userPreviewBackground ? 'code-controlled' : ''}`} aria-label={t('预览背景颜色预设')}>{exportBackgroundPresets.map(([color, label]) => <button type="button" key={color} className={previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('预览背景色：')}${t(label)}`} disabled={Boolean(userPreviewBackground)} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
+                   <label className={`field ${documentRenderConfig.colorFreezeLevel !== undefined ? 'code-controlled' : ''}`}><span>{t('颜色层级')} <b>{documentRenderConfig.colorFreezeLevel !== undefined ? `${effectiveColorFreezeLevel} · ${t('代码')}` : effectiveColorFreezeLevel}</b></span><input type="range" min="0" max="6" step="1" value={effectiveColorFreezeLevel} disabled={documentRenderConfig.colorFreezeLevel !== undefined} onChange={(event) => updateSettings('colorFreezeLevel', Number(event.target.value))} /><small>{t('从指定层级开始继承分支颜色，0 表示不锁定')}</small></label>
+                   <div className="preferences-section-heading"><strong>{t('画布与交互')}</strong><small>{t('控制背景、点阵辅助和节点定位。')}</small></div>
+                   <label className={`switch-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span><strong>{t('单独设置画布背景')}</strong><small>{userPreviewBackground ? t('由 Markdown style 控制') : t('关闭时跟随主题预设；打开后颜色由 WCAG 自动匹配文字明暗。')}</small></span><input type="checkbox" checked={previewBackgroundOverride} disabled={Boolean(userPreviewBackground)} onChange={(event) => updateThemeBackgroundOverride(dark ? 'dark' : 'light', event.target.checked)} /></label>
+                   <label className={`export-color-field preview-background-field ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`}><span>{t('画布背景')} <small>{userPreviewBackground ? t('由 Markdown style 控制') : previewBackgroundOverride ? t('WCAG 自动主题') : t('跟随主题预设')}</small></span><span className="export-color-control"><input type="color" value={previewBackgroundColor} disabled={previewBackgroundControlsDisabled} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{previewBackgroundColor.toUpperCase()}</code></span></label>
+                   <div className={`export-color-presets preview-background-presets ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`} aria-label={t('预览背景颜色预设')}>{exportBackgroundPresets.map(([color, label]) => <button type="button" key={color} className={previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('预览背景色：')}${t(label)}`} disabled={previewBackgroundControlsDisabled} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
                   <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>{t('点阵背景')}</strong><small>{documentRenderConfig.showGrid !== undefined ? t('由 Frontmatter 代码控制') : t('辅助观察画布移动与缩放')}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
                   <label className="switch-field"><span><strong>{t('点击预览节点定位')}</strong><small>{t('点击右侧思维导图节点时，编辑器自动跳转到对应的 Markdown 内容。')}</small></span><input type="checkbox" checked={settings.previewNodeNavigation} onChange={(event) => updateSettings('previewNodeNavigation', event.target.checked)} /></label>
                   <div className="preferences-section-heading"><strong>{t('扩展预览')}</strong><small>{t('控制 Markdown 中 Mermaid 代码块的预览方式。')}</small></div>
@@ -5200,11 +5287,15 @@ ${documentRenderConfig.style}
                 <div className="theme-active-note"><span className={`theme-swatch ${dark ? 'dark' : 'light'}`} /><span>{t('当前应用主题')}：{dark ? darkThemePresets[settings.darkThemePreset].label : lightThemePresets[settings.lightThemePreset].label}</span></div>
                 <div className="preferences-section-heading"><strong>{t('浅色主题')}</strong><small>{t('选择浅色模式使用的 Markdown 主题，并单独调整预览画布底色。')}</small></div>
                 <label className="field"><span>{t('浅色默认主题')}</span><select value={settings.lightThemePreset} onChange={(event) => updateThemePreset('light', event.target.value as LightThemePreset)}>{Object.entries(lightThemePresets).map(([value, preset]) => <option key={value} value={value}>{preset.label}</option>)}</select></label>
-                <label className="export-color-field theme-color-field"><span>{t('浅色预览背景')}</span><span className="export-color-control"><input type="color" value={settings.lightThemeBackground} onChange={(event) => updateThemeBackground('light', event.target.value)} /><code>{settings.lightThemeBackground.toUpperCase()}</code></span></label>
+                <label className="switch-field"><span><strong>{t('单独设置浅色预览背景')}</strong><small>{t('关闭时使用浅色 Markdown 主题的默认背景。')}</small></span><input type="checkbox" checked={settings.lightThemeBackgroundOverride} onChange={(event) => updateThemeBackgroundOverride('light', event.target.checked)} /></label>
+                <label className={`export-color-field theme-color-field ${settings.lightThemeBackgroundOverride ? '' : 'code-controlled'}`}><span>{t('浅色预览背景')} {!settings.lightThemeBackgroundOverride && <small>{t('跟随主题预设')}</small>}</span><span className="export-color-control"><input type="color" value={settings.lightThemeBackground} disabled={!settings.lightThemeBackgroundOverride} onChange={(event) => updateThemeBackground('light', event.target.value)} /><code>{settings.lightThemeBackground.toUpperCase()}</code></span></label>
                 <div className="preferences-section-heading"><strong>{t('深色主题')}</strong><small>{t('选择深色模式使用的 Markdown 主题，并单独调整预览画布底色。')}</small></div>
                 <label className="field"><span>{t('深色默认主题')}</span><select value={settings.darkThemePreset} onChange={(event) => updateThemePreset('dark', event.target.value as DarkThemePreset)}>{Object.entries(darkThemePresets).map(([value, preset]) => <option key={value} value={value}>{preset.label}</option>)}</select></label>
-                <label className="export-color-field theme-color-field"><span>{t('深色预览背景')}</span><span className="export-color-control"><input type="color" value={settings.darkThemeBackground} onChange={(event) => updateThemeBackground('dark', event.target.value)} /><code>{settings.darkThemeBackground.toUpperCase()}</code></span></label>
+                <label className="switch-field"><span><strong>{t('单独设置深色预览背景')}</strong><small>{t('关闭时使用深色 Markdown 主题的默认背景。')}</small></span><input type="checkbox" checked={settings.darkThemeBackgroundOverride} onChange={(event) => updateThemeBackgroundOverride('dark', event.target.checked)} /></label>
+                <label className={`export-color-field theme-color-field ${settings.darkThemeBackgroundOverride ? '' : 'code-controlled'}`}><span>{t('深色预览背景')} {!settings.darkThemeBackgroundOverride && <small>{t('跟随主题预设')}</small>}</span><span className="export-color-control"><input type="color" value={settings.darkThemeBackground} disabled={!settings.darkThemeBackgroundOverride} onChange={(event) => updateThemeBackground('dark', event.target.value)} /><code>{settings.darkThemeBackground.toUpperCase()}</code></span></label>
                 <div className="preferences-section-heading"><strong>{t('编辑器主题')}</strong><small>{t('源码编辑器的 Markdown 语法高亮会跟随当前社区主题。')}</small></div>
+                <label className="switch-field"><span><strong>{t('单独设置语法高亮')}</strong><small>{t('关闭时由当前 Markdown 主题自动决定；打开后可以固定源码高亮预设。')}</small></span><input type="checkbox" checked={settings.editorHighlightTheme !== 'follow'} onChange={(event) => updateSettings('editorHighlightTheme', event.target.checked ? activeThemePreset : 'follow')} /></label>
+                <label className={`field ${settings.editorHighlightTheme === 'follow' ? 'code-controlled' : ''}`}><span>{t('高亮预设')}</span><select value={settings.editorHighlightTheme} disabled={settings.editorHighlightTheme === 'follow'} onChange={(event) => updateSettings('editorHighlightTheme', event.target.value as EditorHighlightTheme)}><option value="follow">{t('跟随 Markdown 主题')}</option>{Object.entries({ ...lightThemePresets, ...darkThemePresets }).map(([value, preset]) => <option key={value} value={value}>{preset.label}</option>)}</select><small>{t('手动选择源码高亮颜色；默认跟随当前 Markdown 主题。')}</small></label>
               </div>}
               {preferenceSection === 'spelling' && <div className="settings-body preferences-section-body">
                 <div className="settings-note"><Icon name="globe" /><span>{t('拼写提示由浏览器或桌面系统提供；语言会同步到源码和视觉编辑器。')}</span></div>
@@ -5213,6 +5304,12 @@ ${documentRenderConfig.style}
                 <label className="field"><span>{t('检查语言')}</span><select value={settings.spellCheckLanguage} onChange={(event) => updateSettings('spellCheckLanguage', event.target.value as SpellCheckLanguage)}><option value="auto">{t('跟随系统')}</option><option value="zh-CN">简体中文</option><option value="en-US">English (US)</option><option value="ja-JP">日本語</option></select></label>
                 <div className="preferences-section-heading"><strong>{t('用户词典')}</strong><small>{t('添加人名、术语或项目专有词；词条会保存在本机设置中。')}</small></div>
                 <div className="dictionary-input-row"><input value={dictionaryDraft} onChange={(event) => setDictionaryDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addDictionaryWord(dictionaryDraft); setDictionaryDraft('') } }} placeholder={t('输入词条后添加')} /><button type="button" className="button" onClick={() => { addDictionaryWord(dictionaryDraft); setDictionaryDraft('') }} disabled={!dictionaryDraft.trim()}>{t('添加')}</button></div>
+                <div className="dictionary-transfer-row">
+                  <button type="button" onClick={() => dictionaryImportRef.current?.click()}><Icon name="folder" />{t('导入用户词典')}</button>
+                  <button type="button" onClick={exportUserDictionary}><Icon name="download" />{t('导出用户词典')}</button>
+                  <input ref={dictionaryImportRef} className="visually-hidden" type="file" accept=".json,application/json" aria-label={t('选择用户词典 JSON 文件')} onChange={(event) => { const file = event.target.files?.[0]; if (file) void importUserDictionary(file); event.target.value = '' }} />
+                </div>
+                {dictionaryNotice && <div className="dictionary-transfer-note" role="status" aria-live="polite"><Icon name="check" />{dictionaryNotice}</div>}
                 {settings.userDictionary.length ? <div className="dictionary-chips" aria-label={t('用户词典')}>{settings.userDictionary.map((word) => <button type="button" key={word} onClick={() => removeDictionaryWord(word)} title={t('移除词条')}>{word}<Icon name="x" /></button>)}</div> : <div className="settings-note"><Icon name="check" /><span>{t('还没有自定义词条。')}</span></div>}
               </div>}
               {preferenceSection === 'global' && <div className="settings-body preferences-section-body">

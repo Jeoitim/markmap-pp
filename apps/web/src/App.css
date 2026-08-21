@@ -695,6 +695,7 @@ svg { flex: 0 0 auto; }
 .settings-body { display: grid; gap: 21px; padding: 22px; }
 .preferences-panel { width: min(820px, 100%); }
 .preferences-layout { min-height: 0; display: grid; grid-template-columns: 190px minmax(0, 1fr); flex: 1 1 auto; }
+.preferences-mobile-selector { display: none; }
 .preferences-nav { min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 18px 12px; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--panel-soft) 72%, transparent); }
 .preferences-nav button { min-width: 0; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid transparent; border-radius: 10px; color: var(--muted); background: transparent; text-align: left; cursor: pointer; }
 .preferences-nav button:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 6%, transparent); }
@@ -723,6 +724,12 @@ svg { flex: 0 0 auto; }
 .dictionary-input-row input { min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; outline: 0; color: var(--text); background: var(--panel-soft); font-size: 12px; }
 .dictionary-input-row input:focus { border-color: color-mix(in srgb,var(--accent) 55%,var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent); }
 .dictionary-input-row .button { height: 36px; }
+.dictionary-transfer-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.dictionary-transfer-row button { min-width: 0; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1 1 150px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--panel-soft); font-size: 12px; font-weight: 600; cursor: pointer; }
+.dictionary-transfer-row button:hover { border-color: color-mix(in srgb,var(--accent) 42%,var(--border)); color: var(--accent); background: color-mix(in srgb,var(--accent) 7%,var(--panel)); }
+.dictionary-transfer-row button svg { width: 15px; height: 15px; }
+.dictionary-transfer-note { display: flex; align-items: flex-start; gap: 7px; margin-top: -5px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.dictionary-transfer-note svg { width: 14px; height: 14px; flex: 0 0 14px; color: var(--accent); }
 .dictionary-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .dictionary-chips button { display: inline-flex; align-items: center; gap: 5px; min-height: 27px; max-width: 100%; padding: 0 8px 0 9px; border: 1px solid color-mix(in srgb,var(--accent) 28%,var(--border)); border-radius: 999px; color: var(--accent); background: color-mix(in srgb,var(--accent) 8%,var(--panel)); font-size: 11px; cursor: pointer; }
 .dictionary-chips button:hover { border-color: var(--accent); background: color-mix(in srgb,var(--accent) 14%,var(--panel)); }
@@ -1142,7 +1149,14 @@ html[data-locale="en-US"] .export-color-presets::before { content: 'Presets'; }
   .desktop-app-menu > section button { white-space: normal; line-height: 1.25; }
   .preferences-panel { width: 100%; }
   .preferences-layout { display: flex; flex-direction: column; }
-  .preferences-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .preferences-mobile-selector { width: calc(100% - 24px); min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 12px 0; padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: color-mix(in srgb, var(--panel-soft) 78%, transparent); text-align: left; cursor: pointer; }
+  .preferences-mobile-selector > span { min-width: 0; display: grid; gap: 2px; }
+  .preferences-mobile-selector small { color: var(--muted); font-size: 10px; }
+  .preferences-mobile-selector strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+  .preferences-mobile-selector > svg { width: 18px; height: 18px; flex: 0 0 18px; color: var(--muted); transition: transform .16s ease; }
+  .preferences-mobile-selector > svg.open { transform: rotate(180deg); }
+  .preferences-nav { display: none; }
+  .preferences-nav.mobile-open { display: grid; grid-template-columns: 1fr; gap: 5px; padding: 7px 12px 10px; border-right: 0; border-bottom: 1px solid var(--border); }
   .preferences-nav button { grid-template-columns: 18px minmax(0, 1fr); gap: 8px; min-height: 42px; padding: 7px 9px; }
   .preferences-nav button > svg { width: 17px; height: 17px; }
   .preferences-nav button strong { font-size: 12px; }
