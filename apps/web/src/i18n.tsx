@@ -50,6 +50,8 @@ const translations: Record<string, string> = {
   '说明': 'Guide',
   '撤回': 'Undo',
   '撤回修改': 'Undo change',
+  '重做': 'Redo',
+  '全选': 'Select all',
   '收起编辑器': 'Collapse editor',
   '展开编辑器': 'Expand editor',
   '切换深色模式': 'Switch to dark mode',

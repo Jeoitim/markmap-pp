@@ -6,11 +6,12 @@ import { commonmark } from '@milkdown/kit/preset/commonmark'
 import { addRowWithAlignment, gfm } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode, type NodeType, type Schema } from '@milkdown/kit/prose/model'
 import { addColumnAfter, deleteColumn, deleteRow, isInTable, selectedRect } from '@milkdown/kit/prose/tables'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { $nodeSchema, $remark } from '@milkdown/kit/utils'
 import type { MarkdownNode, Root } from '@milkdown/kit/transformer'
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react'
 import { useI18n } from '../i18n-hook'
+import type { EditorCommand } from './markdown-editor'
 
 export interface VisualMarkdownEditorProps {
   value: string
@@ -29,6 +30,7 @@ export interface VisualMarkdownEditorProps {
 }
 
 export interface VisualMarkdownEditorHandle {
+  executeCommand: (command: EditorCommand) => Promise<void>
   revealLine: (line: number, text?: string) => void
 }
 
@@ -506,6 +508,46 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
   }, [getInstance, loading, spellCheck, spellCheckLanguage, userDictionary])
 
   useImperativeHandle(ref, () => ({
+    executeCommand: async (command) => {
+      const editor = getInstance()
+      if (!editor) return
+      let selectedText = ''
+      const executed = editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        view.focus()
+        const { from, to } = view.state.selection
+        selectedText = view.state.doc.textBetween(from, to, '\n')
+        if (command === 'copy' || command === 'cut') return from === to || document.execCommand(command)
+        return document.execCommand(command)
+      })
+      if (executed) return
+      if (command === 'copy') {
+        if (!selectedText) return
+        try { await navigator.clipboard.writeText(selectedText) } catch { /* Clipboard access may be unavailable in the browser. */ }
+        return
+      }
+      if (command === 'cut') {
+        if (!selectedText) return
+        try {
+          await navigator.clipboard.writeText(selectedText)
+          editor.action((ctx) => { ctx.get(editorViewCtx).dispatch(ctx.get(editorViewCtx).state.tr.deleteSelection().scrollIntoView()) })
+        } catch { /* Keep the selection when clipboard access is unavailable. */ }
+        return
+      }
+      if (command === 'paste') {
+        try {
+          const text = await navigator.clipboard.readText()
+          if (text) editor.action((ctx) => { ctx.get(editorViewCtx).dispatch(ctx.get(editorViewCtx).state.tr.insertText(text).scrollIntoView()) })
+        } catch { /* Clipboard access may be unavailable in the browser. */ }
+        return
+      }
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        if (command === 'delete') view.dispatch(view.state.tr.deleteSelection().scrollIntoView())
+        else view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)).scrollIntoView())
+        view.focus()
+      })
+    },
     revealLine: (lineNumber, text) => {
       const editor = getInstance()
       if (!editor) return

@@ -78,9 +78,12 @@ export interface MarkdownEditorSelection {
   link?: ParsedMarkdownLink
 }
 
+export type EditorCommand = 'copy' | 'cut' | 'paste' | 'delete' | 'selectAll'
+
 export interface MarkdownEditorHandle {
   allowNativeContextMenuOnce: () => void
   focus: () => void
+  executeCommand: (command: EditorCommand) => Promise<void>
   getSelection: () => { from: number; to: number; text: string }
   replaceRange: (from: number, to: number, insert: string) => void
   replaceSelection: (insert: string) => void
@@ -113,6 +116,47 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   useImperativeHandle(ref, () => ({
     allowNativeContextMenuOnce: () => { nativeContextMenuOnceRef.current = true },
     focus: () => viewRef.current?.focus(),
+    executeCommand: async (command) => {
+      const view = viewRef.current
+      if (!view) return
+      view.focus()
+      const selection = view.state.selection.main
+      const selectedText = view.state.sliceDoc(selection.from, selection.to)
+      const fallbackDelete = () => {
+        if (selection.from === selection.to) return
+        view.dispatch({ changes: { from: selection.from, to: selection.to, insert: '' }, selection: { anchor: selection.from }, scrollIntoView: true })
+      }
+      if (command === 'copy') {
+        if (selection.from === selection.to) return
+        if (document.execCommand('copy')) return
+        try { await navigator.clipboard.writeText(selectedText) } catch { /* Clipboard access may be unavailable in the browser. */ }
+        return
+      }
+      if (command === 'cut') {
+        if (selection.from === selection.to) return
+        if (document.execCommand('cut')) return
+        try {
+          await navigator.clipboard.writeText(selectedText)
+          fallbackDelete()
+        } catch { /* Keep the selection when clipboard access is unavailable. */ }
+        return
+      }
+      if (command === 'paste') {
+        if (document.execCommand('paste')) return
+        try {
+          const text = await navigator.clipboard.readText()
+          if (text) view.dispatch({ changes: { from: selection.from, to: selection.to, insert: text }, selection: { anchor: selection.from + text.length }, scrollIntoView: true })
+        } catch { /* Clipboard access may be unavailable in the browser. */ }
+        return
+      }
+      if (command === 'delete') {
+        if (!document.execCommand('delete')) fallbackDelete()
+        return
+      }
+      if (!document.execCommand('selectAll')) {
+        view.dispatch({ selection: { anchor: 0, head: view.state.doc.length }, scrollIntoView: true })
+      }
+    },
     getSelection: () => {
       const view = viewRef.current
       if (!view) return { from: 0, to: 0, text: '' }

@@ -141,6 +141,7 @@ function nativeApplicationMenu() {
         { label: '剪切', role: 'cut' },
         { label: '复制', role: 'copy' },
         { label: '粘贴', role: 'paste' },
+        { label: '删除', role: 'delete' },
         { label: '全选', role: 'selectAll' },
       ],
     },
@@ -772,6 +773,7 @@ async function createWindow() {
         { label: '剪切', role: 'cut' },
         { label: '复制', role: 'copy' },
         { label: '粘贴', role: 'paste' },
+        { label: '删除', role: 'delete' },
         { type: 'separator' },
         { label: '全选', role: 'selectAll' },
       );

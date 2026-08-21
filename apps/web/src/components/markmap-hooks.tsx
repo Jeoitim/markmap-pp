@@ -12,7 +12,7 @@ import '@fontsource-variable/jetbrains-mono'
 import '@fontsource-variable/noto-sans-sc/wght.css'
 import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
-import MarkdownEditor, { type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
+import MarkdownEditor, { type EditorCommand, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import { markdownThemePalette, type MarkdownThemeKey } from './markdown-theme'
 import VisualMarkdownEditor, { type VisualMarkdownEditorHandle, type VisualMarkdownSelection } from './visual-markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
@@ -1461,6 +1461,7 @@ export default function MarkmapHooks() {
   const [editorWidth, setEditorWidth] = useState(38)
   const [editorCollapsed, setEditorCollapsed] = useState(false)
   const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [desktopPlatform, setDesktopPlatform] = useState<string | null>(null)
   const [desktopAppInfo, setDesktopAppInfo] = useState<DesktopAppInfo | null>(null)
@@ -1626,6 +1627,7 @@ export default function MarkmapHooks() {
   const standaloneAutosaveTimerRef = useRef<number | null>(null)
   const standaloneAutosaveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const historyRef = useRef<string[]>([])
+  const redoHistoryRef = useRef<string[]>([])
   const lastEditRef = useRef({ source: '', time: 0 })
   const helpTouchStartRef = useRef<{ x: number; y: number } | null>(null)
   const desktopWorkspaceRestoredRef = useRef(!shouldRestoreDesktopWorkspace)
@@ -1947,9 +1949,11 @@ export default function MarkmapHooks() {
 
   const displayDocumentTab = useCallback((tab: DocumentTab) => {
     historyRef.current = []
+    redoHistoryRef.current = []
     lastEditRef.current = { source: '', time: 0 }
     markdownRef.current = tab.content
     setCanUndo(false)
+    setCanRedo(false)
     setMarkdown(tab.content)
     setRenderedMarkdown(tab.content)
     setFileName(tab.name)
@@ -1964,6 +1968,7 @@ export default function MarkmapHooks() {
 
   const displayNoOpenDocument = useCallback(() => {
     historyRef.current = []
+    redoHistoryRef.current = []
     lastEditRef.current = { source: '', time: 0 }
     markdownRef.current = ''
     setMarkdown('')
@@ -1973,6 +1978,7 @@ export default function MarkmapHooks() {
     setActiveRepoPath(null)
     setActiveLocalFile(null)
     setCanUndo(false)
+    setCanRedo(false)
     setSaveState('saved')
     setMobileTabsOpen(false)
   }, [])
@@ -2094,7 +2100,9 @@ export default function MarkmapHooks() {
     const groupedTyping = source === 'editor' && lastEditRef.current.source === 'editor' && now - lastEditRef.current.time < 700
     if (!groupedTyping) {
       historyRef.current = [...historyRef.current.slice(-49), current]
+      redoHistoryRef.current = []
       setCanUndo(true)
+      setCanRedo(false)
     }
     lastEditRef.current = { source, time: now }
     markdownRef.current = value
@@ -2222,13 +2230,58 @@ export default function MarkmapHooks() {
   const undoLastChange = useCallback(() => {
     const previous = historyRef.current.pop()
     if (previous === undefined) return
+    redoHistoryRef.current = [...redoHistoryRef.current.slice(-49), markdownRef.current]
     lastEditRef.current = { source: '', time: 0 }
     markdownRef.current = previous
     setMarkdown(previous)
     setRenderedMarkdown(previous)
     setSaveState('saving')
     setCanUndo(historyRef.current.length > 0)
+    setCanRedo(true)
   }, [])
+
+  const redoLastChange = useCallback(() => {
+    const next = redoHistoryRef.current.pop()
+    if (next === undefined) return
+    historyRef.current = [...historyRef.current.slice(-49), markdownRef.current]
+    lastEditRef.current = { source: '', time: 0 }
+    markdownRef.current = next
+    setMarkdown(next)
+    setRenderedMarkdown(next)
+    setSaveState('saving')
+    setCanUndo(true)
+    setCanRedo(redoHistoryRef.current.length > 0)
+  }, [])
+
+  const runEditorCommand = useCallback(async (command: EditorCommand) => {
+    const activeElement = document.activeElement
+    const isTextControl = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement
+    if (isTextControl) {
+      activeElement.focus()
+      if (command === 'paste' && !document.execCommand('paste')) {
+        try {
+          const text = await navigator.clipboard.readText()
+          if (text) document.execCommand('insertText', false, text)
+        } catch { /* Clipboard access may be unavailable in the browser. */ }
+      } else {
+        document.execCommand(command)
+      }
+      return
+    }
+    if (editorView === 'markdown') {
+      if (documentEditorMode === 'visual') await visualMarkdownEditorRef.current?.executeCommand(command)
+      else await markdownEditorRef.current?.executeCommand(command)
+      return
+    }
+    if (command === 'paste' && !document.execCommand('paste')) {
+      try {
+        const text = await navigator.clipboard.readText()
+        if (text) document.execCommand('insertText', false, text)
+      } catch { /* Clipboard access may be unavailable in the browser. */ }
+      return
+    }
+    document.execCommand(command)
+  }, [documentEditorMode, editorView])
 
   const activateCachedFile = useCallback((file: CachedMarkdownFile) => {
     const repositoryKey = githubConfig ? repoKeyOf(githubConfig) : 'github'
@@ -5009,14 +5062,14 @@ ${documentRenderConfig.style}
       {documentRenderConfig.style && <style>{documentRenderConfig.style}</style>}
       <header className="topbar">
         <div className="brand-area" ref={desktopMenuRef}>
-          <button type="button" className="desktop-menu-trigger" aria-label={t('应用菜单')} title={t('应用菜单')} aria-expanded={desktopMenuOpen} onClick={toggleDesktopMenu}><Icon name="menu" /></button>
+          <button type="button" className="desktop-menu-trigger" aria-label={t('应用菜单')} title={t('应用菜单')} aria-expanded={desktopMenuOpen} onMouseDown={(event) => event.preventDefault()} onClick={toggleDesktopMenu}><Icon name="menu" /></button>
           {(showTitleBarIcon || showTitleBarName) && <div className="brand" aria-label="markmap++">{showTitleBarIcon && <span className="brand-mark"><img src={brandIconUrl} alt="" /></span>}{showTitleBarName && <span className="brand-name">markmap<span>++</span></span>}</div>}
           {desktopMenuOpen && <div className="desktop-app-menu" role="menu" aria-label={t('markmap++ 应用菜单')}>
             <nav>
-              <button className={desktopMenuSection === 'file' ? 'active' : ''} onMouseEnter={() => { setDesktopMenuSection('file'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('file'); setDesktopMenuLanguageOpen(false) }}>{t('文件')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
-              <button className={desktopMenuSection === 'edit' ? 'active' : ''} onMouseEnter={() => { setDesktopMenuSection('edit'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('edit'); setDesktopMenuLanguageOpen(false) }}>{t('编辑')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
-              <button className={desktopMenuSection === 'view' ? 'active' : ''} onMouseEnter={() => { setDesktopMenuSection('view'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('view'); setDesktopMenuLanguageOpen(false) }}>{t('视图')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
-              <button className={desktopMenuSection === 'help' ? 'active' : ''} onMouseEnter={() => setDesktopMenuSection('help')} onClick={() => setDesktopMenuSection('help')}>{t('帮助')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+              <button className={desktopMenuSection === 'file' ? 'active' : ''} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => { setDesktopMenuSection('file'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('file'); setDesktopMenuLanguageOpen(false) }}>{t('文件')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+              <button className={desktopMenuSection === 'edit' ? 'active' : ''} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => { setDesktopMenuSection('edit'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('edit'); setDesktopMenuLanguageOpen(false) }}>{t('编辑')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+              <button className={desktopMenuSection === 'view' ? 'active' : ''} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => { setDesktopMenuSection('view'); setDesktopMenuLanguageOpen(false) }} onClick={() => { setDesktopMenuSection('view'); setDesktopMenuLanguageOpen(false) }}>{t('视图')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
+              <button className={desktopMenuSection === 'help' ? 'active' : ''} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setDesktopMenuSection('help')} onClick={() => setDesktopMenuSection('help')}>{t('帮助')}<span className="desktop-menu-arrow" aria-hidden="true">›</span></button>
             </nav>
             <section>
               {desktopMenuLanguageOpen ? <>
@@ -5042,6 +5095,14 @@ ${documentRenderConfig.style}
                 <button onClick={() => { setDesktopMenuOpen(false); closeDocumentTab(activeTabId) }}><span>{t('关闭标签页')}</span><kbd>{shortcut('W')}</kbd></button>
               </> : desktopMenuSection === 'edit' ? <>
                 <button disabled={!canUndo} onClick={() => { setDesktopMenuOpen(false); undoLastChange() }}><span>{t('撤回上一次修改')}</span><kbd>{shortcut('Z')}</kbd></button>
+                <button disabled={!canRedo} onClick={() => { setDesktopMenuOpen(false); redoLastChange() }}><span>{t('重做')}</span><kbd>{shortcut('Shift+Z')}</kbd></button>
+                <hr />
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('copy') }}><span>{t('复制')}</span><kbd>{shortcut('C')}</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('cut') }}><span>{t('剪切')}</span><kbd>{shortcut('X')}</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('paste') }}><span>{t('粘贴')}</span><kbd>{shortcut('V')}</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('delete') }}><span>{t('删除')}</span><kbd>Delete</kbd></button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => { setDesktopMenuOpen(false); void runEditorCommand('selectAll') }}><span>{t('全选')}</span><kbd>{shortcut('A')}</kbd></button>
+                <hr />
                 <button onClick={() => { setDesktopMenuOpen(false); openPreferencesPanel('editor') }}><span>{t('编辑器偏好设置')}</span></button>
               </> : desktopMenuSection === 'view' ? <>
                 <button onClick={() => { setDesktopMenuOpen(false); setEditorView('markdown') }}><span>编辑器</span></button>
