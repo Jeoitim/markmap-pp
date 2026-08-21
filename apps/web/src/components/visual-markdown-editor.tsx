@@ -1044,6 +1044,25 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
                   : activeBlock.kind === 'horizontal-rule'
                     ? '—'
                     : '¶'
+  const blockHandleText = !activeBlock
+    ? ''
+    : activeBlock.kind === 'heading'
+      ? t(`标题 ${activeBlock.level}`)
+      : activeBlock.kind === 'code'
+        ? t('代码')
+        : activeBlock.kind === 'blockquote'
+          ? t('引用')
+          : activeBlock.kind === 'ordered-list' || (activeBlock.kind === 'list-item' && activeBlock.listType === 'ordered')
+            ? t('有序列表')
+            : activeBlock.kind === 'bullet-list' || activeBlock.kind === 'list-item'
+              ? t('无序列表')
+              : activeBlock.kind === 'task'
+                ? t('待办事项')
+                : activeBlock.kind === 'table'
+                  ? t('表格')
+                  : activeBlock.kind === 'horizontal-rule'
+                    ? t('分隔线')
+                    : t('段落')
   const isActiveBlockOption = (option: BlockOption) => {
     if (!activeBlock) return false
     return option.kind === 'heading'
@@ -1087,7 +1106,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     </div>
         {activeBlock && <div className="visual-mobile-block-toolbar" role="toolbar" aria-label={t('区块操作')} onPointerDown={(event) => event.stopPropagation()}>
       <div className="visual-mobile-block-toolbar-row">
-        <button type="button" className="visual-mobile-heading-trigger" aria-label={t('转换为')} aria-expanded={conversionMenuOpen} disabled={activeBlockOptions.length === 0} onClick={() => { setConversionMenuOpen((open) => !open); setBlockMenuOpen(false) }}>{blockHandleLabel}</button>
+        <button type="button" className="visual-mobile-heading-trigger" aria-label={`${t('转换为')} ${blockHandleText}`} aria-expanded={conversionMenuOpen} disabled={activeBlockOptions.length === 0} onClick={() => { setConversionMenuOpen((open) => !open); setBlockMenuOpen(false) }}><span aria-hidden="true">{blockHandleLabel}</span><em>{blockHandleText}</em></button>
         <button type="button" onClick={() => runBlockAction('duplicate')}><span>▣</span><em>{t('创建副本')}</em></button>
         {activeBlock.kind === 'table' && <>
           <button type="button" onClick={() => runBlockAction('table-add-row')}><span>＋</span><em>{t('新增行')}</em></button>

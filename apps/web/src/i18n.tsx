@@ -198,6 +198,8 @@ const translations: Record<string, string> = {
   '转换为': 'Convert to',
   '新段落': 'New paragraph',
   '段落': 'Paragraph',
+  '表格': 'Table',
+  '分隔线': 'Divider',
   '引用': 'Quote',
   '无序列表': 'Bulleted list',
   '有序列表': 'Numbered list',
