@@ -72,6 +72,7 @@ type Panel = 'preferences' | 'export' | 'github' | 'help' | 'about' | 'links' | 
 const HELP_TIP_COUNT = 5
 type ExportFormat = 'md' | 'svg' | 'png' | 'jpeg' | 'html' | 'pdf'
 type ExportTextTheme = 'auto' | 'light' | 'dark'
+type ExportThemePreset = 'follow' | 'custom' | MarkdownThemeKey
 type PreviewFont = 'inter' | 'notoSans' | 'notoSerif' | 'wenkai' | 'mono'
 type ThemeMode = 'system' | 'light' | 'dark'
 type LightThemePreset = 'github-light' | 'solarized-light' | 'gruvbox-light' | 'catppuccin-latte' | 'everforest-light' | 'tokyonight-day'
@@ -110,18 +111,24 @@ const darkThemePresets: Record<DarkThemePreset, ThemePreset> = {
 }
 
 const exportBackgroundPresets = [
-  ['#ffffff', 'GitHub Light'],
-  ['#fdf6e3', 'Solarized Light'],
-  ['#fbf1c7', 'Gruvbox Light'],
-  ['#eff1f5', 'Catppuccin Latte'],
-  ['#2d353b', 'Everforest Dark'],
-  ['#282828', 'Gruvbox Dark'],
-  ['#1a1b26', 'Tokyo Night'],
-  ['#1e1e2e', 'Catppuccin Mocha'],
-  ['#2e3440', 'Nord'],
-  ['#282a36', 'Dracula'],
-  ['#000000', '纯黑'],
+  ['#ffffff', 'GitHub Light', 'github-light'],
+  ['#fdf6e3', 'Solarized Light', 'solarized-light'],
+  ['#fdf6e3', 'Everforest Light', 'everforest-light'],
+  ['#fbf1c7', 'Gruvbox Light', 'gruvbox-light'],
+  ['#eff1f5', 'Catppuccin Latte', 'catppuccin-latte'],
+  ['#2d353b', 'Everforest Dark', 'everforest'],
+  ['#282828', 'Gruvbox Dark', 'gruvbox-dark'],
+  ['#1a1b26', 'Tokyo Night', 'tokyonight'],
+  ['#1e1e2e', 'Catppuccin Mocha', 'catppuccin-mocha'],
+  ['#2e3440', 'Nord', 'nord'],
+  ['#282a36', 'Dracula', 'dracula'],
+  ['#000000', '纯黑', null],
 ] as const
+
+function exportPaletteForBackground(currentThemePreset: MarkdownThemeKey, exportThemePreset: ExportThemePreset) {
+  const themeKey = exportThemePreset === 'follow' || exportThemePreset === 'custom' ? currentThemePreset : exportThemePreset
+  return markdownThemePalette[themeKey]
+}
 
 const legacyLightThemePresets: Record<string, LightThemePreset> = {
   violet: 'github-light',
@@ -275,6 +282,7 @@ interface AppSettings {
   darkThemeBackground: string
   previewBackgroundColor: string
   exportBackgroundColor: string
+  exportThemePreset: ExportThemePreset
   autoSave: boolean
   autoSaveDelay: number
   startupBehavior: StartupBehavior
@@ -308,6 +316,7 @@ const defaultSettings: AppSettings = {
   darkThemeBackground: darkThemePresets['catppuccin-mocha'].background,
   previewBackgroundColor: lightThemePresets['catppuccin-latte'].background,
   exportBackgroundColor: '#ffffff',
+  exportThemePreset: 'follow',
   autoSave: true,
   autoSaveDelay: 350,
   startupBehavior: 'restore',
@@ -1198,6 +1207,9 @@ function loadSettings(): AppSettings {
     const repositorySortDirection = stored.repositorySortDirection === 'desc' || stored.repositorySortDirection === 'asc' ? stored.repositorySortDirection : defaultSettings.repositorySortDirection
     const titleBarBrand = stored.titleBarBrand === 'both' || stored.titleBarBrand === 'icon' || stored.titleBarBrand === 'name' || stored.titleBarBrand === 'none' ? stored.titleBarBrand : defaultSettings.titleBarBrand
     const titleBarMaterial = typeof stored.titleBarMaterial === 'boolean' ? stored.titleBarMaterial : defaultSettings.titleBarMaterial
+    const exportThemePreset: ExportThemePreset = stored.exportThemePreset === 'follow' || stored.exportThemePreset === 'custom' || isMarkdownThemeKey(stored.exportThemePreset)
+      ? stored.exportThemePreset
+      : defaultSettings.exportThemePreset
     return {
       ...defaultSettings,
       ...stored,
@@ -1215,6 +1227,7 @@ function loadSettings(): AppSettings {
       darkThemeBackground: darkThemeBackgroundOverride ? (hasDarkThemeBackground ? stored.darkThemeBackground! : migratedDarkBackground) : darkThemePresets[darkThemePreset].background,
       previewBackgroundColor,
       exportBackgroundColor: isHexColor(stored.exportBackgroundColor) ? stored.exportBackgroundColor : defaultSettings.exportBackgroundColor,
+      exportThemePreset,
       autoSave: typeof stored.autoSave === 'boolean' ? stored.autoSave : defaultSettings.autoSave,
       autoSaveDelay,
       startupBehavior,
@@ -1756,6 +1769,9 @@ export default function MarkmapHooks() {
   const editorHighlightTheme: MarkdownThemeKey = settings.editorHighlightTheme === 'follow' ? activeThemePreset : settings.editorHighlightTheme
   const activeThemePalette = markdownThemePalette[activeThemePreset]
   const activeThemeBackground = dark ? settings.darkThemeBackground : settings.lightThemeBackground
+  const exportBackgroundColor = settings.exportThemePreset === 'follow'
+    ? (dark ? darkThemePresets[settings.darkThemePreset].background : lightThemePresets[settings.lightThemePreset].background)
+    : settings.exportBackgroundColor
   const previewBackgroundColor = userPreviewBackground || activeThemeBackground
   const previewBackgroundOverride = dark ? settings.darkThemeBackgroundOverride : settings.lightThemeBackgroundOverride
   const previewBackgroundControlsDisabled = Boolean(userPreviewBackground) || !previewBackgroundOverride
@@ -1771,7 +1787,7 @@ export default function MarkmapHooks() {
   const documentOwnsBranchColors = Array.isArray(documentRenderConfig.jsonOptions.color) && documentRenderConfig.jsonOptions.color.length > 0
   const previewBackgroundRef = useRef(previewBackgroundColor)
   previewBackgroundRef.current = previewBackgroundColor
-  const exportAutoDarkMode = shouldUseDarkTheme(settings.exportBackgroundColor)
+  const exportAutoDarkMode = shouldUseDarkTheme(exportBackgroundColor)
   const exportDarkMode = exportTextTheme === 'auto' ? exportAutoDarkMode : exportTextTheme === 'dark'
   const exportUsesTransparentBackground = exportFormat === 'png' && exportTransparentBackground
   const effectiveMarkmapOptions = useMemo<Partial<IMarkmapOptions>>(() => deriveOptions({
@@ -1813,7 +1829,19 @@ export default function MarkmapHooks() {
       }
     })
   }
-  const updateExportBackground = (color: string) => updateSettings('exportBackgroundColor', color)
+  const updateExportBackground = (color: string, preset: MarkdownThemeKey | null = null) => {
+    setSettings((current) => ({
+      ...current,
+      exportBackgroundColor: color,
+      exportThemePreset: preset || 'custom',
+    }))
+  }
+  const isExportPresetActive = (color: string, preset: MarkdownThemeKey | null) => {
+    if (exportBackgroundColor.toLowerCase() !== color.toLowerCase()) return false
+    if (settings.exportThemePreset === 'follow') return preset === activeThemePreset
+    if (settings.exportThemePreset === 'custom') return preset === null
+    return settings.exportThemePreset === preset
+  }
   const updateThemeMode = (mode: ThemeMode) => {
     const nextDark = resolveThemeDark(mode)
     setDark(nextDark)
@@ -4329,10 +4357,13 @@ export default function MarkmapHooks() {
     restoreMarkmapMermaidPreviews(clone)
     const tablePadding = clone.querySelectorAll('foreignObject table').length * 20
     const outputHeight = height + tablePadding
-    const textColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-text-color')) || accessibleColor(backgroundColor, activeThemePalette.foreground || (darkMode ? previewLightText : previewDarkText), 4.5)
-    const codeColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-color')) || textColor
-    const exportCodeBackground = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-bg')) || activeThemePalette.codeBackground || codeBackgroundColor(backgroundColor, darkMode)
-    const linkColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-a-color')) || accessibleLinkColor(backgroundColor, activeThemePalette.link || defaultLinkColor)
+    const exportThemePalette = exportPaletteForBackground(activeThemePreset, settings.exportThemePreset)
+    const textColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-text-color')) || accessibleColor(backgroundColor, exportThemePalette.foreground || (darkMode ? previewLightText : previewDarkText), 4.5)
+    const exportCodeBackground = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-bg')) || exportThemePalette.codeBackground || codeBackgroundColor(backgroundColor, darkMode)
+    const codeColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-color')) || accessibleColor(exportCodeBackground, exportThemePalette.code || textColor, 4.5)
+    const linkColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-a-color')) || accessibleLinkColor(backgroundColor, exportThemePalette.link || defaultLinkColor)
+    const taskColor = accessibleColor(backgroundColor, exportThemePalette.heading || exportThemePalette.link || defaultLinkColor, 3)
+    const taskForeground = accessibleColor(taskColor, '#ffffff', 4.5)
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
     clone.style.setProperty('--markmap-font', effectiveMarkmapFont)
     clone.style.setProperty('--markmap-text-color', textColor)
@@ -4355,8 +4386,8 @@ export default function MarkmapHooks() {
 .markmap-foreign pre { max-width: 100%; white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
 .markmap-foreign pre > code { display: block; width: 100%; max-width: 100%; box-sizing: border-box; white-space: inherit !important; overflow-wrap: inherit !important; word-break: inherit !important; }
 .markmap-foreign pre, .markmap-foreign code { color: ${codeColor} !important; background: ${exportCodeBackground} !important; }
-.markmap-foreign .markmap-task-box { display: inline-block; width: 1em; height: 1em; margin: 0 .35em -.15em 0; border: 1.5px solid currentColor; border-radius: .25em; vertical-align: baseline; }
-.markmap-foreign .markmap-task-box[data-checked='true'] { color: #fff !important; background: #7056e8 !important; border-color: #7056e8 !important; }
+.markmap-foreign .markmap-task-box { display: inline-block; width: 1em; height: 1em; margin: 0 .35em -.15em 0; border: 1.5px solid ${taskColor}; border-radius: .25em; color: ${taskColor} !important; vertical-align: baseline; }
+.markmap-foreign .markmap-task-box[data-checked='true'] { color: ${taskForeground} !important; background: ${taskColor} !important; border-color: ${taskColor} !important; }
 .markmap-foreign .markmap-task-box[data-checked='true']::after { content: '✓'; display: block; font-size: .75em; line-height: 1.25em; text-align: center; }
 .markmap-collapse-control, .markmap-collapse-hit { cursor: pointer; pointer-events: all; }
 ${documentRenderConfig.style}
@@ -4403,10 +4434,11 @@ ${documentRenderConfig.style}
       const targetContent = foreignObject.firstElementChild?.firstElementChild
       if (liveContent && targetContent) inlineComputedStyles(liveContent, targetContent)
     })
-    const textColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-text-color')) || accessibleColor(backgroundColor, activeThemePalette.foreground || (darkMode ? previewLightText : previewDarkText), 4.5)
-    const codeColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-color')) || textColor
-    const exportCodeBackground = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-bg')) || activeThemePalette.codeBackground || codeBackgroundColor(backgroundColor, darkMode)
-    const linkColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-a-color')) || accessibleLinkColor(backgroundColor, activeThemePalette.link || defaultLinkColor)
+    const exportThemePalette = exportPaletteForBackground(activeThemePreset, settings.exportThemePreset)
+    const textColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-text-color')) || accessibleColor(backgroundColor, exportThemePalette.foreground || (darkMode ? previewLightText : previewDarkText), 4.5)
+    const exportCodeBackground = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-bg')) || exportThemePalette.codeBackground || codeBackgroundColor(backgroundColor, darkMode)
+    const codeColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-code-color')) || accessibleColor(exportCodeBackground, exportThemePalette.code || textColor, 4.5)
+    const linkColor = extractCssColor(cssDeclaration(documentRenderConfig.style, '--markmap-a-color')) || accessibleLinkColor(backgroundColor, exportThemePalette.link || defaultLinkColor)
     const appendInlineStyle = (element: Element, declarations: string) => {
       const existing = element.getAttribute('style') || ''
       element.setAttribute('style', `${existing}${existing ? ';' : ''}${declarations}`)
@@ -4758,7 +4790,6 @@ ${documentRenderConfig.style}
     setExporting(true)
     setExportError('')
     const baseName = documentStem(fileName) || (documentMode === 'mermaid' ? 'mermaid' : 'markmap')
-    const exportBackgroundColor = settings.exportBackgroundColor
     const desktop = desktopApi()
     const printWindow = exportFormat === 'pdf' && !desktop ? openPdfPrintWindow() : null
     const restorePreviewAfterExport = documentMode === 'markdown' && settings.previewMermaid && exportFormat !== 'md'
@@ -5317,7 +5348,7 @@ ${documentRenderConfig.style}
                    <div className="preferences-section-heading"><strong>{t('画布与背景')}</strong><small>{t('控制预览画布的底色和辅助网格。')}</small></div>
                    <label className="switch-field"><span><strong>{t('单独设置画布背景')}</strong><small>{t('关闭时跟随主题预设；打开后颜色由 WCAG 自动匹配文字明暗。')}</small></span><input type="checkbox" checked={previewBackgroundOverride} onChange={(event) => updateThemeBackgroundOverride(dark ? 'dark' : 'light', event.target.checked)} /></label>
                    <label className={`export-color-field preview-background-field ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`}><span>{t('画布背景')} <small>{previewBackgroundOverride ? t('WCAG 自动主题') : t('跟随主题预设')}</small></span><span className="export-color-control"><input type="color" value={previewBackgroundColor} disabled={previewBackgroundControlsDisabled} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{previewBackgroundColor.toUpperCase()}</code></span></label>
-                   <div className={`export-color-presets preview-background-presets ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`} aria-label={t('Mermaid 预览背景颜色预设')}>{exportBackgroundPresets.map(([color, label]) => <button type="button" key={color} className={previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('Mermaid 预览背景色：')}${t(label)}`} disabled={previewBackgroundControlsDisabled} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
+                   <div className={`export-color-presets preview-background-presets ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`} aria-label={t('Mermaid 预览背景颜色预设')}>{exportBackgroundPresets.map(([color, label, preset]) => <button type="button" key={`${preset || 'custom'}:${color}`} className={previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('Mermaid 预览背景色：')}${t(label)}`} disabled={previewBackgroundControlsDisabled} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
                    <label className="switch-field"><span><strong>{t('点阵背景')}</strong><small>{t('辅助观察 Mermaid 画布范围')}</small></span><input type="checkbox" checked={settings.showGrid} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
                 </> : <>
                   {documentRenderConfig.optionKeys.length > 0 && <div className="settings-note code-options-note"><Icon name="check" /><span>{locale === 'en-US' ? `${t('Frontmatter 正在控制：')}${documentRenderConfig.optionKeys.join(', ')}${t('。代码配置优先于此面板。')}` : `Frontmatter 正在控制：${documentRenderConfig.optionKeys.join('、')}。代码配置优先于此面板。`}</span></div>}
@@ -5330,7 +5361,7 @@ ${documentRenderConfig.style}
                    <div className="preferences-section-heading"><strong>{t('画布与交互')}</strong><small>{t('控制背景、点阵辅助和节点定位。')}</small></div>
                    <label className={`switch-field ${userPreviewBackground ? 'code-controlled' : ''}`}><span><strong>{t('单独设置画布背景')}</strong><small>{userPreviewBackground ? t('由 Markdown style 控制') : t('关闭时跟随主题预设；打开后颜色由 WCAG 自动匹配文字明暗。')}</small></span><input type="checkbox" checked={previewBackgroundOverride} disabled={Boolean(userPreviewBackground)} onChange={(event) => updateThemeBackgroundOverride(dark ? 'dark' : 'light', event.target.checked)} /></label>
                    <label className={`export-color-field preview-background-field ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`}><span>{t('画布背景')} <small>{userPreviewBackground ? t('由 Markdown style 控制') : previewBackgroundOverride ? t('WCAG 自动主题') : t('跟随主题预设')}</small></span><span className="export-color-control"><input type="color" value={previewBackgroundColor} disabled={previewBackgroundControlsDisabled} onChange={(event) => updatePreviewBackground(event.target.value)} /><code>{previewBackgroundColor.toUpperCase()}</code></span></label>
-                   <div className={`export-color-presets preview-background-presets ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`} aria-label={t('预览背景颜色预设')}>{exportBackgroundPresets.map(([color, label]) => <button type="button" key={color} className={previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('预览背景色：')}${t(label)}`} disabled={previewBackgroundControlsDisabled} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
+                   <div className={`export-color-presets preview-background-presets ${previewBackgroundControlsDisabled ? 'code-controlled' : ''}`} aria-label={t('预览背景颜色预设')}>{exportBackgroundPresets.map(([color, label, preset]) => <button type="button" key={`${preset || 'custom'}:${color}`} className={previewBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('预览背景色：')}${t(label)}`} disabled={previewBackgroundControlsDisabled} onClick={() => updatePreviewBackground(color)}><span style={{ background: color }} /></button>)}</div>
                   <label className={`switch-field ${documentRenderConfig.showGrid !== undefined ? 'code-controlled' : ''}`}><span><strong>{t('点阵背景')}</strong><small>{documentRenderConfig.showGrid !== undefined ? t('由 Frontmatter 代码控制') : t('辅助观察画布移动与缩放')}</small></span><input type="checkbox" checked={effectiveShowGrid} disabled={documentRenderConfig.showGrid !== undefined} onChange={(event) => updateSettings('showGrid', event.target.checked)} /></label>
                   <label className="switch-field"><span><strong>{t('点击预览节点定位')}</strong><small>{t('点击右侧思维导图节点时，编辑器自动跳转到对应的 Markdown 内容。')}</small></span><input type="checkbox" checked={settings.previewNodeNavigation} onChange={(event) => updateSettings('previewNodeNavigation', event.target.checked)} /></label>
                   <div className="preferences-section-heading"><strong>{t('扩展预览')}</strong><small>{t('控制 Markdown 中 Mermaid 代码块的预览方式。')}</small></div>
@@ -5396,8 +5427,8 @@ ${documentRenderConfig.style}
               <label className="field"><span>{t('渲染倍率')} <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md' || exportFormat === 'pdf'} /><small>{exportFormat === 'svg' ? t('倍率设置 SVG 画布尺寸，图形内容始终清晰') : exportFormat === 'pdf' ? t('PDF 使用当前 Mermaid 图形尺寸') : exportFormat === 'md' ? t('MMD 源文件无需倍率') : locale === 'en-US' ? `Estimated output size: ${exportScale}× the current diagram` : `预计输出尺寸为当前图形的 ${exportScale} 倍`}</small></label>
               <div className="export-appearance-options">
                 <div className="export-section-heading"><strong>{t('背景与文字')}</strong><small>{exportFormat === 'md' ? t('Mermaid 源文件不包含画布样式') : t('导出文件使用当前 Mermaid 预览主题')}</small></div>
-                <label className="export-color-field"><span>{t('背景颜色')}</span><span className="export-color-control"><input type="color" value={settings.exportBackgroundColor} disabled={exportFormat === 'md'} onChange={(event) => updateExportBackground(event.target.value)} /><code>{settings.exportBackgroundColor.toUpperCase()}</code></span></label>
-                <div className="export-color-presets" aria-label={t('Mermaid 导出背景颜色预设')}>{exportBackgroundPresets.map(([color, label]) => <button type="button" key={color} className={settings.exportBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('Mermaid 导出背景色：')}${t(label)}`} disabled={exportFormat === 'md'} onClick={() => updateExportBackground(color)}><span style={{ background: color }} /></button>)}</div>
+                <label className="export-color-field"><span>{t('背景颜色')}</span><span className="export-color-control"><input type="color" value={exportBackgroundColor} disabled={exportFormat === 'md'} onChange={(event) => updateExportBackground(event.target.value)} /><code>{exportBackgroundColor.toUpperCase()}</code></span></label>
+                <div className="export-color-presets" aria-label={t('Mermaid 导出背景颜色预设')}>{exportBackgroundPresets.map(([color, label, preset]) => <button type="button" key={`${preset || 'custom'}:${color}`} className={isExportPresetActive(color, preset) ? 'active' : ''} title={t(label)} aria-label={`${t('Mermaid 导出背景色：')}${t(label)}`} disabled={exportFormat === 'md'} onClick={() => updateExportBackground(color, preset)}><span style={{ background: color }} /></button>)}</div>
                 <label className={`switch-field export-appearance-switch ${exportFormat !== 'png' ? 'code-controlled' : ''}`}><span><strong>{t('透明背景')}</strong><small>{exportFormat === 'png' ? t('PNG 保留透明通道') : t('仅 PNG 支持透明背景')}</small></span><input type="checkbox" checked={exportTransparentBackground} disabled={exportFormat !== 'png'} onChange={(event) => setExportTransparentBackground(event.target.checked)} /></label>
                 <label className="switch-field export-appearance-switch"><span><strong>{t('自动适配文字主题')}</strong><small>{exportTextTheme === 'auto' ? `${t('当前自动使用')}${exportAutoDarkMode ? t('深色') : t('浅色')}${t('主题')}` : t('关闭后使用手动主题')}</small></span><input type="checkbox" checked={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'auto' : (exportDarkMode ? 'dark' : 'light'))} /></label>
                 <label className={`switch-field export-appearance-switch ${exportTextTheme === 'auto' ? 'code-controlled' : ''}`}><span><strong>{t('内容暗黑模式')}</strong><small>{exportTextTheme === 'auto' ? `${t('自动结果：')}${exportDarkMode ? t('开启状态') : t('关闭状态')}` : exportDarkMode ? t('使用浅色文字') : t('使用深色文字')}</small></span><input type="checkbox" checked={exportDarkMode} disabled={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'dark' : 'light')} /></label>
@@ -5410,8 +5441,8 @@ ${documentRenderConfig.style}
               <label className="field"><span>{t('渲染倍率')} <b>{exportScale}×</b></span><input type="range" min="1" max="4" step="1" value={exportScale} onChange={(event) => setExportScale(Number(event.target.value))} disabled={exportFormat === 'md' || exportFormat === 'pdf'} /><small>{exportFormat === 'svg' ? t('倍率设置 SVG 的画布尺寸，矢量内容始终清晰') : exportFormat === 'pdf' ? t('PDF 使用自定义页面尺寸，矢量内容无需倍率') : exportFormat === 'html' ? t('HTML 将保留可缩放矢量图') : exportFormat === 'md' ? t('Markdown 源文件无需倍率') : locale === 'en-US' ? `Expected output: ${exportScale}× the current content size` : `预计输出为当前内容尺寸的 ${exportScale} 倍`}</small></label>
               <div className="export-appearance-options">
                 <div className="export-section-heading"><strong>{t('背景与文字')}</strong><small>{exportFormat === 'md' ? t('Markdown 源文件不包含画布样式') : t('导出文件会使用以下画布与文字主题')}</small></div>
-                <label className="export-color-field"><span>{t('背景颜色')}</span><span className="export-color-control"><input type="color" value={settings.exportBackgroundColor} disabled={exportFormat === 'md'} onChange={(event) => updateExportBackground(event.target.value)} /><code>{settings.exportBackgroundColor.toUpperCase()}</code></span></label>
-                <div className="export-color-presets" aria-label={t('背景颜色预设')}>{exportBackgroundPresets.map(([color, label]) => <button type="button" key={color} className={settings.exportBackgroundColor === color ? 'active' : ''} title={t(label)} aria-label={`${t('背景色：')}${t(label)}`} disabled={exportFormat === 'md'} onClick={() => updateExportBackground(color)}><span style={{ background: color }} /></button>)}</div>
+                <label className="export-color-field"><span>{t('背景颜色')}</span><span className="export-color-control"><input type="color" value={exportBackgroundColor} disabled={exportFormat === 'md'} onChange={(event) => updateExportBackground(event.target.value)} /><code>{exportBackgroundColor.toUpperCase()}</code></span></label>
+                <div className="export-color-presets" aria-label={t('背景颜色预设')}>{exportBackgroundPresets.map(([color, label, preset]) => <button type="button" key={`${preset || 'custom'}:${color}`} className={isExportPresetActive(color, preset) ? 'active' : ''} title={t(label)} aria-label={`${t('背景色：')}${t(label)}`} disabled={exportFormat === 'md'} onClick={() => updateExportBackground(color, preset)}><span style={{ background: color }} /></button>)}</div>
                 <label className={`switch-field export-appearance-switch ${exportFormat !== 'png' ? 'code-controlled' : ''}`}><span><strong>{t('透明背景')}</strong><small>{exportFormat === 'png' ? t('PNG 保留透明通道；文字主题仍按当前颜色判断') : t('仅 PNG 支持透明背景')}</small></span><input type="checkbox" checked={exportTransparentBackground} disabled={exportFormat !== 'png'} onChange={(event) => setExportTransparentBackground(event.target.checked)} /></label>
                 <label className="switch-field export-appearance-switch"><span><strong>{t('自动适配文字主题')}</strong><small>{exportTextTheme === 'auto' ? `${t('当前自动使用')}${exportAutoDarkMode ? t('深色') : t('浅色')}${t('主题')}` : t('关闭后可手动指定内容是否使用暗黑模式')}</small></span><input type="checkbox" checked={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'auto' : (exportDarkMode ? 'dark' : 'light'))} /></label>
                 <label className={`switch-field export-appearance-switch ${exportTextTheme === 'auto' ? 'code-controlled' : ''}`}><span><strong>{t('内容暗黑模式')}</strong><small>{exportTextTheme === 'auto' ? `${t('自动结果：')}${exportDarkMode ? t('开启（浅色文字）') : t('关闭（深色文字）')}` : exportDarkMode ? t('手动：使用浅色文字和深色内容样式') : t('手动：使用深色文字和浅色内容样式')}</small></span><input type="checkbox" checked={exportDarkMode} disabled={exportTextTheme === 'auto'} onChange={(event) => setExportTextTheme(event.target.checked ? 'dark' : 'light')} /></label>
