@@ -8,6 +8,12 @@ outline: deep
 
 This page records the main changes that have reached a released or stable baseline. For the current package and download links, see [Web and desktop apps](/en/app/).
 
+## Unreleased
+
+- Added selectable Anthropic Messages, OpenAI Chat Completions, OpenAI Responses API and Gemini Native `generateContent` upstream formats, with a default chosen from the provider, Base URL, model and search setting.
+- Added native search integrations for OpenAI, Anthropic, Gemini, MiMo, Azure OpenAI, DeepSeek, Groq and Moonshot / Kimi; Agent parses available citations, URLs, grounding sources and search operations.
+- Added MiMo `force_search`; the [Agent guide](/en/agent/) documents protocol selection, model detection, source availability and provider plugin or permission requirements.
+
 ## 1.2.0
 
 The theme system and accessibility work became part of the stable release:

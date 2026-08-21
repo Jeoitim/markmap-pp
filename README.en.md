@@ -57,6 +57,8 @@ The default maximum output is 16,000 tokens, the temperature is 0.3, and changes
 
 Built-in provider presets cover OpenAI, Anthropic, Google Gemini, Azure OpenAI, DeepSeek, Groq, Mistral AI, Moonshot / Kimi, Zhipu AI, Tencent Hunyuan, NVIDIA NIM, SiliconFlow, Ollama, and custom OpenAI-compatible endpoints.
 
+Web search follows each provider's native protocol: **Responses API** is recommended for OpenAI, Azure and regular DeepSeek; **Anthropic Messages** for Anthropic and DeepSeek's `/anthropic` endpoint; **Gemini Native `generateContent`** for Gemini; and **OpenAI Chat Completions** for the current MiMo, Groq and Kimi integrations. MiMo requires its Web Search plugin to be enabled first. The app currently recognizes DeepSeek V4 Pro / Flash, Gemini 2.0 / 2.5 / 3, and Groq GPT-OSS 20B / 120B for automatic search; other built-in providers and custom endpoints do not enable native search automatically. See the [Agent guide](https://jeoitim.github.io/markmap-pp/doc/agent/) for protocol selection, model detection, source display and limitations.
+
 Agent settings and conversations remain in the current browser. Configuration JSON backups **include API keys** to support one-step migration, so treat them as sensitive files. Model requests go directly from the browser to the selected provider. See the [Agent guide](https://jeoitim.github.io/markmap-pp/doc/agent/) for the complete workflow and security notes.
 
 ## Mind-map controls

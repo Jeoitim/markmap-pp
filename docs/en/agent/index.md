@@ -17,6 +17,47 @@ Agent is markmap++'s built-in note knowledge partner. It can read the current no
 
 Built-in providers include OpenAI, Anthropic, Google Gemini, Azure OpenAI, DeepSeek, Groq, Mistral AI, Moonshot / Kimi, Zhipu AI, Tencent Hunyuan, NVIDIA NIM, SiliconFlow, Ollama and custom OpenAI-compatible endpoints. Keys, URLs, models and model lists are stored per provider.
 
+## API formats and web search
+
+Agent settings provide four upstream request formats:
+
+- **Anthropic Messages**
+- **OpenAI Chat Completions**
+- **OpenAI Responses API**
+- **Gemini Native `generateContent`**
+
+Keep **Default** unless a provider explicitly documents another format. The default is selected from the provider, Base URL, model and web-search setting: OpenAI, Azure and ordinary DeepSeek prefer Responses when search is enabled; Anthropic and DeepSeek's `/anthropic` endpoint use Messages; Gemini uses its native API; MiMo and other OpenAI-compatible providers use Chat Completions by default. Use the manual override only when the upstream documentation requires it.
+
+The **Web search** switch is enabled only when markmap++ recognizes the current provider, model and selected API format as compatible. “Supported” here means that the app has implemented the request and response parsing; it does not guarantee that every model, region, account or deployment has access. A provider may also require a console plugin, an entitlement or separate billing.
+
+| Provider | Recommended API | Web search automatically adapted by the app | Notes |
+| --- | --- | --- | --- |
+| OpenAI | Responses API | `web_search` | Search calls and returned URL sources are shown when available; model and account access still follow OpenAI settings. |
+| Anthropic | Anthropic Messages | Server-side `web_search` | Anthropic executes the search and returns citations; the organization may need to enable the tool. A third-party Anthropic-compatible endpoint is not assumed to have the same capability. |
+| Google Gemini | Native `generateContent` | `google_search` grounding for Gemini 2.0, 2.5 and 3 models | Sources are read from `groundingMetadata`; other models show that no native search is available. |
+| Xiaomi MiMo | OpenAI Chat Completions | `web_search` for `mimo-v2.5` / `mimo-v2.5-pro` | Activate the Web Search plugin in the MiMo console. The **Force web search** switch maps to `force_search` and can increase calls and cost. MiMo Responses can generate normal answers, but the app does not enable its unverified Responses `web_search` extension, so use Chat Completions when search is needed. |
+| Azure OpenAI | Responses API | `web_search_preview` | The Azure resource, deployment, region and search permission must be configured; Azure does not use OpenAI's `web_search` name here. |
+| DeepSeek | Responses for the regular endpoint; Messages for `/anthropic` | `deepseek-v4-pro` / `deepseek-v4-flash`: `web_search` on the regular endpoint and server-side `web_search` on the Anthropic-compatible endpoint | Use `https://api.deepseek.com` as the regular Base URL without adding `/v1`; use `https://api.deepseek.com/anthropic` for the Anthropic-compatible endpoint. If the provider omits source fields, the panel can only report that search was used and cannot build source cards. |
+| Groq | OpenAI Chat Completions | `browser_search` for `openai/gpt-oss-20b` / `openai/gpt-oss-120b` | Only the recognized GPT-OSS models are enabled automatically. Groq Compound is not auto-wired yet because Agent also needs local repository tools. |
+| Moonshot / Kimi | OpenAI Chat Completions | `$web_search` for Kimi K3, K2.6 and K2.5 | The model name must match the version available to the account. |
+| Mistral AI | OpenAI Chat Completions | Not automatically adapted by the app | OpenAI compatibility covers normal conversation format, not necessarily a native search tool with the same name. |
+| Zhipu AI / GLM | OpenAI Chat Completions | Not automatically adapted by the app | A later integration is needed if the provider adds a supported search format. |
+| Tencent Hunyuan | OpenAI Chat Completions | Not automatically adapted by the app | Compatible chat endpoints do not cause the app to inject a web tool. |
+| NVIDIA NIM | OpenAI Chat Completions | Not automatically adapted by the app | The app does not infer capabilities from the upstream model behind a NIM deployment. |
+| SiliconFlow | OpenAI Chat Completions | Not automatically adapted by the app | Even if an aggregated model has its own search feature, the current app does not infer it across providers. |
+| Ollama (local) | OpenAI Chat Completions | Not automatically adapted by the app | Local models do not normally have external network access; use a separate local tool or gateway if needed. |
+| Custom | OpenAI Chat Completions | Not automatically adapted by the app | You may choose another request format, but the app does not guess a custom endpoint's tool name or source schema. |
+
+### How to verify that search worked
+
+When enabled, Agent shows a web-search operation in the conversation activity area. If the provider returns URLs, citations or grounding sources, the panel also shows an expandable source card. Therefore, “search was used but the provider returned no displayable sources” does not necessarily mean that the search failed.
+
+Web search and repository tools are separate capabilities: `list_notes`, `search_notes` and `read_note` operate on the workspace, while native search is executed by the provider. Enabling search does not automatically turn off reasoning; if a provider recommends disabling or lowering reasoning for search, choose that setting yourself. Search can add latency, input tokens and provider charges.
+
+If a manually selected API format does not match the provider's native search protocol, the search switch is disabled to prevent sending one provider's tool schema through another protocol. Returning to **Default** normally restores it.
+
+Official references: [OpenAI Web search](https://platform.openai.com/docs/guides/tools-web-search), [Anthropic Web search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool), [Gemini Google Search grounding](https://ai.google.dev/gemini-api/docs/generate-content/google-search), [MiMo Web Search](https://mimo.mi.com/docs/en-US/usage-guide/tool-calling/web-search), [MiMo Responses API](https://mimo.mi.com/docs/en-US/api/chat/responses), [Azure OpenAI Web search](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/web-search) and [Groq Browser Search](https://console.groq.com/docs/tool-use/built-in-tools/browser-search).
+
 ::: warning API key safety
 Configuration is stored locally in the current browser. Exported JSON **contains API keys** and must be treated as a sensitive file. Do not upload it to a repository or send it to another person.
 :::

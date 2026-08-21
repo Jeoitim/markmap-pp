@@ -83,6 +83,8 @@ markmap++ 基于 [Tem-man/markmap-plus](https://github.com/Tem-man/markmap-plus)
 
 内置服务商包括 OpenAI、Anthropic、Google Gemini、Azure OpenAI、DeepSeek、Groq、Mistral AI、Moonshot / Kimi、智谱 AI、腾讯混元、NVIDIA NIM、硅基流动、Ollama 和自定义 OpenAI 兼容接口。
 
+联网搜索按服务商的原生协议适配：OpenAI、Azure 和普通 DeepSeek 推荐 **Responses API**；Anthropic 与 DeepSeek `/anthropic` 入口推荐 **Anthropic Messages**；Gemini 推荐 **Native `generateContent`**；MiMo、Groq 和 Kimi 的当前适配使用 **OpenAI Chat Completions**。其中 MiMo 需要先启用 Web Search 插件，DeepSeek 仅对当前识别的 V4 Pro / Flash 模型适配，Gemini 仅识别 2.0、2.5 和 3 系列，Groq 仅识别 GPT-OSS 20B / 120B，其他内置服务商和自定义端点暂不自动启用原生搜索。完整的协议选择、模型检测、来源展示和限制见 [Agent 指南](https://jeoitim.github.io/markmap-pp/doc/agent/)。
+
 Agent 配置和对话历史保存在当前浏览器。配置 JSON 为实现一键迁移会**包含 API 密钥**，请将备份视为敏感文件；模型请求会由浏览器直接发送给所选 AI 服务商。完整用法与安全说明见 [Agent 指南](https://jeoitim.github.io/markmap-pp/doc/agent/)。
 
 ### 多格式导出
