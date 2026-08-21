@@ -2,7 +2,7 @@
   "name": "markmap-plus-plus-desktop",
   "productName": "Markmap++",
   "desktopName": "io.github.jeoitim.markmap-plus-plus.desktop",
-  "version": "1.1.1",
+  "version": "1.2.1",
   "description": "Markdown mind-map workspace with GitHub sync and AI assistance",
   "author": "Jeoitim",
   "license": "MIT",
