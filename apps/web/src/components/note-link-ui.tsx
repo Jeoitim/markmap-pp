@@ -20,14 +20,49 @@ interface SelectionActionMenuProps {
   onNativeMenu: () => void
   showNativeMenu: boolean
   shortcutModifier: string
+  formatting?: {
+    toggleMark: (mark: 'strong' | 'emphasis' | 'strikethrough' | 'inlineCode') => void
+    isMarkActive: (mark: 'strong' | 'emphasis' | 'strikethrough' | 'inlineCode') => boolean
+    setInlineStyle: (style: 'underline' | `color:${string}` | null) => void
+    isInlineStyleActive: (style: 'underline' | `color:${string}`) => boolean
+  }
 }
 
 export function SelectionActionMenu(props: SelectionActionMenuProps) {
   const { t } = useI18n()
   const menuRef = useRef<HTMLDivElement | null>(null)
-  const left = Math.min(props.x, Math.max(8, window.innerWidth - 252))
-  const top = Math.min(props.y, Math.max(8, window.innerHeight - (props.hasLink ? 300 : 260)))
-  useEffect(() => { menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus() }, [])
+  const [colorOpen, setColorOpen] = useState(false)
+  const formatting = Boolean(props.formatting)
+  const menuWidth = formatting ? 310 : 252
+  const left = Math.min(Math.max(8, props.x), Math.max(8, window.innerWidth - menuWidth))
+  const top = formatting
+    ? props.y > 68 ? props.y - 58 : props.y + 10
+    : Math.min(props.y, Math.max(8, window.innerHeight - (props.hasLink ? 300 : 260)))
+  const preventSelectionLoss = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  useEffect(() => {
+    if (!formatting) menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+  }, [formatting])
+  if (formatting && props.formatting) {
+    const colorOptions = ['#d14', '#e11d48', '#2563eb', '#059669', '#d97706', '#7c3aed'] as const
+    const button = (mark: 'strong' | 'emphasis' | 'strikethrough' | 'inlineCode', label: string, title: string) => <button type="button" role="menuitem" className={props.formatting?.isMarkActive(mark) ? 'active' : ''} aria-label={label} title={title} onPointerDown={preventSelectionLoss} onClick={() => props.formatting?.toggleMark(mark)}>{mark === 'strong' ? <b>B</b> : mark === 'emphasis' ? <i>I</i> : mark === 'strikethrough' ? <s>S</s> : <code>&lt;/&gt;</code>}</button>
+    return <div ref={menuRef} className="selection-action-menu selection-formatting-menu" role="toolbar" aria-label={t('所选文字格式')} style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
+      {button('strong', t('粗体'), t('粗体'))}
+      {button('emphasis', t('斜体'), t('斜体'))}
+      <button type="button" role="menuitem" className={props.formatting.isInlineStyleActive('underline') ? 'active' : ''} aria-label={t('下划线')} title={t('下划线')} onPointerDown={preventSelectionLoss} onClick={() => props.formatting?.setInlineStyle('underline')}><u>U</u></button>
+      {button('strikethrough', t('删除线'), t('删除线'))}
+      {button('inlineCode', t('行内代码'), t('行内代码'))}
+      <button type="button" role="menuitem" className={colorOpen ? 'active' : ''} aria-label={t('文字颜色')} title={t('文字颜色')} aria-expanded={colorOpen} onPointerDown={preventSelectionLoss} onClick={() => setColorOpen((open) => !open)}><span className="selection-color-glyph">A</span></button>
+      <button type="button" role="menuitem" className="link-action" aria-label={props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')} title={props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')} onPointerDown={preventSelectionLoss} onClick={props.onLink}>↗</button>
+      {props.hasLink && <button type="button" role="menuitem" aria-label={t('移除链接')} title={t('移除链接')} onPointerDown={preventSelectionLoss} onClick={props.onRemoveLink}>×</button>}
+      {colorOpen && <div className="selection-color-popover" role="menu" aria-label={t('文字颜色')}>
+        {colorOptions.map((color) => <button type="button" key={color} role="menuitem" aria-label={color} title={color} className={props.formatting?.isInlineStyleActive(`color:${color}`) ? 'active' : ''} style={{ '--selection-color': color } as React.CSSProperties} onPointerDown={preventSelectionLoss} onClick={() => { props.formatting?.setInlineStyle(`color:${color}`); setColorOpen(false) }}><span /></button>)}
+        <button type="button" role="menuitem" className="clear" aria-label={t('清除文字颜色')} title={t('清除文字颜色')} onPointerDown={preventSelectionLoss} onClick={() => { props.formatting?.setInlineStyle(null); setColorOpen(false) }}>×</button>
+      </div>}
+    </div>
+  }
   return <div ref={menuRef} className="selection-action-menu" role="menu" aria-label={t('所选文字操作')} style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
     <div className="selection-action-summary" title={props.text}>{props.text}</div>
     <button role="menuitem" onClick={props.onCopy}><span>{t('复制')}</span><kbd>{props.shortcutModifier} C</kbd></button>
@@ -44,16 +79,28 @@ interface MobileSelectionActionBarProps {
   hasLink: boolean
   onLink: () => void
   onRemoveLink: () => void
+  formatting?: SelectionActionMenuProps['formatting']
 }
 
 export function MobileSelectionActionBar(props: MobileSelectionActionBarProps) {
   const { t } = useI18n()
+  const [colorOpen, setColorOpen] = useState(false)
   const runAction = (action: () => void) => (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
     action()
   }
-  return <div className="mobile-selection-action-bar" role="toolbar" aria-label={t('所选文字操作')} onPointerDown={(event) => event.stopPropagation()}>
+  const formatting = props.formatting
+  return <div className="mobile-selection-action-bar" role="toolbar" aria-label={t('所选文字格式')} onPointerDown={(event) => event.stopPropagation()}>
+    {formatting && <>
+      <button type="button" className={formatting.isMarkActive('strong') ? 'active' : ''} aria-label={t('粗体')} onPointerDown={runAction(() => formatting.toggleMark('strong'))}><b>B</b></button>
+      <button type="button" className={formatting.isMarkActive('emphasis') ? 'active' : ''} aria-label={t('斜体')} onPointerDown={runAction(() => formatting.toggleMark('emphasis'))}><i>I</i></button>
+      <button type="button" className={formatting.isInlineStyleActive('underline') ? 'active' : ''} aria-label={t('下划线')} onPointerDown={runAction(() => formatting.setInlineStyle('underline'))}><u>U</u></button>
+      <button type="button" className={formatting.isMarkActive('strikethrough') ? 'active' : ''} aria-label={t('删除线')} onPointerDown={runAction(() => formatting.toggleMark('strikethrough'))}><s>S</s></button>
+      <button type="button" className={formatting.isMarkActive('inlineCode') ? 'active' : ''} aria-label={t('行内代码')} onPointerDown={runAction(() => formatting.toggleMark('inlineCode'))}><code>&lt;/&gt;</code></button>
+      <button type="button" className={colorOpen ? 'active' : ''} aria-label={t('文字颜色')} onPointerDown={runAction(() => setColorOpen((open) => !open))}><span className="selection-color-glyph">A</span></button>
+      {colorOpen && ['#d14', '#e11d48', '#2563eb', '#059669', '#d97706', '#7c3aed'].map((color) => <button type="button" key={color} className="selection-mobile-color" aria-label={color} onPointerDown={runAction(() => { formatting.setInlineStyle(`color:${color}`); setColorOpen(false) })}><span style={{ background: color }} /></button>)}
+    </>}
     <button type="button" className="link-action" onPointerDown={runAction(props.onLink)}>{props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')}</button>
     {props.hasLink && <button type="button" onPointerDown={runAction(props.onRemoveLink)}>{t('移除链接')}</button>}
   </div>
