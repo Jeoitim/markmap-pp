@@ -66,14 +66,13 @@ interface MarkdownParts {
   body: string
 }
 
-type VisualBlockKind = 'heading' | 'paragraph' | 'blockquote' | 'code' | 'math' | 'html' | 'bullet-list' | 'ordered-list' | 'task' | 'list-item' | 'table' | 'horizontal-rule'
+type VisualBlockKind = 'heading' | 'paragraph' | 'blockquote' | 'code' | 'math' | 'bullet-list' | 'ordered-list' | 'task' | 'list-item' | 'table' | 'horizontal-rule'
 
-export type VisualBlockShortcutId = 'heading1' | 'heading2' | 'heading3' | 'heading4' | 'heading5' | 'heading6' | 'mathBlock' | 'htmlBlock' | 'codeBlock' | 'quoteBlock' | 'orderedList' | 'bulletList' | 'taskList'
+export type VisualBlockShortcutId = 'heading1' | 'heading2' | 'heading3' | 'heading4' | 'heading5' | 'heading6' | 'mathBlock' | 'codeBlock' | 'quoteBlock' | 'orderedList' | 'bulletList' | 'taskList'
 
 type BlockConversion =
   | { kind: 'heading'; level: number }
   | { kind: 'math' }
-  | { kind: 'html' }
   | { kind: 'code' }
   | { kind: 'blockquote' }
   | { kind: 'bullet-list' }
@@ -101,7 +100,6 @@ type VisualBlockAction = 'duplicate' | 'delete' | 'table-add-row' | 'table-add-c
 function visualBlockActionForShortcut(shortcut: VisualBlockShortcutId): BlockConversion {
   if (shortcut.startsWith('heading')) return { kind: 'heading', level: Number(shortcut.slice('heading'.length)) }
   if (shortcut === 'mathBlock') return { kind: 'math' }
-  if (shortcut === 'htmlBlock') return { kind: 'html' }
   if (shortcut === 'codeBlock') return { kind: 'code' }
   if (shortcut === 'quoteBlock') return { kind: 'blockquote' }
   if (shortcut === 'orderedList') return { kind: 'ordered-list' }
@@ -150,7 +148,7 @@ function findVisualBlockElement(element: Element | null): HTMLElement | null {
   const blockquote = element.closest<HTMLElement>('blockquote')
   if (blockquote && editorRoot.contains(blockquote)) return blockquote
 
-  const specialBlock = element.closest<HTMLElement>('[data-type="visual-math-block"], [data-type="visual-html-block"]')
+  const specialBlock = element.closest<HTMLElement>('[data-type="visual-math-block"]')
   if (specialBlock && editorRoot.contains(specialBlock)) return specialBlock
 
   const codeBlock = element.closest<HTMLElement>('pre')
@@ -215,7 +213,7 @@ function visualBlockHandlePosition(blockElement: HTMLElement, contentElement: HT
 }
 
 function isVisualTextBlock(node: ProseNode) {
-  return node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'code_block' || node.type.name === 'visual_math_block' || node.type.name === 'visual_html_block'
+  return node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'code_block' || node.type.name === 'visual_math_block'
 }
 
 function visualBlockSourceText(node: ProseNode) {
@@ -231,18 +229,12 @@ function visualTextBlockForConversion(node: ProseNode, target: BlockConversion, 
       : node
   if (!source || !isVisualTextBlock(source)) return null
   const sourceText = visualBlockSourceText(source)
-  const sourceContent = source.type.name === 'visual_math_block' || source.type.name === 'visual_html_block'
+  const sourceContent = source.type.name === 'visual_math_block'
     ? sourceText ? schema.text(sourceText) : Fragment.empty
     : source.content
   if (target.kind === 'math') {
     const mathBlock = schema.nodes.visual_math_block
     return mathBlock ? mathBlock.create({ value: sourceText }) : null
-  }
-  if (target.kind === 'html') {
-    const htmlBlock = schema.nodes.visual_html_block
-    if (!htmlBlock) return null
-    const value = source.type.name === 'visual_html_block' ? sourceText : `<div>\n${sourceText}\n</div>`
-    return htmlBlock.create({ value })
   }
   if (target.kind === 'heading') {
     const heading = schema.nodes.heading
@@ -255,7 +247,7 @@ function visualTextBlockForConversion(node: ProseNode, target: BlockConversion, 
   if (target.kind === 'blockquote') {
     const blockquote = schema.nodes.blockquote
     if (!blockquote) return null
-    const contentBlock = source.type.name === 'visual_math_block' || source.type.name === 'visual_html_block'
+    const contentBlock = source.type.name === 'visual_math_block'
       ? schema.nodes.paragraph?.create(null, sourceContent)
       : source
     return contentBlock ? blockquote.create(null, contentBlock) : null
@@ -288,8 +280,8 @@ function visualParagraphFromNode(node: ProseNode, schema: Schema) {
   const paragraph = schema.nodes.paragraph
   if (!paragraph) return null
   const source = node.type.name === 'blockquote' && node.childCount === 1 ? node.firstChild : node
-  if (!source || (source.type.name !== 'paragraph' && source.type.name !== 'heading' && source.type.name !== 'code_block' && source.type.name !== 'visual_math_block' && source.type.name !== 'visual_html_block')) return null
-  if (source.type.name === 'visual_math_block' || source.type.name === 'visual_html_block') return paragraph.create(null, source.attrs.value ? schema.text(source.attrs.value) : Fragment.empty)
+  if (!source || (source.type.name !== 'paragraph' && source.type.name !== 'heading' && source.type.name !== 'code_block' && source.type.name !== 'visual_math_block')) return null
+  if (source.type.name === 'visual_math_block') return paragraph.create(null, source.attrs.value ? schema.text(source.attrs.value) : Fragment.empty)
   return paragraph.create(null, source.content)
 }
 
@@ -502,54 +494,6 @@ const visualMathBlockSchema = $nodeSchema('visual_math_block', () => ({
   },
 }))
 
-const visualHtmlBlockSchema = $nodeSchema('visual_html_block', () => ({
-  group: 'block',
-  atom: true,
-  defining: true,
-  attrs: {
-    value: {
-      default: '',
-      validate: 'string',
-    },
-  },
-  parseDOM: [
-    {
-      tag: 'pre[data-type="visual-html-block"]',
-      getAttrs: (dom) => ({ value: (dom as HTMLElement).dataset.value || '' }),
-    },
-  ],
-  toDOM: (node) => {
-    const dom = document.createElement('pre')
-    dom.className = 'visual-html-block'
-    dom.dataset.type = 'visual-html-block'
-    dom.dataset.value = node.attrs.value
-    dom.setAttribute('aria-label', 'HTML block')
-    dom.textContent = node.attrs.value
-    return dom
-  },
-  parseMarkdown: {
-    match: ({ type }) => type === 'visualHtmlBlock',
-    runner: (state, node, type) => state.addNode(type, { value: String(node.value || '') }),
-  },
-  toMarkdown: {
-    match: (node) => node.type.name === 'visual_html_block',
-    runner: (state, node) => state.addNode('html', undefined, node.attrs.value),
-  },
-}))
-
-const visualHtmlBlockRemark = $remark('visualHtmlBlockRemark', () => () => (tree: Root) => {
-  const root = tree as unknown as MarkdownNode
-  const convert = (nodes: MarkdownNode[], parentType: string): MarkdownNode[] => nodes.map((node) => {
-    if (node.type === 'html' && ['root', 'listItem', 'blockquote'].includes(parentType)) {
-      return { ...node, type: 'visualHtmlBlock' }
-    }
-    if (!node.children) return node
-    return { ...node, children: convert(node.children, node.type) }
-  })
-  if (root.children) root.children = convert(root.children, 'root')
-  return tree
-})
-
 const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, spellCheckLanguage, userDictionary, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink, blockShortcutLabels = {} }, ref) {
   const { t } = useI18n()
   const [initialParts] = useState(() => splitMarkdown(value))
@@ -647,8 +591,6 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     .use(visualMathRemark)
     .use(visualMathInlineSchema)
     .use(visualMathBlockSchema)
-    .use(visualHtmlBlockSchema)
-    .use(visualHtmlBlockRemark)
     .use(clipboard)
     .use(listener), [])
 
@@ -856,8 +798,6 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
         const dataType = blockElement.dataset.type
         const candidateNames = dataType === 'visual-math-block'
           ? new Set(['visual_math_block'])
-          : dataType === 'visual-html-block'
-            ? new Set(['visual_html_block'])
             : tagName === 'li'
           ? new Set(['list_item'])
           : tagName === 'table'
@@ -913,9 +853,6 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
             break
           case 'visual_math_block':
             kind = 'math'
-            break
-          case 'visual_html_block':
-            kind = 'html'
             break
           case 'bullet_list':
             kind = 'bullet-list'
@@ -1239,7 +1176,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
         return
       }
 
-      if (action.kind === 'heading' || action.kind === 'math' || action.kind === 'html' || action.kind === 'code' || action.kind === 'blockquote') {
+      if (action.kind === 'heading' || action.kind === 'math' || action.kind === 'code' || action.kind === 'blockquote') {
         const converted = visualTextBlockForConversion(node, action, view.state.schema)
         if (node.type.name === 'list_item') {
           if (converted) replaceListItemWithBlock(converted)
@@ -1324,7 +1261,6 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     { kind: 'heading', level: 5, label: t('标题 5'), icon: 'H5', shortcutId: 'heading5' },
     { kind: 'heading', level: 6, label: t('标题 6'), icon: 'H6', shortcutId: 'heading6' },
     { kind: 'math', label: t('数学公式'), icon: '∑', shortcutId: 'mathBlock' },
-    { kind: 'html', label: t('HTML 块'), icon: '</>', shortcutId: 'htmlBlock' },
     { kind: 'code', label: t('代码块'), icon: '</>', shortcutId: 'codeBlock' },
     { kind: 'blockquote', label: t('引用块'), icon: '❝', shortcutId: 'quoteBlock' },
     { kind: 'ordered-list', label: t('有序列表'), icon: '1.', shortcutId: 'orderedList' },
@@ -1340,10 +1276,8 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       ? `H${activeBlock.level}`
       : activeBlock.kind === 'code'
         ? '</>'
-        : activeBlock.kind === 'math'
-          ? '∑'
-          : activeBlock.kind === 'html'
-            ? '</>'
+      : activeBlock.kind === 'math'
+        ? '∑'
         : activeBlock.kind === 'blockquote'
           ? '❝'
           : activeBlock.kind === 'ordered-list' || (activeBlock.kind === 'list-item' && activeBlock.listType === 'ordered')
@@ -1359,14 +1293,12 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
                     : '¶'
   const blockHandleText = !activeBlock
     ? ''
-    : activeBlock.kind === 'heading'
-      ? t(`标题 ${activeBlock.level}`)
+      : activeBlock.kind === 'heading'
+        ? t(`标题 ${activeBlock.level}`)
       : activeBlock.kind === 'code'
         ? t('代码')
         : activeBlock.kind === 'math'
           ? t('数学公式')
-          : activeBlock.kind === 'html'
-            ? t('HTML 块')
         : activeBlock.kind === 'blockquote'
           ? t('引用')
           : activeBlock.kind === 'ordered-list' || (activeBlock.kind === 'list-item' && activeBlock.listType === 'ordered')

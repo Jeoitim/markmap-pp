@@ -313,8 +313,7 @@ svg { flex: 0 0 auto; }
 .visual-markdown-content .visual-math-inline .katex { font-size: 1em; }
 .visual-markdown-content .visual-math-block { display: block; max-width: 100%; margin: 18px 0; padding: 12px 16px; overflow-x: auto; box-sizing: border-box; border: 1px solid color-mix(in srgb,var(--border) 72%,transparent); border-radius: 9px; color: var(--markdown-body-color, var(--text)); background: color-mix(in srgb,var(--panel) 72%,var(--editor-bg)); text-align: center; }
 .visual-markdown-content .visual-math-block .katex-display { margin: 0; min-width: max-content; }
-.visual-markdown-content .visual-math-block.ProseMirror-selectednode, .visual-markdown-content .visual-html-block.ProseMirror-selectednode { outline: 2px solid color-mix(in srgb,var(--accent) 55%,transparent); outline-offset: 2px; }
-.visual-markdown-content .visual-html-block { white-space: pre-wrap; }
+.visual-markdown-content .visual-math-block.ProseMirror-selectednode { outline: 2px solid color-mix(in srgb,var(--accent) 55%,transparent); outline-offset: 2px; }
 .visual-markdown-content hr { margin: 25px 0; border: 0; border-top: 1px solid var(--border); }
 .visual-markdown-content img { display: block; max-width: 100%; height: auto; margin: 18px 0; border-radius: 8px; }
 .visual-markdown-content img[alt$='图标'], .visual-markdown-content img[alt$='icon'] { width: 44px; height: 44px; max-width: 44px; max-height: 44px; border-radius: 6px; object-fit: contain; }

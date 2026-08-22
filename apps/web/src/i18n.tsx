@@ -216,7 +216,6 @@ const translations: Record<string, string> = {
   '创建副本': 'Duplicate block',
   '转换为': 'Convert to',
   '数学公式': 'Math formula',
-  'HTML 块': 'HTML block',
   '代码块': 'Code block',
   '引用块': 'Quote block',
   '任务列表': 'Task list',
