@@ -14,7 +14,7 @@ import '@fontsource-variable/noto-serif-sc/wght.css'
 import 'lxgw-wenkai-webfont/lxgwwenkai-regular.css'
 import MarkdownEditor, { type EditorCommand, type MarkdownEditorHandle, type MarkdownEditorSelection } from './markdown-editor'
 import { markdownThemePalette, type MarkdownThemeKey } from './markdown-theme'
-import VisualMarkdownEditor, { type VisualMarkdownEditorHandle, type VisualMarkdownSelection } from './visual-markdown-editor'
+import VisualMarkdownEditor, { type VisualBlockShortcutId, type VisualMarkdownEditorHandle, type VisualMarkdownSelection } from './visual-markdown-editor'
 import AgentPanel, { type AgentCommitResult, type AgentMutationResult } from './agent-panel'
 import { mermaidRenderId, mermaidViewBoxSize, renderMermaidSvg } from './mermaid-renderer'
 import { inspectMermaid } from './mermaid-lint'
@@ -89,7 +89,7 @@ const EDITOR_MODE_KEY = 'markmap-plus-plus:editor-mode'
 
 const shortcutDefinitions = [
   { id: 'newTab', label: '新建标签页', defaultBinding: 'Mod+T', webBinding: 'Mod+Alt+T' },
-  { id: 'openFile', label: '打开文件…', defaultBinding: 'Mod+O', webBinding: 'Mod+Alt+O' },
+  { id: 'openFile', label: '打开文件…', defaultBinding: 'Mod+O', webBinding: 'Mod+O' },
   { id: 'save', label: '保存', defaultBinding: 'Mod+S' },
   { id: 'closeTab', label: '关闭标签页', defaultBinding: 'Mod+W', webBinding: 'Mod+Alt+W' },
   { id: 'undo', label: '撤回', defaultBinding: 'Mod+Z' },
@@ -101,10 +101,39 @@ const shortcutDefinitions = [
   { id: 'selectAll', label: '全选', defaultBinding: 'Mod+A' },
   { id: 'openPreferences', label: '偏好设置', defaultBinding: 'Mod+,' },
   { id: 'toggleFullscreen', label: '全屏', defaultBinding: 'F11' },
+  { id: 'heading1', label: '标题 1', defaultBinding: 'Mod+1' },
+  { id: 'heading2', label: '标题 2', defaultBinding: 'Mod+2' },
+  { id: 'heading3', label: '标题 3', defaultBinding: 'Mod+3' },
+  { id: 'heading4', label: '标题 4', defaultBinding: 'Mod+4' },
+  { id: 'heading5', label: '标题 5', defaultBinding: 'Mod+5' },
+  { id: 'heading6', label: '标题 6', defaultBinding: 'Mod+6' },
+  { id: 'mathBlock', label: '数学公式', defaultBinding: 'Mod+Alt+M' },
+  { id: 'htmlBlock', label: 'HTML 块', defaultBinding: 'Mod+Alt+J' },
+  { id: 'codeBlock', label: '代码块', defaultBinding: 'Mod+Alt+C' },
+  { id: 'quoteBlock', label: '引用块', defaultBinding: 'Mod+Alt+Q' },
+  { id: 'orderedList', label: '有序列表', defaultBinding: 'Mod+Alt+O' },
+  { id: 'bulletList', label: '无序列表', defaultBinding: 'Mod+Alt+U' },
+  { id: 'taskList', label: '任务列表', defaultBinding: 'Mod+Alt+X' },
 ] as const
 
 type ShortcutId = typeof shortcutDefinitions[number]['id']
 type ShortcutOverrides = Partial<Record<ShortcutId, string | null>>
+
+const visualBlockShortcutMap: Partial<Record<ShortcutId, VisualBlockShortcutId>> = {
+  heading1: 'heading1',
+  heading2: 'heading2',
+  heading3: 'heading3',
+  heading4: 'heading4',
+  heading5: 'heading5',
+  heading6: 'heading6',
+  mathBlock: 'mathBlock',
+  htmlBlock: 'htmlBlock',
+  codeBlock: 'codeBlock',
+  quoteBlock: 'quoteBlock',
+  orderedList: 'orderedList',
+  bulletList: 'bulletList',
+  taskList: 'taskList',
+}
 
 const shortcutModifierOrder = ['Mod', 'Alt', 'Shift'] as const
 const shortcutModifierNames = new Set<string>(shortcutModifierOrder)
@@ -3105,6 +3134,21 @@ export default function MarkmapHooks() {
     if (!binding) return t('已禁用')
     return binding.split('+').map((part) => part === 'Mod' ? shortcutModifier : part).join('+')
   }, [shortcutBinding, shortcutModifier, t])
+  const visualBlockShortcutLabels = useMemo<Partial<Record<VisualBlockShortcutId, string>>>(() => ({
+    heading1: shortcutLabel('heading1'),
+    heading2: shortcutLabel('heading2'),
+    heading3: shortcutLabel('heading3'),
+    heading4: shortcutLabel('heading4'),
+    heading5: shortcutLabel('heading5'),
+    heading6: shortcutLabel('heading6'),
+    mathBlock: shortcutLabel('mathBlock'),
+    htmlBlock: shortcutLabel('htmlBlock'),
+    codeBlock: shortcutLabel('codeBlock'),
+    quoteBlock: shortcutLabel('quoteBlock'),
+    orderedList: shortcutLabel('orderedList'),
+    bulletList: shortcutLabel('bulletList'),
+    taskList: shortcutLabel('taskList'),
+  }), [shortcutLabel])
   const shortcutConflicts = useMemo(() => {
     const groups = new Map<string, ShortcutId[]>()
     shortcutDefinitions.forEach(({ id }) => {
@@ -3336,6 +3380,21 @@ export default function MarkmapHooks() {
       }
     } catch { setLinkNotice(`${t('浏览器未允许读取剪贴板，请使用')} ${shortcutModifier}+V`) }
     setSelectionMenu(null)
+  }
+
+  const applyInlineMath = (selection: TextSelectionTarget) => {
+    if (!selection.text.trim()) return
+    if (selection.source === 'visual') {
+      selection.setInlineMath()
+      return
+    }
+    if (selection.source === 'editor') {
+      markdownEditorRef.current?.replaceRange(selection.from, selection.to, `$${selection.text}$`)
+      return
+    }
+    selection.range.deleteContents()
+    selection.range.insertNode(document.createTextNode(`$${selection.text}$`))
+    syncPreviewSelection(selection)
   }
 
   const removeSelectionLink = (selection: TextSelectionTarget) => {
@@ -4124,7 +4183,10 @@ export default function MarkmapHooks() {
 
   useEffect(() => {
     if (!selectionMenu) return
-    const closeMenu = () => setSelectionMenu(null)
+    const closeMenu = (event?: PointerEvent) => {
+      if (event?.target instanceof Element && event.target.closest('.selection-action-menu')) return
+      setSelectionMenu(null)
+    }
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeMenu() }
     window.addEventListener('pointerdown', closeMenu)
     window.addEventListener('keydown', closeOnEscape)
@@ -4494,6 +4556,8 @@ export default function MarkmapHooks() {
       const activeElement = document.activeElement
       const isTextEditing = isTextEditingElement(activeElement)
       const isDocumentEditor = isDocumentEditorElement(activeElement)
+      const visualBlockShortcut = definition ? visualBlockShortcutMap[definition.id] : undefined
+      const isVisualDocument = editorView === 'markdown' && documentEditorMode === 'visual' && Boolean(activeElement?.closest('.visual-markdown-editor'))
       const editorOnlyAction = definition && ['undo', 'redo'].includes(definition.id)
       const textAction = definition && ['copy', 'cut', 'paste', 'delete', 'selectAll'].includes(definition.id)
       if (!definition) {
@@ -4503,6 +4567,7 @@ export default function MarkmapHooks() {
         else if (['copy', 'cut', 'paste', 'delete', 'selectAll'].includes(changedDefault.id) && isTextEditing) { event.preventDefault(); event.stopPropagation() }
         return
       }
+      if (visualBlockShortcut && !isVisualDocument) return
       if (editorOnlyAction && !isDocumentEditor) return
       if (textAction && !isTextEditing) return
       event.preventDefault()
@@ -4517,11 +4582,12 @@ export default function MarkmapHooks() {
       else if (definition.id === 'redo') redoLastChange()
       else if (definition.id === 'openPreferences') openPreferencesPanel()
       else if (definition.id === 'toggleFullscreen') void toggleFullscreen()
+      else if (visualBlockShortcut) visualMarkdownEditorRef.current?.executeBlockShortcut(visualBlockShortcut)
       else if (['copy', 'cut', 'paste', 'delete', 'selectAll'].includes(definition.id)) void runEditorCommand(definition.id as EditorCommand)
     }
     window.addEventListener('keydown', handleApplicationShortcut, true)
     return () => window.removeEventListener('keydown', handleApplicationShortcut, true)
-  }, [activeLocalFile, activePanel, activeRepoPath, activeTabId, chooseMarkdownFile, closeDocumentTab, createBlankDocumentTab, defaultShortcutBinding, hasShortcutOverride, openPreferencesPanel, preferenceSection, redoLastChange, runEditorCommand, saveActiveLocalDocument, saveStandaloneDocument, shortcutBinding, shortcutEditing, toggleFullscreen, undoLastChange])
+  }, [activeLocalFile, activePanel, activeRepoPath, activeTabId, chooseMarkdownFile, closeDocumentTab, createBlankDocumentTab, defaultShortcutBinding, documentEditorMode, editorView, hasShortcutOverride, openPreferencesPanel, preferenceSection, redoLastChange, runEditorCommand, saveActiveLocalDocument, saveStandaloneDocument, shortcutBinding, shortcutEditing, toggleFullscreen, undoLastChange])
 
   const startResize = (event: React.PointerEvent) => {
     if (editorCollapsed) return
@@ -5312,7 +5378,7 @@ ${documentRenderConfig.style}
             </div>
               {editorView === 'markdown' ? <>
                {!hasOpenDocument && <div className="document-empty-state editor-empty-state"><Icon name="map" /><strong>当前没有打开文件</strong><span>{t('打开现有 Markdown，或新建一个空白标签页。')}</span><div><button type="button" onClick={() => void chooseMarkdownFile()}><Icon name="folder" />打开文件</button><button type="button" className="primary" onClick={createBlankDocumentTab}><Icon name="plus" />{t('新建标签页')}</button></div></div>}
-               {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection); else if (!selection) setSelectionMenu(null) }} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} theme={editorHighlightTheme} locale={locale} mode={documentMode} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection ? { source: 'editor', ...selection } : null) }} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
+               {documentEditorMode === 'visual' ? <VisualMarkdownEditor ref={visualMarkdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} blockShortcutLabels={visualBlockShortcutLabels} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection) }} onSelectionContextMenu={(selection) => setSelectionMenu(selection)} onOpenLink={(href) => void openRepositoryLink(href)} /> : <MarkdownEditor ref={markdownEditorRef} value={markdown} onChange={updateMarkdown} dark={dark} fontSize={settings.editorFontSize} fontFamily={previewFonts[settings.editorFont].family} fontWeight={settings.editorWeight} spellCheck={settings.editorSpellCheck} spellCheckLanguage={settings.spellCheckLanguage} userDictionary={settings.userDictionary} theme={editorHighlightTheme} locale={locale} mode={documentMode} nativeSelectionMode={touchSelectionMode} onSelectionChange={(selection) => { if (touchSelectionMode) setMobileSelection(selection ? { source: 'editor', ...selection } : null) }} onSelectionContextMenu={(selection) => setSelectionMenu({ source: 'editor', ...selection })} onOpenLink={(href) => void openRepositoryLink(href)} />}
               <footer className="editor-status">
                 <button type="button" className={`lint-status ${diagnostics.length ? 'has-issues' : ''}`} onClick={() => setShowDiagnostics((value) => !value)} aria-label={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')} title={diagnostics.length ? `${t('语法问题')} ${diagnostics.length}` : t('没有发现语法错误')}><span className="lint-status-mark"><Icon name={diagnostics.length ? 'warning' : 'check'} /></span><span className="lint-status-count">{diagnostics.length}</span></button>
                 <span title={t('行数')}>{locale === 'en-US' ? `L ${lineCount}` : `${lineCount} 行`}</span>
@@ -5472,8 +5538,8 @@ ${documentRenderConfig.style}
         </section>
       </div>}
 
-       {mobileSelection && !linkPickerSelection && <MobileSelectionActionBar hasLink={mobileSelection.source === 'editor' ? Boolean(mobileSelection.link) : Boolean(mobileSelection.anchor)} onLink={() => { const selection = mobileSelection; if (!selection) return; setLinkPickerSelection(selection); setMobileSelection(null) }} onRemoveLink={() => { const selection = mobileSelection; if (!selection) return; removeSelectionLink(selection); setMobileSelection(null) }} formatting={mobileSelection.source === 'visual' ? { toggleMark: mobileSelection.toggleMark, isMarkActive: mobileSelection.isMarkActive, setInlineStyle: mobileSelection.setInlineStyle, isInlineStyleActive: mobileSelection.isInlineStyleActive } : undefined} />}
-       {selectionMenu && <SelectionActionMenu x={selectionMenu.x} y={selectionMenu.y} text={selectionMenu.text} hasLink={selectionMenu.source === 'editor' ? Boolean(selectionMenu.link) : Boolean(selectionMenu.anchor)} onCopy={() => void copySelection(selectionMenu)} onCut={() => void cutSelection(selectionMenu)} onPaste={() => void pasteSelection(selectionMenu)} onLink={() => { setLinkPickerSelection(selectionMenu); setSelectionMenu(null) }} onRemoveLink={() => removeSelectionLink(selectionMenu)} onNativeMenu={() => allowNativeSelectionMenu(selectionMenu)} showNativeMenu={selectionMenu.source !== 'visual' && !desktopApi() && !touchSelectionMode} shortcutModifier={shortcutModifier} formatting={selectionMenu.source === 'visual' ? { toggleMark: selectionMenu.toggleMark, isMarkActive: selectionMenu.isMarkActive, setInlineStyle: selectionMenu.setInlineStyle, isInlineStyleActive: selectionMenu.isInlineStyleActive } : undefined} />}
+       {mobileSelection && !linkPickerSelection && <MobileSelectionActionBar hasLink={mobileSelection.source === 'editor' ? Boolean(mobileSelection.link) : Boolean(mobileSelection.anchor)} onLink={() => { const selection = mobileSelection; if (!selection) return; setLinkPickerSelection(selection); setMobileSelection(null) }} onRemoveLink={() => { const selection = mobileSelection; if (!selection) return; removeSelectionLink(selection); setMobileSelection(null) }} onInlineMath={() => { const selection = mobileSelection; if (!selection) return; applyInlineMath(selection); setMobileSelection(null) }} formatting={mobileSelection.source === 'visual' ? { toggleMark: mobileSelection.toggleMark, isMarkActive: mobileSelection.isMarkActive, setInlineStyle: mobileSelection.setInlineStyle, isInlineStyleActive: mobileSelection.isInlineStyleActive, setInlineMath: mobileSelection.setInlineMath, isInlineMathActive: mobileSelection.isInlineMathActive } : undefined} />}
+       {selectionMenu && <SelectionActionMenu x={selectionMenu.x} y={selectionMenu.y} text={selectionMenu.text} hasLink={selectionMenu.source === 'editor' ? Boolean(selectionMenu.link) : Boolean(selectionMenu.anchor)} onCopy={() => void copySelection(selectionMenu)} onCut={() => void cutSelection(selectionMenu)} onPaste={() => void pasteSelection(selectionMenu)} onInlineMath={() => { const selection = selectionMenu; applyInlineMath(selection); setSelectionMenu(null) }} onLink={() => { setLinkPickerSelection(selectionMenu); setSelectionMenu(null) }} onRemoveLink={() => removeSelectionLink(selectionMenu)} onNativeMenu={() => allowNativeSelectionMenu(selectionMenu)} showNativeMenu={selectionMenu.source !== 'visual' && !desktopApi() && !touchSelectionMode} shortcutModifier={shortcutModifier} formatting={selectionMenu.source === 'visual' ? { toggleMark: selectionMenu.toggleMark, isMarkActive: selectionMenu.isMarkActive, setInlineStyle: selectionMenu.setInlineStyle, isInlineStyleActive: selectionMenu.isInlineStyleActive, setInlineMath: selectionMenu.setInlineMath, isInlineMathActive: selectionMenu.isInlineMathActive } : undefined} />}
       {linkPickerSelection && <RepositoryLinkPicker selectionText={linkPickerSelection.text} paths={repositoryPaths} indexes={repositoryIndexes} onChoose={(target) => chooseRepositoryLink(linkPickerSelection, target)} onCreate={async (path) => (await createAgentFile(path, `# ${linkPickerSelection.text}\n`)).ok} onClose={() => setLinkPickerSelection(null)} />}
       {linkNotice && <div className="link-notice" role="status" aria-live="polite">{linkNotice}</div>}
 

@@ -10,6 +10,9 @@ import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { $nodeSchema, $remark } from '@milkdown/kit/utils'
 import type { MarkdownNode, Root } from '@milkdown/kit/transformer'
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+import remarkMath from 'remark-math'
 import { useI18n } from '../i18n-hook'
 import type { EditorCommand } from './markdown-editor'
 
@@ -27,10 +30,12 @@ export interface VisualMarkdownEditorProps {
   onSelectionChange?: (selection: VisualMarkdownSelection | null) => void
   nativeSelectionMode?: boolean
   onOpenLink?: (href: string) => void
+  blockShortcutLabels?: Partial<Record<VisualBlockShortcutId, string>>
 }
 
 export interface VisualMarkdownEditorHandle {
   executeCommand: (command: EditorCommand) => Promise<void>
+  executeBlockShortcut: (shortcut: VisualBlockShortcutId) => void
   revealLine: (line: number, text?: string) => void
 }
 
@@ -48,21 +53,27 @@ export interface VisualMarkdownSelection {
   isMarkActive: (mark: VisualInlineMark) => boolean
   setInlineStyle: (style: VisualInlineStyle | null) => void
   isInlineStyleActive: (style: VisualInlineStyle) => boolean
+  setInlineMath: () => void
+  isInlineMathActive: () => boolean
   allowNative: () => void
 }
 
 export type VisualInlineMark = 'strong' | 'emphasis' | 'strikethrough' | 'inlineCode'
-export type VisualInlineStyle = 'underline' | `color:${string}`
+export type VisualInlineStyle = 'underline' | `color:${string}` | `highlight:${string}`
 
 interface MarkdownParts {
   frontmatter: string
   body: string
 }
 
-type VisualBlockKind = 'heading' | 'paragraph' | 'blockquote' | 'code' | 'bullet-list' | 'ordered-list' | 'task' | 'list-item' | 'table' | 'horizontal-rule'
+type VisualBlockKind = 'heading' | 'paragraph' | 'blockquote' | 'code' | 'math' | 'html' | 'bullet-list' | 'ordered-list' | 'task' | 'list-item' | 'table' | 'horizontal-rule'
+
+export type VisualBlockShortcutId = 'heading1' | 'heading2' | 'heading3' | 'heading4' | 'heading5' | 'heading6' | 'mathBlock' | 'htmlBlock' | 'codeBlock' | 'quoteBlock' | 'orderedList' | 'bulletList' | 'taskList'
 
 type BlockConversion =
   | { kind: 'heading'; level: number }
+  | { kind: 'math' }
+  | { kind: 'html' }
   | { kind: 'code' }
   | { kind: 'blockquote' }
   | { kind: 'bullet-list' }
@@ -82,10 +93,21 @@ interface ActiveBlock {
 type BlockOption = BlockConversion & {
   label: string
   icon: string
-  shortcut?: string
+  shortcutId: VisualBlockShortcutId
 }
 
 type VisualBlockAction = 'duplicate' | 'delete' | 'table-add-row' | 'table-add-column' | 'table-delete-row' | 'table-delete-column' | BlockConversion
+
+function visualBlockActionForShortcut(shortcut: VisualBlockShortcutId): BlockConversion {
+  if (shortcut.startsWith('heading')) return { kind: 'heading', level: Number(shortcut.slice('heading'.length)) }
+  if (shortcut === 'mathBlock') return { kind: 'math' }
+  if (shortcut === 'htmlBlock') return { kind: 'html' }
+  if (shortcut === 'codeBlock') return { kind: 'code' }
+  if (shortcut === 'quoteBlock') return { kind: 'blockquote' }
+  if (shortcut === 'orderedList') return { kind: 'ordered-list' }
+  if (shortcut === 'bulletList') return { kind: 'bullet-list' }
+  return { kind: 'task' }
+}
 
 const visualBlockHandleFallbackSize = 18
 const visualBlockHandleGap = 6
@@ -127,6 +149,9 @@ function findVisualBlockElement(element: Element | null): HTMLElement | null {
 
   const blockquote = element.closest<HTMLElement>('blockquote')
   if (blockquote && editorRoot.contains(blockquote)) return blockquote
+
+  const specialBlock = element.closest<HTMLElement>('[data-type="visual-math-block"], [data-type="visual-html-block"]')
+  if (specialBlock && editorRoot.contains(specialBlock)) return specialBlock
 
   const codeBlock = element.closest<HTMLElement>('pre')
   if (codeBlock && editorRoot.contains(codeBlock)) return codeBlock
@@ -190,7 +215,12 @@ function visualBlockHandlePosition(blockElement: HTMLElement, contentElement: HT
 }
 
 function isVisualTextBlock(node: ProseNode) {
-  return node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'code_block'
+  return node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'code_block' || node.type.name === 'visual_math_block' || node.type.name === 'visual_html_block'
+}
+
+function visualBlockSourceText(node: ProseNode) {
+  if (typeof node.attrs.value === 'string') return node.attrs.value
+  return node.textContent
 }
 
 function visualTextBlockForConversion(node: ProseNode, target: BlockConversion, schema: Schema) {
@@ -200,17 +230,35 @@ function visualTextBlockForConversion(node: ProseNode, target: BlockConversion, 
       ? node.firstChild
       : node
   if (!source || !isVisualTextBlock(source)) return null
+  const sourceText = visualBlockSourceText(source)
+  const sourceContent = source.type.name === 'visual_math_block' || source.type.name === 'visual_html_block'
+    ? sourceText ? schema.text(sourceText) : Fragment.empty
+    : source.content
+  if (target.kind === 'math') {
+    const mathBlock = schema.nodes.visual_math_block
+    return mathBlock ? mathBlock.create({ value: sourceText }) : null
+  }
+  if (target.kind === 'html') {
+    const htmlBlock = schema.nodes.visual_html_block
+    if (!htmlBlock) return null
+    const value = source.type.name === 'visual_html_block' ? sourceText : `<div>\n${sourceText}\n</div>`
+    return htmlBlock.create({ value })
+  }
   if (target.kind === 'heading') {
     const heading = schema.nodes.heading
-    return heading ? heading.create({ level: target.level }, source.content, source.marks) : null
+    return heading ? heading.create({ level: target.level }, sourceContent, source.marks) : null
   }
   if (target.kind === 'code') {
     const codeBlock = schema.nodes.code_block
-    return codeBlock ? codeBlock.create({ language: source.attrs.language || '' }, source.content) : null
+    return codeBlock ? codeBlock.create({ language: source.type.name === 'code_block' ? source.attrs.language || '' : '' }, sourceContent) : null
   }
   if (target.kind === 'blockquote') {
     const blockquote = schema.nodes.blockquote
-    return blockquote ? blockquote.create(null, source) : null
+    if (!blockquote) return null
+    const contentBlock = source.type.name === 'visual_math_block' || source.type.name === 'visual_html_block'
+      ? schema.nodes.paragraph?.create(null, sourceContent)
+      : source
+    return contentBlock ? blockquote.create(null, contentBlock) : null
   }
   return null
 }
@@ -240,7 +288,8 @@ function visualParagraphFromNode(node: ProseNode, schema: Schema) {
   const paragraph = schema.nodes.paragraph
   if (!paragraph) return null
   const source = node.type.name === 'blockquote' && node.childCount === 1 ? node.firstChild : node
-  if (!source || (source.type.name !== 'paragraph' && source.type.name !== 'heading' && source.type.name !== 'code_block')) return null
+  if (!source || (source.type.name !== 'paragraph' && source.type.name !== 'heading' && source.type.name !== 'code_block' && source.type.name !== 'visual_math_block' && source.type.name !== 'visual_html_block')) return null
+  if (source.type.name === 'visual_math_block' || source.type.name === 'visual_html_block') return paragraph.create(null, source.attrs.value ? schema.text(source.attrs.value) : Fragment.empty)
   return paragraph.create(null, source.content)
 }
 
@@ -290,13 +339,16 @@ function sanitizeVisualInlineStyle(value: string) {
   const normalized = value.trim().toLocaleLowerCase()
   if (normalized === 'underline' || normalized === 'text-decoration: underline' || normalized === 'text-decoration:underline') return 'underline'
   const color = normalized.match(/^color\s*:\s*(#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([^)]*\)|[a-z]+)\s*;?$/)
-  return color ? `color:${color[1]}` : ''
+  if (color) return `color:${color[1]}`
+  const highlight = normalized.match(/^(?:highlight|background(?:-color)?)\s*:\s*(#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([^)]*\)|[a-z]+)\s*;?$/)
+  return highlight ? `highlight:${highlight[1]}` : ''
 }
 
 function visualInlineStyleCss(value: string) {
   const style = sanitizeVisualInlineStyle(value)
   if (style === 'underline') return 'text-decoration: underline; text-underline-offset: 2px;'
   if (style.startsWith('color:')) return style
+  if (style.startsWith('highlight:')) return `background-color:${style.slice('highlight:'.length)}; border-radius:2px; box-shadow:0 .08em 0 color-mix(in srgb, ${style.slice('highlight:'.length)} 42%, transparent);`
   return ''
 }
 
@@ -341,7 +393,7 @@ const visualStyledTextSchema = $nodeSchema('visual_styled_text', () => ({
         state.next(node.content)
         return
       }
-      state.addNode('html', undefined, `<span data-markmap-style="${visualHtmlAttribute(style)}">`)
+      state.addNode('html', undefined, `<span data-markmap-style="${visualHtmlAttribute(style)}" style="${visualHtmlAttribute(visualInlineStyleCss(style))}">`)
       state.next(node.content)
       state.addNode('html', undefined, '</span>')
     },
@@ -354,7 +406,7 @@ const visualStyledTextRemark = $remark('visualStyledTextRemark', () => () => (tr
     const result: MarkdownNode[] = []
     for (let index = 0; index < nodes.length; index += 1) {
       const current = nodes[index]
-      const opening = typeof current.value === 'string' ? current.value.match(/^<span\s+data-markmap-style="([^"]+)">$/i) : null
+      const opening = typeof current.value === 'string' ? current.value.match(/^<span\s+data-markmap-style="([^"]+)"(?:\s+style="[^"]*")?\s*>$/i) : null
       if (opening) {
         const closingIndex = nodes.slice(index + 1).findIndex((node) => node.type === 'html' && node.value === '</span>')
         if (closingIndex >= 0) {
@@ -377,7 +429,128 @@ const visualStyledTextRemark = $remark('visualStyledTextRemark', () => () => (tr
   return tree
 })
 
-const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, spellCheckLanguage, userDictionary, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink }, ref) {
+const visualMathRemark = $remark('visualMathRemark', () => remarkMath)
+
+const visualMathInlineSchema = $nodeSchema('visual_math_inline', () => ({
+  group: 'inline',
+  inline: true,
+  atom: true,
+  draggable: true,
+  attrs: {
+    value: {
+      default: '',
+      validate: 'string',
+    },
+  },
+  parseDOM: [
+    {
+      tag: 'span[data-type="visual-math-inline"]',
+      getAttrs: (dom) => ({ value: (dom as HTMLElement).dataset.value || '' }),
+    },
+  ],
+  toDOM: (node) => {
+    const dom = document.createElement('span')
+    dom.className = 'visual-math-inline'
+    dom.dataset.type = 'visual-math-inline'
+    dom.dataset.value = node.attrs.value
+    dom.setAttribute('aria-label', `LaTeX: ${node.attrs.value}`)
+    dom.innerHTML = katex.renderToString(node.attrs.value, { throwOnError: false })
+    return dom
+  },
+  parseMarkdown: {
+    match: ({ type }) => type === 'inlineMath',
+    runner: (state, node, type) => state.addNode(type, { value: String(node.value || '') }),
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === 'visual_math_inline',
+    runner: (state, node) => state.addNode('inlineMath', undefined, node.attrs.value),
+  },
+}))
+
+const visualMathBlockSchema = $nodeSchema('visual_math_block', () => ({
+  group: 'block',
+  atom: true,
+  defining: true,
+  attrs: {
+    value: {
+      default: '',
+      validate: 'string',
+    },
+  },
+  parseDOM: [
+    {
+      tag: 'div[data-type="visual-math-block"]',
+      getAttrs: (dom) => ({ value: (dom as HTMLElement).dataset.value || '' }),
+    },
+  ],
+  toDOM: (node) => {
+    const dom = document.createElement('div')
+    dom.className = 'visual-math-block'
+    dom.dataset.type = 'visual-math-block'
+    dom.dataset.value = node.attrs.value
+    dom.setAttribute('aria-label', `LaTeX: ${node.attrs.value}`)
+    dom.innerHTML = katex.renderToString(node.attrs.value, { displayMode: true, throwOnError: false })
+    return dom
+  },
+  parseMarkdown: {
+    match: ({ type }) => type === 'math',
+    runner: (state, node, type) => state.addNode(type, { value: String(node.value || '') }),
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === 'visual_math_block',
+    runner: (state, node) => state.addNode('math', undefined, node.attrs.value),
+  },
+}))
+
+const visualHtmlBlockSchema = $nodeSchema('visual_html_block', () => ({
+  group: 'block',
+  atom: true,
+  defining: true,
+  attrs: {
+    value: {
+      default: '',
+      validate: 'string',
+    },
+  },
+  parseDOM: [
+    {
+      tag: 'pre[data-type="visual-html-block"]',
+      getAttrs: (dom) => ({ value: (dom as HTMLElement).dataset.value || '' }),
+    },
+  ],
+  toDOM: (node) => {
+    const dom = document.createElement('pre')
+    dom.className = 'visual-html-block'
+    dom.dataset.type = 'visual-html-block'
+    dom.dataset.value = node.attrs.value
+    dom.setAttribute('aria-label', 'HTML block')
+    dom.textContent = node.attrs.value
+    return dom
+  },
+  parseMarkdown: {
+    match: ({ type }) => type === 'visualHtmlBlock',
+    runner: (state, node, type) => state.addNode(type, { value: String(node.value || '') }),
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === 'visual_html_block',
+    runner: (state, node) => state.addNode('html', undefined, node.attrs.value),
+  },
+}))
+
+const visualHtmlBlockRemark = $remark('visualHtmlBlockRemark', () => () => (tree: Root) => {
+  const root = tree as unknown as MarkdownNode
+  const convert = (nodes: MarkdownNode[], parentType: string): MarkdownNode[] => nodes.map((node) => {
+    if (node.type === 'html' && ['root', 'listItem', 'blockquote'].includes(parentType)) {
+      return { ...node, type: 'visualHtmlBlock' }
+    }
+    if (!node.children) return node
+    return { ...node, children: convert(node.children, node.type) }
+  })
+  if (root.children) root.children = convert(root.children, 'root')
+  return tree
+})
+
+const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualMarkdownEditorProps>(function VisualMarkdownEditorInner({ value, onChange, dark, fontSize, fontFamily, fontWeight, spellCheck, spellCheckLanguage, userDictionary, onSelectionContextMenu, onSelectionChange, nativeSelectionMode = false, onOpenLink, blockShortcutLabels = {} }, ref) {
   const { t } = useI18n()
   const [initialParts] = useState(() => splitMarkdown(value))
   const [activeBlock, setActiveBlock] = useState<ActiveBlock | null>(null)
@@ -396,6 +569,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
   const nativeSelectionModeRef = useRef(nativeSelectionMode)
   const selectingPointerRef = useRef(false)
   const pendingSelectionTargetRef = useRef<VisualMarkdownSelection | null>(null)
+  const runBlockActionRef = useRef<(action: VisualBlockAction) => void>(() => {})
   const [loading, getInstance] = useInstance()
 
   useEffect(() => {
@@ -470,6 +644,11 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     .use(gfm)
     .use(visualStyledTextSchema)
     .use(visualStyledTextRemark)
+    .use(visualMathRemark)
+    .use(visualMathInlineSchema)
+    .use(visualMathBlockSchema)
+    .use(visualHtmlBlockSchema)
+    .use(visualHtmlBlockRemark)
     .use(clipboard)
     .use(listener), [])
 
@@ -547,6 +726,9 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
         else view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)).scrollIntoView())
         view.focus()
       })
+    },
+    executeBlockShortcut: (shortcut) => {
+      runBlockActionRef.current(visualBlockActionForShortcut(shortcut))
     },
     revealLine: (lineNumber, text) => {
       const editor = getInstance()
@@ -671,7 +853,12 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       const targetBlock = editor?.action((ctx) => {
         const view = ctx.get(editorViewCtx)
         const tagName = blockElement.tagName.toLowerCase()
-        const candidateNames = tagName === 'li'
+        const dataType = blockElement.dataset.type
+        const candidateNames = dataType === 'visual-math-block'
+          ? new Set(['visual_math_block'])
+          : dataType === 'visual-html-block'
+            ? new Set(['visual_html_block'])
+            : tagName === 'li'
           ? new Set(['list_item'])
           : tagName === 'table'
             ? new Set(['table'])
@@ -723,6 +910,12 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
             break
           case 'code_block':
             kind = 'code'
+            break
+          case 'visual_math_block':
+            kind = 'math'
+            break
+          case 'visual_html_block':
+            kind = 'html'
             break
           case 'bullet_list':
             kind = 'bullet-list'
@@ -878,6 +1071,24 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       }
       return false
     }) ?? false
+    const setInlineMath = () => {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        const mathInline = view.state.schema.nodes.visual_math_inline
+        if (!mathInline || positions.from === positions.to) return
+        const source = view.state.doc.textBetween(positions.from, positions.to, '\n').trim()
+        if (!source) return
+        view.dispatch(view.state.tr.replaceWith(positions.from, positions.to, mathInline.create({ value: source })).scrollIntoView())
+        view.focus()
+      })
+    }
+    const isInlineMathActive = () => editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const mathInline = view.state.schema.nodes.visual_math_inline
+      if (!mathInline) return false
+      const node = view.state.doc.nodeAt(positions.from)
+      return node?.type === mathInline && positions.to <= positions.from + node.nodeSize
+    }) ?? false
 
     const common = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement
     const rangeAnchor = common?.closest<HTMLAnchorElement>('a[href]')
@@ -895,6 +1106,8 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       isMarkActive,
       setInlineStyle,
       isInlineStyleActive,
+      setInlineMath,
+      isInlineMathActive,
       allowNative: () => { nativeContextMenuOnceRef.current = true },
     }
   }
@@ -1026,7 +1239,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
         return
       }
 
-      if (action.kind === 'heading' || action.kind === 'code' || action.kind === 'blockquote') {
+      if (action.kind === 'heading' || action.kind === 'math' || action.kind === 'html' || action.kind === 'code' || action.kind === 'blockquote') {
         const converted = visualTextBlockForConversion(node, action, view.state.schema)
         if (node.type.name === 'list_item') {
           if (converted) replaceListItemWithBlock(converted)
@@ -1095,6 +1308,8 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
     }
   }
 
+  runBlockActionRef.current = runBlockAction
+
   const editorStyle = {
     '--visual-editor-font-size': `${fontSize}px`,
     '--visual-editor-font-family': fontFamily,
@@ -1102,17 +1317,19 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
   } as CSSProperties
   const currentParts = splitMarkdown(value)
   const blockOptions: BlockOption[] = [
-    { kind: 'heading', level: 1, label: t('标题 1'), icon: 'H1', shortcut: 'Ctrl+1' },
-    { kind: 'heading', level: 2, label: t('标题 2'), icon: 'H2', shortcut: 'Ctrl+2' },
-    { kind: 'heading', level: 3, label: t('标题 3'), icon: 'H3', shortcut: 'Ctrl+3' },
-    { kind: 'heading', level: 4, label: t('标题 4'), icon: 'H4', shortcut: 'Ctrl+4' },
-    { kind: 'heading', level: 5, label: t('标题 5'), icon: 'H5', shortcut: 'Ctrl+5' },
-    { kind: 'heading', level: 6, label: t('标题 6'), icon: 'H6', shortcut: 'Ctrl+6' },
-    { kind: 'code', label: t('代码'), icon: '</>' },
-    { kind: 'blockquote', label: t('引用'), icon: '❝' },
-    { kind: 'bullet-list', label: t('无序列表'), icon: '•' },
-    { kind: 'ordered-list', label: t('有序列表'), icon: '1.' },
-    { kind: 'task', label: t('待办事项'), icon: '☐' },
+    { kind: 'heading', level: 1, label: t('标题 1'), icon: 'H1', shortcutId: 'heading1' },
+    { kind: 'heading', level: 2, label: t('标题 2'), icon: 'H2', shortcutId: 'heading2' },
+    { kind: 'heading', level: 3, label: t('标题 3'), icon: 'H3', shortcutId: 'heading3' },
+    { kind: 'heading', level: 4, label: t('标题 4'), icon: 'H4', shortcutId: 'heading4' },
+    { kind: 'heading', level: 5, label: t('标题 5'), icon: 'H5', shortcutId: 'heading5' },
+    { kind: 'heading', level: 6, label: t('标题 6'), icon: 'H6', shortcutId: 'heading6' },
+    { kind: 'math', label: t('数学公式'), icon: '∑', shortcutId: 'mathBlock' },
+    { kind: 'html', label: t('HTML 块'), icon: '</>', shortcutId: 'htmlBlock' },
+    { kind: 'code', label: t('代码块'), icon: '</>', shortcutId: 'codeBlock' },
+    { kind: 'blockquote', label: t('引用块'), icon: '❝', shortcutId: 'quoteBlock' },
+    { kind: 'ordered-list', label: t('有序列表'), icon: '1.', shortcutId: 'orderedList' },
+    { kind: 'bullet-list', label: t('无序列表'), icon: '•', shortcutId: 'bulletList' },
+    { kind: 'task', label: t('任务列表'), icon: '☑', shortcutId: 'taskList' },
   ]
   const activeBlockOptions = activeBlock?.kind === 'table'
     ? []
@@ -1123,6 +1340,10 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       ? `H${activeBlock.level}`
       : activeBlock.kind === 'code'
         ? '</>'
+        : activeBlock.kind === 'math'
+          ? '∑'
+          : activeBlock.kind === 'html'
+            ? '</>'
         : activeBlock.kind === 'blockquote'
           ? '❝'
           : activeBlock.kind === 'ordered-list' || (activeBlock.kind === 'list-item' && activeBlock.listType === 'ordered')
@@ -1142,6 +1363,10 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
       ? t(`标题 ${activeBlock.level}`)
       : activeBlock.kind === 'code'
         ? t('代码')
+        : activeBlock.kind === 'math'
+          ? t('数学公式')
+          : activeBlock.kind === 'html'
+            ? t('HTML 块')
         : activeBlock.kind === 'blockquote'
           ? t('引用')
           : activeBlock.kind === 'ordered-list' || (activeBlock.kind === 'list-item' && activeBlock.listType === 'ordered')
@@ -1190,7 +1415,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
               </>}
               <button type="button" role="menuitem" className="danger" onClick={() => runBlockAction('delete')}><span>♜</span>{t('删除')}</button>
               {conversionMenuOpen && <div className="visual-block-conversion-menu" role="menu">
-                {activeBlockOptions.map((option) => <button type="button" role="menuitem" className={isActiveBlockOption(option) ? 'active' : ''} key={`${option.kind}-${option.kind === 'heading' ? option.level : ''}`} onClick={() => runBlockAction(option)}><span>{option.icon}</span><em>{option.label}</em><kbd>{option.shortcut || ''}</kbd></button>)}
+                {activeBlockOptions.map((option) => <button type="button" role="menuitem" className={isActiveBlockOption(option) ? 'active' : ''} key={`${option.kind}-${option.kind === 'heading' ? option.level : ''}`} onClick={() => runBlockAction(option)}><span>{option.icon}</span><em>{option.label}</em><kbd>{blockShortcutLabels[option.shortcutId] || t('已禁用')}</kbd></button>)}
               </div>}
               </div>
             </>}
@@ -1213,7 +1438,7 @@ const VisualMarkdownEditorInner = forwardRef<VisualMarkdownEditorHandle, VisualM
         <button type="button" className="danger" onClick={() => runBlockAction('delete')}><span>♜</span><em>{t('删除')}</em></button>
       </div>
       {conversionMenuOpen && <div className="visual-mobile-block-conversion-menu" role="menu">
-        {activeBlockOptions.map((option) => <button type="button" role="menuitem" className={isActiveBlockOption(option) ? 'active' : ''} key={`${option.kind}-${option.kind === 'heading' ? option.level : ''}`} onClick={() => runBlockAction(option)}><span>{option.icon}</span><em>{option.label}</em></button>)}
+         {activeBlockOptions.map((option) => <button type="button" role="menuitem" className={isActiveBlockOption(option) ? 'active' : ''} key={`${option.kind}-${option.kind === 'heading' ? option.level : ''}`} onClick={() => runBlockAction(option)}><span>{option.icon}</span><em>{option.label}</em><kbd>{blockShortcutLabels[option.shortcutId] || t('已禁用')}</kbd></button>)}
       </div>}
     </div>}
   </div>

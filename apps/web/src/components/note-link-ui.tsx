@@ -7,6 +7,90 @@ export interface LinkTarget {
   heading?: RepositoryHeading
 }
 
+const selectionColorPresetStorageKey = 'markmap-plus-plus.selection-color-presets'
+
+type SelectionColorPalette = 'classic' | 'macaron' | 'morandi'
+
+const selectionColorPaletteOrder: SelectionColorPalette[] = ['classic', 'macaron', 'morandi']
+const selectionColorPaletteDefaults: Record<SelectionColorPalette, string[]> = {
+  classic: ['#dd1144', '#e11d48', '#2563eb', '#059669', '#d97706', '#7c3aed'],
+  macaron: ['#ef9aaf', '#f4b4c8', '#9fc7eb', '#9ed8c3', '#f2c27f', '#c4afe8'],
+  morandi: ['#b58f91', '#b67888', '#8fa7a1', '#9da9bc', '#b7a486', '#9e91a9'],
+}
+
+interface SelectionColorState {
+  palette: SelectionColorPalette
+  colorsByPalette: Record<SelectionColorPalette, string[]>
+}
+
+function normalizeSelectionColor(value: unknown) {
+  if (typeof value !== 'string') return null
+  const color = value.trim().toLowerCase()
+  const short = color.match(/^#([\da-f]{3})$/i)
+  if (short) return `#${short[1].split('').map((part) => part + part).join('')}`
+  return /^#[\da-f]{6}$/i.test(color) ? color : null
+}
+
+function normalizeSelectionColors(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value) || value.length !== fallback.length) return [...fallback]
+  const colors = value.map(normalizeSelectionColor)
+  return colors.every((color): color is string => Boolean(color)) ? colors : [...fallback]
+}
+
+function createDefaultSelectionColorState(): SelectionColorState {
+  return {
+    palette: 'classic',
+    colorsByPalette: {
+      classic: [...selectionColorPaletteDefaults.classic],
+      macaron: [...selectionColorPaletteDefaults.macaron],
+      morandi: [...selectionColorPaletteDefaults.morandi],
+    },
+  }
+}
+
+function loadSelectionColorState(): SelectionColorState {
+  const fallback = createDefaultSelectionColorState()
+  if (typeof window === 'undefined') return fallback
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(selectionColorPresetStorageKey) || '')
+    if (Array.isArray(stored)) {
+      fallback.colorsByPalette.classic = normalizeSelectionColors(stored, fallback.colorsByPalette.classic)
+      return fallback
+    }
+    if (!stored || typeof stored !== 'object') return fallback
+    const candidate = stored as { palette?: unknown; colorsByPalette?: unknown; colors?: unknown }
+    if (selectionColorPaletteOrder.includes(candidate.palette as SelectionColorPalette)) fallback.palette = candidate.palette as SelectionColorPalette
+    if (candidate.colorsByPalette && typeof candidate.colorsByPalette === 'object') {
+      const palettes = candidate.colorsByPalette as Record<string, unknown>
+      selectionColorPaletteOrder.forEach((palette) => {
+        fallback.colorsByPalette[palette] = normalizeSelectionColors(palettes[palette], fallback.colorsByPalette[palette])
+      })
+    } else if (candidate.colors) {
+      fallback.colorsByPalette.classic = normalizeSelectionColors(candidate.colors, fallback.colorsByPalette.classic)
+    }
+    return fallback
+  } catch {
+    // Ignore unavailable or malformed local preferences.
+  }
+  return fallback
+}
+
+function saveSelectionColorState(state: SelectionColorState) {
+  try {
+    window.localStorage.setItem(selectionColorPresetStorageKey, JSON.stringify(state))
+  } catch {
+    // Ignore storage restrictions; the current menu still keeps the edited values.
+  }
+}
+
+function SelectionEyeDropperIcon() {
+  return <svg className="selection-eye-dropper-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14.2 4.1 5.7 5.7" /><path d="m12.7 5.6 5.7 5.7-8.1 8.1-4.5.9.9-4.5 8.1-8.1Z" /><path d="m5.8 19.2-1.9 1.9" /></svg>
+}
+
+function SelectionHighlighterIcon() {
+  return <svg className="selection-highlighter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14.6 3.7 5.7 5.7-8.9 8.9H5.7v-5.7l8.9-8.9Z" /><path d="M4.2 20.3h11.7" /><path d="m8.3 12.6 3.1 3.1" /></svg>
+}
+
 interface SelectionActionMenuProps {
   x: number
   y: number
@@ -20,11 +104,15 @@ interface SelectionActionMenuProps {
   onNativeMenu: () => void
   showNativeMenu: boolean
   shortcutModifier: string
+  onInlineMath?: () => void
+  inlineMathActive?: boolean
   formatting?: {
     toggleMark: (mark: 'strong' | 'emphasis' | 'strikethrough' | 'inlineCode') => void
     isMarkActive: (mark: 'strong' | 'emphasis' | 'strikethrough' | 'inlineCode') => boolean
-    setInlineStyle: (style: 'underline' | `color:${string}` | null) => void
-    isInlineStyleActive: (style: 'underline' | `color:${string}`) => boolean
+    setInlineStyle: (style: 'underline' | `color:${string}` | `highlight:${string}` | null) => void
+    isInlineStyleActive: (style: 'underline' | `color:${string}` | `highlight:${string}`) => boolean
+    setInlineMath?: () => void
+    isInlineMathActive?: () => boolean
   }
 }
 
@@ -32,12 +120,16 @@ export function SelectionActionMenu(props: SelectionActionMenuProps) {
   const { t } = useI18n()
   const menuRef = useRef<HTMLDivElement | null>(null)
   const [colorOpen, setColorOpen] = useState(false)
+  const [colorState, setColorState] = useState<SelectionColorState>(loadSelectionColorState)
+  const [colorTargetIndex, setColorTargetIndex] = useState(0)
+  const colorOptions = colorState.colorsByPalette[colorState.palette]
+  const [customColor, setCustomColor] = useState(() => colorOptions[0] || '#2563eb')
   const formatting = Boolean(props.formatting)
   const menuWidth = formatting ? 310 : 252
   const left = Math.min(Math.max(8, props.x), Math.max(8, window.innerWidth - menuWidth))
   const top = formatting
-    ? props.y > 68 ? props.y - 58 : props.y + 10
-    : Math.min(props.y, Math.max(8, window.innerHeight - (props.hasLink ? 300 : 260)))
+    ? Math.min(Math.max(8, props.y > 68 ? props.y - 58 : props.y + 10), Math.max(8, window.innerHeight - 52))
+    : Math.min(Math.max(8, props.y), Math.max(8, window.innerHeight - (props.hasLink ? 300 : 260)))
   const preventSelectionLoss = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
@@ -46,25 +138,82 @@ export function SelectionActionMenu(props: SelectionActionMenuProps) {
     if (!formatting) menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
   }, [formatting])
   if (formatting && props.formatting) {
-    const colorOptions = ['#d14', '#e11d48', '#2563eb', '#059669', '#d97706', '#7c3aed'] as const
+    const highlightColor = '#fff09c'
+    const mathAction = props.formatting.setInlineMath || props.onInlineMath
+    const mathActive = props.formatting.isInlineMathActive?.() || props.inlineMathActive
+    const selectColor = (index: number) => {
+      const color = colorOptions[index]
+      setColorTargetIndex(index)
+      setCustomColor(color)
+      props.formatting?.setInlineStyle(`color:${color}`)
+    }
+    const selectPalette = (palette: SelectionColorPalette) => {
+      const colors = colorState.colorsByPalette[palette] || selectionColorPaletteDefaults[palette]
+      setColorTargetIndex(0)
+      setCustomColor(colors[0] || '#2563eb')
+      setColorState((current) => {
+        const next = { ...current, palette }
+        saveSelectionColorState(next)
+        return next
+      })
+    }
+    const restorePalette = () => {
+      const colors = [...selectionColorPaletteDefaults[colorState.palette]]
+      setColorTargetIndex(0)
+      setCustomColor(colors[0] || '#2563eb')
+      setColorState((current) => {
+        const next = { ...current, colorsByPalette: { ...current.colorsByPalette, [current.palette]: colors } }
+        saveSelectionColorState(next)
+        return next
+      })
+    }
+    const updateSelectedColor = (color: string) => {
+      setCustomColor(color)
+      setColorState((current) => {
+        const colors = [...current.colorsByPalette[current.palette]]
+        colors[colorTargetIndex] = color
+        const next = { ...current, colorsByPalette: { ...current.colorsByPalette, [current.palette]: colors } }
+        saveSelectionColorState(next)
+        return next
+      })
+      props.formatting?.setInlineStyle(`color:${color}`)
+    }
     const button = (mark: 'strong' | 'emphasis' | 'strikethrough' | 'inlineCode', label: string, title: string) => <button type="button" role="menuitem" className={props.formatting?.isMarkActive(mark) ? 'active' : ''} aria-label={label} title={title} onPointerDown={preventSelectionLoss} onClick={() => props.formatting?.toggleMark(mark)}>{mark === 'strong' ? <b>B</b> : mark === 'emphasis' ? <i>I</i> : mark === 'strikethrough' ? <s>S</s> : <code>&lt;/&gt;</code>}</button>
-    return <div ref={menuRef} className="selection-action-menu selection-formatting-menu" role="toolbar" aria-label={t('所选文字格式')} style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
+    const preserveSelection = (event: React.MouseEvent<HTMLDivElement>) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    return <div ref={menuRef} className="selection-action-menu selection-formatting-menu" role="toolbar" aria-label={t('所选文字格式')} style={{ left, top }} onPointerDown={(event) => { if (!(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLSelectElement)) event.preventDefault(); event.stopPropagation() }} onMouseDown={preserveSelection}>
       {button('strong', t('粗体'), t('粗体'))}
       {button('emphasis', t('斜体'), t('斜体'))}
       <button type="button" role="menuitem" className={props.formatting.isInlineStyleActive('underline') ? 'active' : ''} aria-label={t('下划线')} title={t('下划线')} onPointerDown={preventSelectionLoss} onClick={() => props.formatting?.setInlineStyle('underline')}><u>U</u></button>
       {button('strikethrough', t('删除线'), t('删除线'))}
       {button('inlineCode', t('行内代码'), t('行内代码'))}
+      <button type="button" role="menuitem" className={props.formatting.isInlineStyleActive(`highlight:${highlightColor}`) ? 'active' : ''} aria-label={t('荧光')} title={t('荧光')} onPointerDown={preventSelectionLoss} onClick={() => props.formatting?.setInlineStyle(props.formatting?.isInlineStyleActive(`highlight:${highlightColor}`) ? null : `highlight:${highlightColor}`)}><SelectionHighlighterIcon /></button>
+      {mathAction && <button type="button" role="menuitem" className={mathActive ? 'active' : ''} aria-label={t('数学公式')} title={t('数学公式')} onPointerDown={preventSelectionLoss} onClick={mathAction}>∑</button>}
       <button type="button" role="menuitem" className={colorOpen ? 'active' : ''} aria-label={t('文字颜色')} title={t('文字颜色')} aria-expanded={colorOpen} onPointerDown={preventSelectionLoss} onClick={() => setColorOpen((open) => !open)}><span className="selection-color-glyph">A</span></button>
       <button type="button" role="menuitem" className="link-action" aria-label={props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')} title={props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')} onPointerDown={preventSelectionLoss} onClick={props.onLink}>↗</button>
       {props.hasLink && <button type="button" role="menuitem" aria-label={t('移除链接')} title={t('移除链接')} onPointerDown={preventSelectionLoss} onClick={props.onRemoveLink}>×</button>}
       {colorOpen && <div className="selection-color-popover" role="menu" aria-label={t('文字颜色')}>
-        {colorOptions.map((color) => <button type="button" key={color} role="menuitem" aria-label={color} title={color} className={props.formatting?.isInlineStyleActive(`color:${color}`) ? 'active' : ''} style={{ '--selection-color': color } as React.CSSProperties} onPointerDown={preventSelectionLoss} onClick={() => { props.formatting?.setInlineStyle(`color:${color}`); setColorOpen(false) }}><span /></button>)}
-        <button type="button" role="menuitem" className="clear" aria-label={t('清除文字颜色')} title={t('清除文字颜色')} onPointerDown={preventSelectionLoss} onClick={() => { props.formatting?.setInlineStyle(null); setColorOpen(false) }}>×</button>
+        <div className="selection-color-palette-row">
+          <span>{t('色系')}</span>
+          <select className="selection-color-palette-select" value={colorState.palette} aria-label={t('色系')} onPointerDown={(event) => event.stopPropagation()} onChange={(event) => selectPalette(event.target.value as SelectionColorPalette)}>
+            {selectionColorPaletteOrder.map((palette) => <option key={palette} value={palette}>{t(palette === 'classic' ? '经典' : palette === 'macaron' ? '马卡龙' : '莫兰迪')}</option>)}
+          </select>
+          <button type="button" role="menuitem" className="selection-color-reset" aria-label={t('还原当前色系')} title={t('还原当前色系')} onPointerDown={preventSelectionLoss} onClick={restorePalette}>↶</button>
+        </div>
+        <div className="selection-color-options-row">
+          {colorOptions.map((color, index) => <button type="button" key={`${index}:${color}`} role="menuitem" aria-label={color} title={color} className={`selection-color-preset ${props.formatting?.isInlineStyleActive(`color:${color}`) ? 'active' : ''}`} style={{ '--selection-color': color } as React.CSSProperties} onPointerDown={preventSelectionLoss} onClick={() => selectColor(index)}><span /></button>)}
+          <label className="selection-custom-color" title={t('自定义颜色')} aria-label={t('自定义颜色')}><SelectionEyeDropperIcon /><input type="color" value={customColor} aria-label={t('自定义颜色')} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onChange={(event) => updateSelectedColor(event.target.value)} /></label>
+          <button type="button" role="menuitem" className="clear" aria-label={t('清除文字颜色')} title={t('清除文字颜色')} onPointerDown={preventSelectionLoss} onClick={() => { props.formatting?.setInlineStyle(null); setColorOpen(false) }}>×</button>
+        </div>
       </div>}
     </div>
   }
   return <div ref={menuRef} className="selection-action-menu" role="menu" aria-label={t('所选文字操作')} style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
     <div className="selection-action-summary" title={props.text}>{props.text}</div>
+    {props.onInlineMath && <button role="menuitem" onClick={props.onInlineMath}><span>{t('数学公式')}</span><kbd>{props.shortcutModifier}⇧M</kbd></button>}
     <button role="menuitem" onClick={props.onCopy}><span>{t('复制')}</span><kbd>{props.shortcutModifier} C</kbd></button>
     <button role="menuitem" onClick={props.onCut}><span>{t('剪切')}</span><kbd>{props.shortcutModifier} X</kbd></button>
     <button role="menuitem" onClick={props.onPaste}><span>{t('粘贴')}</span><kbd>{props.shortcutModifier} V</kbd></button>
@@ -79,27 +228,79 @@ interface MobileSelectionActionBarProps {
   hasLink: boolean
   onLink: () => void
   onRemoveLink: () => void
+  onInlineMath?: () => void
+  inlineMathActive?: boolean
   formatting?: SelectionActionMenuProps['formatting']
 }
 
 export function MobileSelectionActionBar(props: MobileSelectionActionBarProps) {
   const { t } = useI18n()
   const [colorOpen, setColorOpen] = useState(false)
+  const [colorState, setColorState] = useState<SelectionColorState>(loadSelectionColorState)
+  const [colorTargetIndex, setColorTargetIndex] = useState(0)
+  const colorOptions = colorState.colorsByPalette[colorState.palette]
+  const [customColor, setCustomColor] = useState(() => colorOptions[0] || '#2563eb')
   const runAction = (action: () => void) => (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
     action()
   }
   const formatting = props.formatting
-  return <div className="mobile-selection-action-bar" role="toolbar" aria-label={t('所选文字格式')} onPointerDown={(event) => event.stopPropagation()}>
+  const selectColor = (index: number) => {
+    const color = colorOptions[index]
+    setColorTargetIndex(index)
+    setCustomColor(color)
+    formatting?.setInlineStyle(`color:${color}`)
+  }
+  const selectPalette = (palette: SelectionColorPalette) => {
+    const colors = colorState.colorsByPalette[palette] || selectionColorPaletteDefaults[palette]
+    setColorTargetIndex(0)
+    setCustomColor(colors[0] || '#2563eb')
+    setColorState((current) => {
+      const next = { ...current, palette }
+      saveSelectionColorState(next)
+      return next
+    })
+  }
+  const restorePalette = () => {
+    const colors = [...selectionColorPaletteDefaults[colorState.palette]]
+    setColorTargetIndex(0)
+    setCustomColor(colors[0] || '#2563eb')
+    setColorState((current) => {
+      const next = { ...current, colorsByPalette: { ...current.colorsByPalette, [current.palette]: colors } }
+      saveSelectionColorState(next)
+      return next
+    })
+  }
+  const updateSelectedColor = (color: string) => {
+    setCustomColor(color)
+    setColorState((current) => {
+      const colors = [...current.colorsByPalette[current.palette]]
+      colors[colorTargetIndex] = color
+      const next = { ...current, colorsByPalette: { ...current.colorsByPalette, [current.palette]: colors } }
+      saveSelectionColorState(next)
+      return next
+    })
+    formatting?.setInlineStyle(`color:${color}`)
+  }
+  return <div className="mobile-selection-action-bar" role="toolbar" aria-label={t('所选文字格式')} onPointerDown={(event) => { if (!(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLSelectElement)) event.preventDefault(); event.stopPropagation() }} onMouseDown={(event) => { if (!(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLSelectElement)) event.preventDefault(); event.stopPropagation() }}>
+    {!formatting && props.onInlineMath && <button type="button" className={props.inlineMathActive ? 'active' : ''} aria-label={t('数学公式')} onPointerDown={runAction(props.onInlineMath)}>∑<em>{t('数学公式')}</em></button>}
     {formatting && <>
       <button type="button" className={formatting.isMarkActive('strong') ? 'active' : ''} aria-label={t('粗体')} onPointerDown={runAction(() => formatting.toggleMark('strong'))}><b>B</b></button>
       <button type="button" className={formatting.isMarkActive('emphasis') ? 'active' : ''} aria-label={t('斜体')} onPointerDown={runAction(() => formatting.toggleMark('emphasis'))}><i>I</i></button>
-      <button type="button" className={formatting.isInlineStyleActive('underline') ? 'active' : ''} aria-label={t('下划线')} onPointerDown={runAction(() => formatting.setInlineStyle('underline'))}><u>U</u></button>
+       <button type="button" className={formatting.isInlineStyleActive('underline') ? 'active' : ''} aria-label={t('下划线')} onPointerDown={runAction(() => formatting.setInlineStyle('underline'))}><u>U</u></button>
       <button type="button" className={formatting.isMarkActive('strikethrough') ? 'active' : ''} aria-label={t('删除线')} onPointerDown={runAction(() => formatting.toggleMark('strikethrough'))}><s>S</s></button>
       <button type="button" className={formatting.isMarkActive('inlineCode') ? 'active' : ''} aria-label={t('行内代码')} onPointerDown={runAction(() => formatting.toggleMark('inlineCode'))}><code>&lt;/&gt;</code></button>
-      <button type="button" className={colorOpen ? 'active' : ''} aria-label={t('文字颜色')} onPointerDown={runAction(() => setColorOpen((open) => !open))}><span className="selection-color-glyph">A</span></button>
-      {colorOpen && ['#d14', '#e11d48', '#2563eb', '#059669', '#d97706', '#7c3aed'].map((color) => <button type="button" key={color} className="selection-mobile-color" aria-label={color} onPointerDown={runAction(() => { formatting.setInlineStyle(`color:${color}`); setColorOpen(false) })}><span style={{ background: color }} /></button>)}
+      <button type="button" className={formatting.isInlineStyleActive('highlight:#fff09c') ? 'active' : ''} aria-label={t('荧光')} onPointerDown={runAction(() => formatting.setInlineStyle(formatting.isInlineStyleActive('highlight:#fff09c') ? null : 'highlight:#fff09c'))}><SelectionHighlighterIcon /></button>
+      {formatting.setInlineMath && <button type="button" className={formatting.isInlineMathActive?.() ? 'active' : ''} aria-label={t('数学公式')} onPointerDown={runAction(formatting.setInlineMath)}>∑</button>}
+       <button type="button" className={colorOpen ? 'active' : ''} aria-label={t('文字颜色')} onPointerDown={runAction(() => setColorOpen((open) => !open))}><span className="selection-color-glyph">A</span></button>
+       {colorOpen && <select className="selection-mobile-palette" value={colorState.palette} aria-label={t('色系')} onPointerDown={(event) => event.stopPropagation()} onChange={(event) => selectPalette(event.target.value as SelectionColorPalette)}>
+         {selectionColorPaletteOrder.map((palette) => <option key={palette} value={palette}>{t(palette === 'classic' ? '经典' : palette === 'macaron' ? '马卡龙' : '莫兰迪')}</option>)}
+       </select>}
+       {colorOpen && <button type="button" className="selection-mobile-reset-color" aria-label={t('还原当前色系')} title={t('还原当前色系')} onPointerDown={runAction(restorePalette)}>↶</button>}
+       {colorOpen && colorOptions.map((color, index) => <button type="button" key={`${index}:${color}`} className={`selection-mobile-color ${formatting.isInlineStyleActive(`color:${color}`) ? 'active' : ''}`} aria-label={color} onPointerDown={runAction(() => selectColor(index))}><span style={{ background: color }} /></button>)}
+      {colorOpen && <label className="selection-mobile-custom-color" title={t('自定义颜色')} aria-label={t('自定义颜色')}><SelectionEyeDropperIcon /><input type="color" value={customColor} aria-label={t('自定义颜色')} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onChange={(event) => updateSelectedColor(event.target.value)} /></label>}
+      {colorOpen && <button type="button" className="selection-mobile-clear-color" aria-label={t('清除文字颜色')} onPointerDown={runAction(() => { formatting.setInlineStyle(null); setColorOpen(false) })}>×</button>}
     </>}
     <button type="button" className="link-action" onPointerDown={runAction(props.onLink)}>{props.hasLink ? t('更改笔记链接…') : t('链接到笔记…')}</button>
     {props.hasLink && <button type="button" onPointerDown={runAction(props.onRemoveLink)}>{t('移除链接')}</button>}
